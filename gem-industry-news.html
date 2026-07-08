@@ -1,0 +1,499 @@
+<title>宝飾経済新聞 — 2026年7月8日号</title>
+<style>
+  :root {
+    --paper: #F5F1E6;
+    --paper-deep: #EDE7D8;
+    --ink: #211E19;
+    --ink-soft: #443F36;
+    --muted: #6E675A;
+    --rule: #B9B09B;
+    --rule-strong: #211E19;
+    --seal: #9E2B25;
+    --seal-ink: #F5F1E6;
+    --highlight: #E9E1CC;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #191611;
+      --paper-deep: #211D16;
+      --ink: #E5DECC;
+      --ink-soft: #C7BFAB;
+      --muted: #968D79;
+      --rule: #464032;
+      --rule-strong: #E5DECC;
+      --seal: #C25048;
+      --seal-ink: #191611;
+      --highlight: #262117;
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #F5F1E6;
+    --paper-deep: #EDE7D8;
+    --ink: #211E19;
+    --ink-soft: #443F36;
+    --muted: #6E675A;
+    --rule: #B9B09B;
+    --rule-strong: #211E19;
+    --seal: #9E2B25;
+    --seal-ink: #F5F1E6;
+    --highlight: #E9E1CC;
+  }
+  :root[data-theme="dark"] {
+    --paper: #191611;
+    --paper-deep: #211D16;
+    --ink: #E5DECC;
+    --ink-soft: #C7BFAB;
+    --muted: #968D79;
+    --rule: #464032;
+    --rule-strong: #E5DECC;
+    --seal: #C25048;
+    --seal-ink: #191611;
+    --highlight: #262117;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif JP", "Times New Roman", serif;
+    line-height: 1.9;
+    margin: 0;
+    padding: 1.5rem 1rem 3rem;
+    font-feature-settings: "palt";
+  }
+  .sheet {
+    max-width: 1080px;
+    margin: 0 auto;
+    background: var(--paper);
+  }
+  .gothic {
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "YuGothic", "Noto Sans JP", sans-serif;
+  }
+
+  /* ── 題字・紙面ヘッダ ───────────────────── */
+  .masthead {
+    display: flex;
+    flex-direction: row-reverse;
+    gap: 1.25rem;
+    border-bottom: 3px double var(--rule-strong);
+    padding-bottom: 1rem;
+    align-items: stretch;
+  }
+  .daiji {
+    writing-mode: vertical-rl;
+    font-size: clamp(1.9rem, 4.5vw, 2.8rem);
+    font-weight: 700;
+    letter-spacing: 0.28em;
+    line-height: 1;
+    padding: 0.55em 0.3em;
+    border: 2px solid var(--rule-strong);
+    background: var(--paper-deep);
+    flex: none;
+    text-align: center;
+  }
+  .daiji .seal {
+    writing-mode: horizontal-tb;
+    display: block;
+    background: var(--seal);
+    color: var(--seal-ink);
+    font-size: 0.62rem;
+    letter-spacing: 0.35em;
+    padding: 0.25em 0.1em 0.25em 0.45em;
+    margin-top: 0.6em;
+    font-weight: 600;
+  }
+  .masthead-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 0.4rem;
+  }
+  .edition-line {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem 1.5rem;
+    font-size: 0.78rem;
+    letter-spacing: 0.12em;
+    color: var(--ink-soft);
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 0.5rem;
+  }
+  .edition-line strong { color: var(--ink); }
+  .catch {
+    font-size: 0.92rem;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+  }
+  .index-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.4rem;
+    font-size: 0.78rem;
+    letter-spacing: 0.1em;
+    color: var(--ink-soft);
+  }
+  .index-strip span::before {
+    content: "▼";
+    color: var(--seal);
+    font-size: 0.65em;
+    margin-right: 0.45em;
+    vertical-align: 0.15em;
+  }
+
+  /* ── 見出しまわり ───────────────────── */
+  .eyebrow {
+    display: inline-block;
+    font-size: 0.72rem;
+    letter-spacing: 0.3em;
+    padding: 0.15em 0.9em 0.15em 1.15em;
+    border: 1px solid var(--seal);
+    color: var(--seal);
+    margin-bottom: 0.6rem;
+    font-weight: 600;
+  }
+  h1.lead-hl {
+    font-size: clamp(1.7rem, 4.2vw, 2.6rem);
+    line-height: 1.35;
+    letter-spacing: 0.04em;
+    margin: 0 0 0.35rem;
+    font-weight: 700;
+    text-wrap: balance;
+  }
+  .lead-sub {
+    font-size: clamp(1rem, 2vw, 1.2rem);
+    color: var(--ink-soft);
+    margin: 0 0 1.1rem;
+    letter-spacing: 0.05em;
+    text-wrap: balance;
+  }
+  h2.story-hl {
+    font-size: 1.28rem;
+    line-height: 1.45;
+    margin: 0 0 0.65rem;
+    letter-spacing: 0.03em;
+    font-weight: 700;
+    text-wrap: balance;
+    border-left: 4px solid var(--seal);
+    padding-left: 0.6em;
+  }
+
+  /* ── 一面トップ ───────────────────── */
+  .lead-story {
+    padding: 1.6rem 0 1.4rem;
+    border-bottom: 1px solid var(--rule-strong);
+  }
+  .lead-body {
+    column-count: 3;
+    column-gap: 2.2rem;
+    column-rule: 1px solid var(--rule);
+    font-size: 0.95rem;
+    text-align: justify;
+  }
+  .lead-body p { margin: 0 0 1em; text-indent: 1em; }
+  .lead-body p:first-child::first-letter { font-size: 1.05em; }
+
+  /* ── 市況表 ───────────────────── */
+  .market-box {
+    background: var(--paper-deep);
+    border-top: 3px solid var(--rule-strong);
+    border-bottom: 1px solid var(--rule-strong);
+    padding: 1.1rem 1.3rem 1.3rem;
+    margin: 1.6rem 0;
+  }
+  .market-box h3 {
+    font-size: 0.85rem;
+    letter-spacing: 0.35em;
+    margin: 0 0 0.8rem;
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .market-box h3 small {
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-weight: 400;
+    margin-left: 1em;
+  }
+  .market-scroll { overflow-x: auto; }
+  table.quotes {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 640px;
+    font-size: 0.83rem;
+    font-variant-numeric: tabular-nums;
+  }
+  table.quotes th {
+    text-align: left;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    border-bottom: 2px solid var(--rule-strong);
+    padding: 0.35em 0.8em;
+    white-space: nowrap;
+  }
+  table.quotes td {
+    border-bottom: 1px solid var(--rule);
+    padding: 0.5em 0.8em;
+    white-space: nowrap;
+  }
+  table.quotes td.num { text-align: right; }
+  table.quotes .up { color: var(--seal); font-weight: 600; }
+  table.quotes .note-cell { white-space: normal; min-width: 12em; color: var(--muted); font-size: 0.92em; }
+
+  /* ── 中面記事グリッド ───────────────────── */
+  .stories {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    gap: 0 2.2rem;
+    padding-top: 0.4rem;
+  }
+  .story {
+    padding: 1.3rem 0 1.1rem;
+    border-bottom: 1px solid var(--rule);
+    font-size: 0.93rem;
+    text-align: justify;
+  }
+  .story p { margin: 0 0 0.9em; text-indent: 1em; }
+  .story .kicker {
+    font-size: 0.7rem;
+    letter-spacing: 0.25em;
+    color: var(--muted);
+    display: block;
+    margin-bottom: 0.3rem;
+  }
+  .pull {
+    background: var(--highlight);
+    border-left: 3px solid var(--seal);
+    padding: 0.6em 0.9em;
+    margin: 0.4em 0 1em;
+    font-size: 0.88rem;
+    line-height: 1.75;
+  }
+  .pull strong { color: var(--seal); }
+
+  /* ── 社説 ───────────────────── */
+  .editorial {
+    margin-top: 0.4rem;
+    padding: 1.4rem 1.5rem;
+    border: 1px solid var(--rule-strong);
+    background: var(--paper-deep);
+  }
+  .editorial h2 {
+    font-size: 1.1rem;
+    letter-spacing: 0.2em;
+    margin: 0 0 0.7rem;
+    font-weight: 700;
+  }
+  .editorial h2::before {
+    content: "社説";
+    background: var(--rule-strong);
+    color: var(--paper);
+    font-size: 0.7rem;
+    letter-spacing: 0.3em;
+    padding: 0.2em 0.6em 0.2em 0.9em;
+    margin-right: 0.9em;
+    vertical-align: 0.2em;
+  }
+  .editorial p { margin: 0 0 0.9em; text-indent: 1em; font-size: 0.93rem; text-align: justify; }
+  .editorial p:last-child { margin-bottom: 0; }
+
+  /* ── 出典欄 ───────────────────── */
+  .sources {
+    margin-top: 1.6rem;
+    border-top: 3px double var(--rule-strong);
+    padding-top: 0.9rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+    line-height: 2;
+  }
+  .sources h4 {
+    margin: 0 0 0.3rem;
+    font-size: 0.75rem;
+    letter-spacing: 0.3em;
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+  .sources ul { margin: 0; padding-left: 1.2em; }
+  .sources a { color: var(--ink-soft); text-decoration-color: var(--rule); }
+  .sources a:hover, .sources a:focus-visible { color: var(--seal); }
+  a:focus-visible { outline: 2px solid var(--seal); outline-offset: 2px; }
+  .colophon {
+    margin-top: 1rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  @media (max-width: 860px) {
+    .lead-body { column-count: 2; }
+  }
+  @media (max-width: 620px) {
+    .masthead { flex-direction: column-reverse; }
+    .daiji {
+      writing-mode: horizontal-tb;
+      font-size: 1.6rem;
+      padding: 0.4em 0.6em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1em;
+    }
+    .daiji .seal { margin-top: 0; }
+    .lead-body { column-count: 1; }
+  }
+</style>
+
+<div class="sheet">
+
+  <!-- 紙面ヘッダ -->
+  <header class="masthead">
+    <div class="daiji" lang="ja">宝飾経済新聞<span class="seal gothic">GEM&nbsp;KEIZAI</span></div>
+    <div class="masthead-info">
+      <p class="catch">宝石・宝飾品業界の市場動向を伝える経済専門紙 ── 特集「宝石業界のこれから」</p>
+      <div class="index-strip gothic">
+        <span>一面 ラボグロウン主流化</span>
+        <span>市況 世界・国内市場データ</span>
+        <span>産業 素材シフトと国際競争</span>
+        <span>社説 五つの潮流を読む</span>
+      </div>
+      <div class="edition-line gothic">
+        <span><strong>2026年（令和8年）7月8日　水曜日</strong></span>
+        <span>朝刊　第1号</span>
+        <span>特別編集版</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- 一面トップ -->
+  <section class="lead-story">
+    <span class="eyebrow gothic">一面トップ</span>
+    <h1 class="lead-hl">ラボグロウンダイヤ、米婚約指輪の6割に</h1>
+    <p class="lead-sub">ブライダル市場で多数派に転換　「安売り競争」終え定着期へ　世界市場は34年に919億ドル予測</p>
+    <div class="lead-body">
+      <p>人工的に生成されるラボグロウンダイヤモンドが、宝飾品市場の構造を塗り替えつつある。米調査（ザ・ノット2026年実態調査）によると、米国で婚約指輪にラボグロウンを選ぶカップルは61％に達し、ブライダル市場で初めて多数派となった。天然石の「代替品」という位置づけは過去のものとなり、消費の主役の一角に定着した格好だ。</p>
+      <p>市場規模の拡大も続く。世界のラボグロウンダイヤモンド市場は2025年の約295億ドルから、2034年には約919億ドルへと年平均13.42％で成長する見通し。地域別ではアジア太平洋が2025年時点でシェア34.54％を占め最大となっている。</p>
+      <p>一方、数年にわたり続いた価格の急落には歯止めがかかった。1カラットD〜Eカラー・VVSクラスなど高品位の丸型石は2025年後半までに事実上の価格下限に到達し、二桁台の年間下落は終息したとみられる。高品位のIGI鑑定品は生産コストの下限に近づいており、2026年以降の大幅な追加下落は起きにくい情勢だ。</p>
+      <p>小売価格は1カラットのラボグロウンが平均725ドル前後、直販では305ドルからの水準。同スペックの天然石（約4,600ドル）との価格差は5〜15倍で構造的に固定化しつつあり、「希少資産としての天然」と「日常使いのラボグロウン」というすみ分けが鮮明になっている。</p>
+    </div>
+  </section>
+
+  <!-- 市況表 -->
+  <section class="market-box gothic" aria-label="市況データ">
+    <h3>市況<small>宝飾品・ダイヤモンド主要指標（各種調査より本紙まとめ）</small></h3>
+    <div class="market-scroll">
+      <table class="quotes">
+        <thead>
+          <tr><th>指標</th><th>直近</th><th>予測</th><th>伸び</th><th>備考</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>世界ジュエリー市場</td>
+            <td class="num">2,428億ドル（25年）</td>
+            <td class="num">3,874億ドル（34年）</td>
+            <td class="num up">年5.41％</td>
+            <td class="note-cell">アジア太平洋がシェア39.23％で最大</td>
+          </tr>
+          <tr>
+            <td>ラボグロウン市場</td>
+            <td class="num">295億ドル（25年）</td>
+            <td class="num">919億ドル（34年）</td>
+            <td class="num up">年13.42％</td>
+            <td class="note-cell">米婚約指輪の61％が選択</td>
+          </tr>
+          <tr>
+            <td>国内宝飾品小売市場</td>
+            <td class="num">1兆1,741億円（25年）</td>
+            <td class="num">1兆2,223億円（26年）</td>
+            <td class="num up">前年比103.8％</td>
+            <td class="note-cell">単価上昇が主因、数量増ではない</td>
+          </tr>
+          <tr>
+            <td>天然ダイヤ 1ct D/VVS2</td>
+            <td class="num">約4,600ドル</td>
+            <td class="num">安定推移</td>
+            <td class="num">横ばい18カ月</td>
+            <td class="note-cell">減産で中・大粒は下支え</td>
+          </tr>
+          <tr>
+            <td>ラボグロウン 1ct D/VVS2</td>
+            <td class="num">305〜725ドル</td>
+            <td class="num">下限到達</td>
+            <td class="num">下落一巡</td>
+            <td class="note-cell">天然との価格差5〜15倍で固定化</td>
+          </tr>
+          <tr>
+            <td>天然小粒石（0.5ct未満）</td>
+            <td class="num">─</td>
+            <td class="num">軟調継続</td>
+            <td class="num up">▲26％（25年）</td>
+            <td class="note-cell">ファッション向けでラボグロウンに置換</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 中面記事 -->
+  <section class="stories">
+    <article class="story">
+      <span class="kicker gothic">マーケット</span>
+      <h2 class="story-hl">天然ダイヤ、鮮明になる二極化<br>小粒26％安・大粒は堅調</h2>
+      <p>天然ダイヤモンド市場では規格による明暗が際立っている。0.5カラット未満の小粒石はファッションジュエリーやテニスブレスレット向け需要をラボグロウンに奪われ、2025年に26％下落した。</p>
+      <p>対照的に7〜15カラットの大粒石やビビッドカラーのファンシーカラーダイヤは旺盛な需要を保ったまま25年を終えた。採掘大手の減産により原石供給は絞られており、中粒以上の天然石価格は今後も下支えされる公算が大きい。</p>
+      <div class="pull"><strong>要点</strong>　「量」の市場はラボグロウンへ、「希少性」の市場は天然へ。天然石は宝飾品というより希少資産の色彩を強める。</div>
+    </article>
+
+    <article class="story">
+      <span class="kicker gothic">国内</span>
+      <h2 class="story-hl">国内小売1兆2,223億円へ<br>成長の中身は「単価上昇」</h2>
+      <p>矢野経済研究所の調査によると、2025年の国内宝飾品小売市場は前年比103.8％の1兆1,741億円と伸長し、26年には1兆2,223億円規模への拡大が見込まれる。</p>
+      <p>ただし成長の主因は金・プラチナ価格の高騰に伴う販売単価の引き上げであり、販売数量の増加ではない。消費者の買い控えと高付加価値品への集中が同時に進む「く」の字型の需要構造には注意が必要だ。</p>
+      <p>インバウンド需要も「買い物」から「体験」へ移行しており、かつての爆買いに頼った販売計画は立てにくくなっている。</p>
+    </article>
+
+    <article class="story">
+      <span class="kicker gothic">産業</span>
+      <h2 class="story-hl">18金から10金・銀へ<br>地金高が迫る素材シフト</h2>
+      <p>金価格の高騰を受け、国内宝飾品メーカーの間では従来18金で製造していた指輪やネックレスを12金、10金、さらにはシルバーへ切り替える動きが広がっている。価格帯を維持しながら利幅を確保する苦肉の策だが、ブランド価値との両立が課題となる。</p>
+      <p>製造面では中国、韓国、タイ、ベトナムの技術水準が向上し、国際競争は一段と激化。国内産地は企画力とクラフトマンシップでの差別化を迫られている。</p>
+    </article>
+
+    <article class="story">
+      <span class="kicker gothic">消費・流通</span>
+      <h2 class="story-hl">「どこから来た石か」が売れ筋を決める<br>サステナブルとDXが次の主戦場</h2>
+      <p>産地証明やエシカル調達、リサイクル貴金属への関心が高まり、トレーサビリティー（履歴管理）が購買の判断材料になりつつある。石の来歴を語れることが、ブランドの信頼そのものになる時代だ。</p>
+      <p>販売チャネルではオンライン販売とデジタル接客（DX）の存在感が増す。高額品ゆえ対面接客の価値は残るものの、来店前の情報収集と比較はほぼオンラインへ移った。実店舗は「買う場所」から「確かめ、体験する場所」への転換が進む。</p>
+    </article>
+  </section>
+
+  <!-- 社説 -->
+  <section class="editorial">
+    <h2>五つの潮流を読み違えるな</h2>
+    <p>宝石業界はいま、「市場全体は緩やかに伸びるが、中身は大きく入れ替わる」局面にある。本紙は当面の軸を五つ挙げたい。第一にラボグロウンの主流化。第二に天然石の高級・希少品への集中。第三に地金高を背景とした素材の見直し。第四にサステナビリティーと透明性への対応。第五にデジタル化と体験型消費への転換である。</p>
+    <p>数字の上では市場拡大が続く。しかしその内実は単価上昇に支えられたものであり、従来と同じ商品を同じ売り方で扱う事業者に成長の果実は回らない。「何を、誰に、どんな物語とともに売るのか」を再定義できるかどうかが、次の十年の分水嶺となろう。</p>
+  </section>
+
+  <!-- 出典 -->
+  <footer class="sources gothic">
+    <h4>出典・参考資料</h4>
+    <ul>
+      <li><a href="https://www.yano.co.jp/press-release/show/press_id/4051">矢野経済研究所「宝飾品（ジュエリー）市場に関する調査（2026年速報）」</a></li>
+      <li><a href="https://aijewel.co.jp/column/vol0013">アイ・ジュエル・プランニング「ジュエリー業界に将来性はある？2026年の市場動向」</a></li>
+      <li><a href="https://www.tdb.co.jp/report/industry/jqltyu1rs0r/">帝国データバンク「宝飾品業界の動向と展望」</a></li>
+      <li><a href="https://www.fortunebusinessinsights.com/jewelry-market-102107">Fortune Business Insights "Jewelry Market Size, Share, Growth &amp; Trends, 2026–2034"</a></li>
+      <li><a href="https://www.fortunebusinessinsights.com/lab-grown-diamond-market-110569">Fortune Business Insights "Lab Grown Diamond Market"</a></li>
+      <li><a href="https://caratx.com/blog-post/diamond-market-outlook-2026-recovery-supply-shifts-and-the-rise-of-lab-grown-alternatives">CaratX "Diamond Market Outlook 2026"</a></li>
+      <li><a href="https://www.madisondia.com/en/blogs/news/diamond-prices-2026-natural-vs-lab-grown-madisondia">MadisonDia "2026 Price Guide — Natural vs Lab-Grown"</a></li>
+    </ul>
+    <div class="colophon">
+      <span>宝飾経済新聞　特別編集版</span>
+      <span>本紙は公開調査資料をもとに編集した資料であり、投資判断の根拠となるものではありません。</span>
+    </div>
+  </footer>
+
+</div>
