@@ -156,6 +156,7 @@
     letter-spacing: 0.04em;
   }
   .chip-gold { background: var(--gold-soft); color: var(--gold); }
+  .chip-plain { background: var(--surface-2); color: var(--ink-2); }
   .chip-green { background: var(--accent-soft); color: var(--accent); }
   .chip-warn { background: var(--warn-bg); color: var(--warn); }
   .chip-danger { background: var(--danger-bg); color: var(--danger); }
@@ -424,6 +425,32 @@
   .rx-detail { padding: 1rem 1.2rem 1.2rem; border-left: 3px solid var(--accent); }
   .rx-detail .data tbody tr:hover { background: transparent; }
   .rx-total td { font-weight: 700; border-top: 2px solid var(--line); border-bottom: 0; }
+
+  .req {
+    display: inline-block;
+    background: var(--danger-bg); color: var(--danger);
+    border-radius: 4px;
+    font-size: 0.9em; font-weight: 700;
+    padding: 0 0.5em;
+    margin-left: 0.4em;
+    letter-spacing: 0.05em;
+  }
+  .tenkey .exec:disabled { opacity: 0.55; cursor: default; }
+  .toast {
+    position: fixed; left: 50%; bottom: 24px;
+    transform: translate(-50%, 16px);
+    background: var(--ink); color: var(--bg);
+    padding: 0.75em 1.3em;
+    border-radius: 8px;
+    font-size: 0.88em; line-height: 1.6;
+    max-width: min(640px, 92vw);
+    box-shadow: var(--shadow);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    z-index: 99;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
   @media (prefers-reduced-motion: reduce) { .rx-row .rx-arrow { transition: none; } }
 
   /* ── 帳票・設定 ── */
@@ -551,20 +578,21 @@
       <div class="pos-grid">
         <div class="card">
           <div class="search-row">
-            <div class="field"><label>顧客(カナ・TEL・会員証)</label><input placeholder="スキャンまたは入力して検索"></div>
-            <div class="field"><label>担当者</label><select><option>121 田中 一樹</option><option>019 三輪 祐加</option><option>010 簗瀬 智宏</option></select></div>
-            <button class="btn">顧客を指定しない</button>
+            <div class="field" style="flex:1.4"><label>顧客(カナ・TEL・会員証)<span class="req">必須</span></label><input value="大岡 さゆり(000482)"></div>
+            <div class="field"><label>担当者<span class="req">必須</span></label><select><option>121 田中 一樹</option><option>019 三輪 祐加</option><option>010 簗瀬 智宏</option></select></div>
           </div>
           <div class="table-scroll">
             <table class="data">
-              <thead><tr><th>商品番号</th><th>商品名</th><th>商品情報</th><th class="r">定価</th><th class="r">買上金額</th><th class="r">割引率</th><th></th></tr></thead>
+              <thead><tr><th>区分</th><th>商品番号</th><th>商品名</th><th>商品情報</th><th class="r">定価</th><th class="r">買上金額</th><th class="r">割引率</th><th></th></tr></thead>
               <tbody>
-                <tr><td class="num">*01</td><td>電池交換</td><td>—</td><td class="r num">1,320</td><td class="r num">1,320</td><td class="r num">—</td><td><button class="link-btn">行削除</button></td></tr>
-                <tr><td class="num">14842</td><td>Pt900 ダイヤリング 0.35ct</td><td>E / VS2 / 3EX 鑑定書付</td><td class="r num">572,000</td><td class="r num">560,000</td><td class="r num">2.1%</td><td><button class="link-btn">行削除</button></td></tr>
-                <tr><td colspan="7" style="color:var(--muted)">+ 商品番号スキャンまたは<button class="link-btn">手入力で追加</button></td></tr>
+                <tr><td><span class="chip chip-plain">番号なし</span></td><td class="num">—</td><td>電池交換</td><td>—</td><td class="r num">1,320</td><td class="r num">1,320</td><td class="r num">—</td><td><button class="link-btn">行削除</button></td></tr>
+                <tr><td><span class="chip chip-green">在庫品</span></td><td class="num">14842</td><td>Pt900 ダイヤリング 0.35ct</td><td>E / VS2 / 3EX 鑑定書付</td><td class="r num">572,000</td><td class="r num">560,000</td><td class="r num">2.1%</td><td><button class="link-btn">行削除</button></td></tr>
+                <tr><td><span class="chip chip-plain">番号なし</span></td><td class="num">—</td><td>メガネレンズ</td><td><span class="chip chip-warn">種類未定 — 後日入力</span></td><td class="r num">—</td><td class="r num">未定</td><td class="r num">—</td><td><button class="link-btn">行削除</button></td></tr>
+                <tr><td colspan="8" style="color:var(--muted)">+ <button class="link-btn">商品番号で追加(在庫品)</button> / <button class="link-btn">番号なしで追加(レンズ・修理・電池など)</button></td></tr>
               </tbody>
             </table>
           </div>
+          <p style="margin:0.6rem 0 0;font-size:0.78em;color:var(--muted)">会計確定と同時に、全明細を顧客の購入履歴へ自動記録し、在庫品は在庫から引き落とします。「種類未定」の明細は仮登録され、後日顧客の購入履歴から仕様・金額を入力できます。</p>
           <div class="search-row" style="margin-top:1rem">
             <div class="field"><label>購入動機</label><select><option>選択…</option><option>記念日</option><option>自分用</option><option>贈答</option><option>修理・メンテ</option></select></div>
             <div class="field"><label>購入場所</label><select><option>店頭</option><option>外商</option><option>催事</option></select></div>
@@ -592,7 +620,7 @@
             <button onclick="key(4)">4</button><button onclick="key(5)">5</button><button onclick="key(6)">6</button>
             <button onclick="key(1)">1</button><button onclick="key(2)">2</button><button onclick="key(3)">3</button>
             <button onclick="key(0)">0</button><button onclick="key('00')">00</button><button onclick="keyClear()">C</button>
-            <button class="wide">取消</button><button class="exec">会計を確定</button>
+            <button class="wide">取消</button><button class="exec" id="btn-checkout" onclick="doCheckout(this)">会計を確定</button>
           </div>
         </div>
       </div>
@@ -756,9 +784,17 @@
                         </tbody>
                       </table>
                     </div>
+                    <div class="table-scroll" style="margin-top:0.9rem">
+                      <table class="data">
+                        <thead><tr><th>区分</th><th>品名</th><th>仕様</th><th class="r">価格</th></tr></thead>
+                        <tbody>
+                          <tr><td>レンズ</td><td>ニコン 1.60非球面</td><td>UVカット・撥水コート</td><td class="r num">¥39,600</td></tr>
+                          <tr><td>フレーム</td><td>シャルマン ラインアート XL1483</td><td>ワインレッド</td><td class="r num">¥47,300</td></tr>
+                          <tr class="rx-total"><td>合計</td><td colspan="2"></td><td class="r num">¥86,900</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
                     <div class="kv" style="margin-top:0.9rem">
-                      <div class="field"><label>レンズ詳細</label><input value="ニコン 1.60非球面 / UVカット・撥水コート / ¥39,600" readonly></div>
-                      <div class="field"><label>フレーム詳細</label><input value="シャルマン ラインアート XL1483 / ワインレッド / ¥47,300" readonly></div>
                       <div class="field"><label>処方箋番号 / 処方</label><input class="num" value="RX-2509-0142 / 眼科処方箋あり" readonly></div>
                       <div class="field"><label>対応者 / 備考</label><input value="簗瀬 智宏 / 前回よりADD +0.25" readonly></div>
                     </div>
@@ -780,9 +816,17 @@
                         </tbody>
                       </table>
                     </div>
+                    <div class="table-scroll" style="margin-top:0.9rem">
+                      <table class="data">
+                        <thead><tr><th>区分</th><th>品名</th><th>仕様</th><th class="r">価格</th></tr></thead>
+                        <tbody>
+                          <tr><td>レンズ</td><td>HOYA 1.55 室内用累進</td><td>ブルーカット</td><td class="r num">¥28,600</td></tr>
+                          <tr><td>フレーム</td><td>ラインアート XL1061</td><td>ブラウン</td><td class="r num">¥24,200</td></tr>
+                          <tr class="rx-total"><td>合計</td><td colspan="2"></td><td class="r num">¥52,800</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
                     <div class="kv" style="margin-top:0.9rem">
-                      <div class="field"><label>レンズ詳細</label><input value="HOYA 1.55 室内用累進 / ブルーカット / ¥28,600" readonly></div>
-                      <div class="field"><label>フレーム詳細</label><input value="ラインアート XL1061 / ブラウン / ¥24,200" readonly></div>
                       <div class="field"><label>処方箋番号 / 処方</label><input class="num" value="RX-2304-0088 / 店内測定" readonly></div>
                       <div class="field"><label>対応者 / 備考</label><input value="簗瀬 智宏 / パソコン作業用に" readonly></div>
                     </div>
@@ -804,9 +848,17 @@
                         </tbody>
                       </table>
                     </div>
+                    <div class="table-scroll" style="margin-top:0.9rem">
+                      <table class="data">
+                        <thead><tr><th>区分</th><th>品名</th><th>仕様</th><th class="r">価格</th></tr></thead>
+                        <tbody>
+                          <tr><td>レンズ</td><td>セイコー 1.67非球面</td><td>UVカット</td><td class="r num">¥33,000</td></tr>
+                          <tr><td>フレーム</td><td>チタンフレーム TX-204</td><td>シルバー</td><td class="r num">¥35,200</td></tr>
+                          <tr class="rx-total"><td>合計</td><td colspan="2"></td><td class="r num">¥68,200</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
                     <div class="kv" style="margin-top:0.9rem">
-                      <div class="field"><label>レンズ詳細</label><input value="セイコー 1.67非球面 / UVカット / ¥33,000" readonly></div>
-                      <div class="field"><label>フレーム詳細</label><input value="チタンフレーム TX-204 / シルバー / ¥35,200" readonly></div>
                       <div class="field"><label>処方箋番号 / 処方</label><input class="num" value="RX-2106-0031 / 店内測定" readonly></div>
                       <div class="field"><label>対応者 / 備考</label><input value="簗瀬 智宏 / 運転用" readonly></div>
                     </div>
@@ -840,7 +892,7 @@
             <table class="data">
               <thead><tr><th>商品番号</th><th>商品名</th><th>中石</th><th>グレード</th><th class="r">定価</th><th class="r">在庫</th><th>保管場所</th><th>状態</th></tr></thead>
               <tbody>
-                <tr><td class="num">14842</td><td>Pt900 ダイヤリング</td><td class="num">0.35ct</td><td>E / VS2 / 3EX</td><td class="r num">¥572,000</td><td class="r num">1</td><td>金庫</td><td><span class="chip chip-green">展示中</span></td></tr>
+                <tr id="stock-14842"><td class="num">14842</td><td>Pt900 ダイヤリング</td><td class="num">0.35ct</td><td>E / VS2 / 3EX</td><td class="r num">¥572,000</td><td class="r num">1</td><td>金庫</td><td><span class="chip chip-green">展示中</span></td></tr>
                 <tr><td class="num">22139</td><td>エメラルドペンダント</td><td class="num">0.82ct</td><td>鑑別書付</td><td class="r num">¥286,000</td><td class="r num">1</td><td>ショーケースA</td><td><span class="chip chip-green">展示中</span></td></tr>
                 <tr><td class="num">22384</td><td>あこや真珠ネックレス</td><td class="num">7.5–8.0mm</td><td>—</td><td class="r num">¥165,000</td><td class="r num">2</td><td>ショーケースA</td><td><span class="chip chip-green">展示中</span></td></tr>
                 <tr><td class="num">21089</td><td>K18 ブレスレット</td><td>—</td><td>—</td><td class="r num">¥176,000</td><td class="r num">0</td><td>—</td><td><span class="chip chip-warn">⚠ 在庫切れ</span></td></tr>
@@ -1090,6 +1142,45 @@
   function toggleDoneList() {
     document.getElementById("done-wrap").classList.toggle("show");
     updateCareCounts();
+  }
+
+  /* トースト通知 */
+  var toastTimer = null;
+  function showToast(msg) {
+    var t = document.getElementById("toast");
+    if (!t) {
+      t = document.createElement("div");
+      t.id = "toast";
+      t.className = "toast";
+      t.setAttribute("role", "status");
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.classList.remove("show"); }, 5200);
+  }
+
+  /* 会計確定: 購入履歴への自動記録+在庫引き落としのデモ */
+  var checkedOut = false;
+  function doCheckout(btn) {
+    if (checkedOut) return;
+    checkedOut = true;
+    var tb = document.querySelector("#c-history table tbody");
+    if (tb) {
+      tb.insertAdjacentHTML("afterbegin",
+        '<tr><td class="num">2026/07/09</td><td>Pt900 ダイヤリング 0.35ct</td><td>E / VS2 / 3EX 鑑定書付</td><td class="r num">¥560,000</td><td>現金</td><td>本店</td><td>田中</td></tr>' +
+        '<tr><td class="num">2026/07/09</td><td>メガネレンズ <span class="chip chip-warn">種類未定 — 後日入力</span></td><td>仮登録</td><td class="r num">未定</td><td>現金</td><td>本店</td><td>田中</td></tr>' +
+        '<tr><td class="num">2026/07/09</td><td>電池交換</td><td>—</td><td class="r num">¥1,320</td><td>現金</td><td>本店</td><td>田中</td></tr>');
+    }
+    var stock = document.getElementById("stock-14842");
+    if (stock) {
+      stock.cells[5].textContent = "0";
+      stock.cells[7].innerHTML = '<span class="chip chip-warn">売却済(7/9)</span>';
+    }
+    btn.textContent = "登録済み";
+    btn.disabled = true;
+    showToast("売上3点を登録しました。大岡 さゆり様の購入履歴に反映し、商品14842を在庫から引き落としました。メガネレンズは種類未定のまま仮登録されています(購入履歴から後日入力できます)。");
   }
 
   /* オフライン縮退運転のデモ */
