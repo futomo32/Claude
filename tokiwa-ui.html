@@ -1,0 +1,936 @@
+<title>トキワ — 宝飾店総合管理システム(画面モック)</title>
+<style>
+  :root {
+    --bg: #F1F3EC;
+    --surface: #FFFFFF;
+    --surface-2: #E8EBE0;
+    --ink: #202520;
+    --ink-2: #454C43;
+    --muted: #6D7568;
+    --line: #D7DBCC;
+    --accent: #1E6B4F;
+    --accent-deep: #14503A;
+    --accent-ink: #FFFFFF;
+    --accent-soft: #E1EDE5;
+    --gold: #8A7031;
+    --gold-soft: #F2EAD5;
+    --warn: #8F5A14;
+    --warn-bg: #F6ECD7;
+    --danger: #A33A31;
+    --danger-bg: #F5E2DF;
+    --ok: #2E8B62;
+    --shadow: 0 1px 3px rgba(32, 42, 35, 0.08), 0 4px 16px rgba(32, 42, 35, 0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141815;
+      --surface: #1C221D;
+      --surface-2: #242B25;
+      --ink: #E6E9E1;
+      --ink-2: #C2C8BC;
+      --muted: #8E978B;
+      --line: #333B33;
+      --accent: #4FAE87;
+      --accent-deep: #63C29A;
+      --accent-ink: #0E1511;
+      --accent-soft: #21332A;
+      --gold: #C9A45C;
+      --gold-soft: #33301F;
+      --warn: #D9A254;
+      --warn-bg: #322817;
+      --danger: #E07B70;
+      --danger-bg: #392019;
+      --ok: #4FAE87;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #F1F3EC; --surface: #FFFFFF; --surface-2: #E8EBE0;
+    --ink: #202520; --ink-2: #454C43; --muted: #6D7568; --line: #D7DBCC;
+    --accent: #1E6B4F; --accent-deep: #14503A; --accent-ink: #FFFFFF; --accent-soft: #E1EDE5;
+    --gold: #8A7031; --gold-soft: #F2EAD5;
+    --warn: #8F5A14; --warn-bg: #F6ECD7;
+    --danger: #A33A31; --danger-bg: #F5E2DF; --ok: #2E8B62;
+    --shadow: 0 1px 3px rgba(32,42,35,0.08), 0 4px 16px rgba(32,42,35,0.06);
+  }
+  :root[data-theme="dark"] {
+    --bg: #141815; --surface: #1C221D; --surface-2: #242B25;
+    --ink: #E6E9E1; --ink-2: #C2C8BC; --muted: #8E978B; --line: #333B33;
+    --accent: #4FAE87; --accent-deep: #63C29A; --accent-ink: #0E1511; --accent-soft: #21332A;
+    --gold: #C9A45C; --gold-soft: #33301F;
+    --warn: #D9A254; --warn-bg: #322817;
+    --danger: #E07B70; --danger-bg: #392019; --ok: #4FAE87;
+    --shadow: 0 1px 3px rgba(0,0,0,0.4);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
+    font-size: 14px;
+    line-height: 1.65;
+  }
+  button { font: inherit; cursor: pointer; }
+  input, select, textarea { font: inherit; color: var(--ink); }
+  .serif { font-family: "Hiragino Mincho ProN", "Yu Mincho", serif; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ── 共通部品 ── */
+  .btn {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink-2);
+    border-radius: 6px;
+    padding: 0.45em 1.1em;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 600;
+  }
+  .btn-primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); color: var(--accent-ink); }
+  .btn-lg { padding: 0.7em 1.6em; font-size: 1.05em; }
+  .btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, .nav-item:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .field { display: flex; flex-direction: column; gap: 0.25em; }
+  .field > label {
+    font-size: 0.78em;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    font-weight: 600;
+  }
+  .field input, .field select, .field textarea {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.45em 0.7em;
+    background: var(--surface);
+    min-width: 0;
+  }
+  .field input:hover, .field select:hover { border-color: var(--muted); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 1.1rem 1.3rem;
+  }
+  .card h3 {
+    margin: 0 0 0.7rem;
+    font-size: 0.85rem;
+    letter-spacing: 0.12em;
+    color: var(--ink-2);
+  }
+
+  table.data { border-collapse: collapse; width: 100%; font-size: 0.92em; }
+  table.data th {
+    text-align: left;
+    font-size: 0.82em;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    font-weight: 600;
+    border-bottom: 2px solid var(--line);
+    padding: 0.4em 0.7em;
+    white-space: nowrap;
+  }
+  table.data td { border-bottom: 1px solid var(--line); padding: 0.55em 0.7em; }
+  table.data td.r, table.data th.r { text-align: right; }
+  table.data tbody tr:hover { background: var(--accent-soft); }
+  .table-scroll { overflow-x: auto; }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    border-radius: 999px;
+    padding: 0.1em 0.75em;
+    font-size: 0.8em;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .chip-gold { background: var(--gold-soft); color: var(--gold); }
+  .chip-green { background: var(--accent-soft); color: var(--accent); }
+  .chip-warn { background: var(--warn-bg); color: var(--warn); }
+  .chip-danger { background: var(--danger-bg); color: var(--danger); }
+
+  /* ── ログイン ── */
+  #login-view {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+  }
+  .login-card {
+    width: min(400px, 100%);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 2.4rem 2.2rem 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .brand { text-align: center; margin-bottom: 0.6rem; }
+  .brand .mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px; height: 54px;
+    border-radius: 12px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-size: 1.7rem;
+    font-weight: 700;
+    margin-bottom: 0.6rem;
+  }
+  .brand h1 { margin: 0; font-size: 1.7rem; letter-spacing: 0.35em; text-indent: 0.35em; }
+  .brand p { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.8rem; letter-spacing: 0.1em; }
+  .login-note { font-size: 0.75rem; color: var(--muted); text-align: center; margin: 0; }
+  .remember { display: flex; align-items: center; gap: 0.5em; font-size: 0.85em; color: var(--ink-2); }
+
+  /* ── アプリ枠 ── */
+  #app { display: none; min-height: 100vh; }
+  #app.active { display: grid; grid-template-columns: 218px 1fr; }
+
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    padding: 1.1rem 0.8rem;
+    gap: 0.2rem;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+  }
+  .side-brand {
+    display: flex; align-items: center; gap: 0.6em;
+    padding: 0.2rem 0.6rem 1rem;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 0.8rem;
+  }
+  .side-brand .mark {
+    width: 34px; height: 34px; border-radius: 8px;
+    background: var(--accent); color: var(--accent-ink);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 1.05rem;
+  }
+  .side-brand strong { letter-spacing: 0.25em; font-size: 1.05rem; }
+  .side-brand small { display: block; color: var(--muted); font-size: 0.66rem; letter-spacing: 0.1em; }
+
+  .nav-item {
+    display: flex; align-items: center; gap: 0.7em;
+    width: 100%;
+    border: 0; background: none;
+    color: var(--ink-2);
+    padding: 0.6em 0.8em;
+    border-radius: 8px;
+    text-align: left;
+    font-size: 0.95rem;
+  }
+  .nav-item .ic { width: 1.3em; text-align: center; opacity: 0.85; }
+  .nav-item:hover { background: var(--surface-2); }
+  .nav-item.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .side-foot { margin-top: auto; border-top: 1px solid var(--line); padding-top: 0.8rem; font-size: 0.82rem; }
+  .side-user { display: flex; align-items: center; gap: 0.6em; padding: 0.3em 0.6em 0.8em; color: var(--ink-2); }
+  .side-user .avatar {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--surface-2); color: var(--ink-2);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 0.8rem;
+  }
+
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .topbar {
+    display: flex; align-items: center; gap: 1rem;
+    padding: 0.8rem 1.6rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 5;
+    flex-wrap: wrap;
+  }
+  .topbar h2 { margin: 0; font-size: 1.15rem; letter-spacing: 0.1em; }
+  .topbar .spacer { flex: 1; }
+  .store-chip {
+    font-size: 0.82rem; color: var(--ink-2);
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 0.2em 0.8em; background: var(--bg);
+  }
+  .conn-pill {
+    display: inline-flex; align-items: center; gap: 0.45em;
+    font-size: 0.8rem; font-weight: 600;
+    border-radius: 999px; padding: 0.25em 0.9em;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .conn-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+  .conn-pill.offline { background: var(--warn-bg); color: var(--warn); }
+  .conn-pill.offline .dot { background: var(--warn); }
+  .link-btn { border: 0; background: none; color: var(--muted); font-size: 0.75rem; text-decoration: underline; padding: 0; white-space: nowrap; }
+
+  .offline-banner {
+    display: none;
+    background: var(--warn-bg); color: var(--warn);
+    padding: 0.5em 1.6rem;
+    font-size: 0.85rem; font-weight: 600;
+    border-bottom: 1px solid var(--line);
+  }
+  .offline-banner.show { display: block; }
+
+  .mock-note {
+    background: var(--surface-2);
+    color: var(--muted);
+    font-size: 0.78rem;
+    padding: 0.4em 1.6rem;
+    border-bottom: 1px solid var(--line);
+    letter-spacing: 0.04em;
+  }
+
+  .content { padding: 1.4rem 1.6rem 3rem; display: none; }
+  .content.active { display: block; }
+  .content > .grid { display: grid; gap: 1rem; }
+
+  /* ── ホーム ── */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; }
+  .tile {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 0.9rem 1.1rem;
+  }
+  .tile .t-label { font-size: 0.75rem; color: var(--muted); letter-spacing: 0.1em; font-weight: 600; }
+  .tile .t-value { font-size: 1.65rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.3; }
+  .tile .t-value small { font-size: 0.6em; font-weight: 600; color: var(--ink-2); margin-left: 0.15em; }
+  .tile .t-sub { font-size: 0.75rem; color: var(--muted); }
+  .home-cols { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; align-items: start; }
+  @media (max-width: 980px) { .home-cols { grid-template-columns: 1fr; } }
+  .alert-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .alert-list li {
+    display: flex; align-items: center; gap: 0.8em;
+    padding: 0.55em 0.2em;
+    border-bottom: 1px dashed var(--line);
+    font-size: 0.92em;
+  }
+  .alert-list li:last-child { border-bottom: 0; }
+  .alert-list .when { margin-left: auto; color: var(--muted); font-size: 0.85em; white-space: nowrap; }
+  .quick-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; }
+  .quick-actions .btn { padding: 0.9em 0.6em; text-align: center; font-weight: 600; }
+
+  /* ── タブ ── */
+  .tabs { display: flex; gap: 0.2rem; border-bottom: 2px solid var(--line); margin-bottom: 1rem; flex-wrap: wrap; }
+  .tab {
+    border: 0; background: none;
+    padding: 0.5em 1.1em;
+    color: var(--muted);
+    font-weight: 600;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+  }
+  .tab:hover { color: var(--ink-2); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tabpane { display: none; }
+  .tabpane.active { display: block; }
+
+  /* ── 顧客 ── */
+  .search-row { display: flex; gap: 0.7rem; flex-wrap: wrap; align-items: end; margin-bottom: 1rem; }
+  .search-row .field { flex: 1; min-width: 140px; }
+  .cust-head { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .cust-head .avatar-lg {
+    width: 52px; height: 52px; border-radius: 50%;
+    background: var(--accent-soft); color: var(--accent);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 1.15rem;
+  }
+  .cust-head h3 { margin: 0; font-size: 1.25rem; }
+  .cust-head .sub { color: var(--muted); font-size: 0.85rem; }
+  .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.8rem 1.4rem; }
+  .kv .field input, .kv .field select { background: var(--bg); }
+
+  /* ── レジ ── */
+  .pos-grid { display: grid; grid-template-columns: 1.7fr 1fr; gap: 1rem; align-items: start; }
+  @media (max-width: 1080px) { .pos-grid { grid-template-columns: 1fr; } }
+  .pos-total-row { display: flex; justify-content: space-between; align-items: baseline; padding: 0.3em 0; font-size: 0.95em; }
+  .pos-total-row.grand { font-size: 1.15em; font-weight: 700; border-top: 2px solid var(--line); margin-top: 0.4em; padding-top: 0.6em; }
+  .pos-total-row .v { font-variant-numeric: tabular-nums; }
+  .payment-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.7rem 0 1rem; }
+  .pay-chip {
+    border: 1px solid var(--line); background: var(--surface);
+    border-radius: 999px; padding: 0.35em 1em; font-weight: 600; color: var(--ink-2);
+  }
+  .pay-chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .tenkey { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 0.8rem; }
+  .tenkey button {
+    padding: 0.8em 0;
+    font-size: 1.15rem; font-weight: 700;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--surface); color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .tenkey button:hover { background: var(--surface-2); }
+  .tenkey .wide { grid-column: span 2; }
+  .tenkey .exec { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .tenkey .exec:hover { background: var(--accent-deep); }
+
+  /* ── 帳票・設定 ── */
+  .report-tiles { margin-bottom: 1rem; }
+  .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+  .settings-grid .card p { margin: 0; color: var(--muted); font-size: 0.85em; }
+  .settings-grid .card h3 { margin-bottom: 0.35rem; color: var(--ink); font-size: 0.95rem; letter-spacing: 0.05em; }
+
+  .section-title { font-size: 0.85rem; letter-spacing: 0.15em; color: var(--muted); font-weight: 700; margin: 1.6rem 0 0.6rem; }
+  .form-actions { display: flex; gap: 0.7rem; justify-content: flex-end; margin-top: 1.2rem; flex-wrap: wrap; }
+
+  @media (max-width: 760px) {
+    #app.active { grid-template-columns: 1fr; }
+    .sidebar { position: static; height: auto; flex-direction: row; overflow-x: auto; align-items: center; }
+    .side-brand { border-bottom: 0; margin-bottom: 0; padding-bottom: 0.2rem; }
+    .side-foot { display: none; }
+    .nav-item { white-space: nowrap; }
+  }
+</style>
+
+<!-- ════ ログイン ════ -->
+<div id="login-view">
+  <form class="login-card" onsubmit="return doLogin(event)">
+    <div class="brand">
+      <span class="mark serif">常</span>
+      <h1 class="serif">トキワ</h1>
+      <p>宝飾店総合管理システム</p>
+    </div>
+    <div class="field">
+      <label for="login-store">店舗ID</label>
+      <input id="login-store" value="hs140101" autocomplete="username">
+    </div>
+    <div class="field">
+      <label for="login-user">ユーザーID</label>
+      <input id="login-user" value="root2">
+    </div>
+    <div class="field">
+      <label for="login-pass">パスワード</label>
+      <input id="login-pass" type="password" placeholder="パスワードを入力">
+    </div>
+    <label class="remember"><input type="checkbox" checked> 店舗IDとユーザーIDを保存する</label>
+    <button class="btn btn-primary btn-lg" type="submit">ログイン</button>
+    <p class="login-note">画面モック版 ver 0.1 — データベース未接続</p>
+  </form>
+</div>
+
+<!-- ════ アプリ本体 ════ -->
+<div id="app">
+  <aside class="sidebar">
+    <div class="side-brand">
+      <span class="mark serif">常</span>
+      <div><strong>トキワ</strong><small>宝飾店総合管理</small></div>
+    </div>
+    <button class="nav-item active" data-screen="home"><span class="ic">◇</span>ホーム</button>
+    <button class="nav-item" data-screen="register"><span class="ic">￥</span>レジ(売上登録)</button>
+    <button class="nav-item" data-screen="customers"><span class="ic">👤</span>顧客管理</button>
+    <button class="nav-item" data-screen="products"><span class="ic">◆</span>商品・在庫</button>
+    <button class="nav-item" data-screen="reports"><span class="ic">▤</span>日報・帳票</button>
+    <button class="nav-item" data-screen="settings"><span class="ic">⚙</span>設定・マスター</button>
+    <div class="side-foot">
+      <div class="side-user"><span class="avatar">田</span><span>田中 一樹<br><small style="color:var(--muted)">本店 / 管理者</small></span></div>
+      <button class="btn" style="width:100%" onclick="doLogout()">ログアウト</button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <h2 id="screen-title">ホーム</h2>
+      <span class="store-chip">01 本店</span>
+      <span class="spacer"></span>
+      <span class="store-chip num">2026/07/09(木)</span>
+      <span class="conn-pill" id="conn-pill"><span class="dot"></span><span id="conn-label">オンライン</span></span>
+      <button class="link-btn" onclick="toggleOffline()">オフライン動作を試す</button>
+    </div>
+    <div class="offline-banner" id="offline-banner">⚠ サーバーに接続できません — 入力データは端末に一時保存し、復旧後に自動送信します(未送信 3件)</div>
+    <div class="mock-note">画面モック — 表示中の名前・数値はすべてダミーです。データベース接続・保存機能は未実装です。</div>
+
+    <!-- ── ホーム ── -->
+    <section class="content active" data-screen="home">
+      <div class="tiles">
+        <div class="tile"><div class="t-label">本日の売上(税込)</div><div class="t-value num">¥586,290</div><div class="t-sub num">9件 / 消費税 ¥52,299</div></div>
+        <div class="tile"><div class="t-label">現金</div><div class="t-value num">¥33,550<small>7件</small></div><div class="t-sub">レジ現金残と一致</div></div>
+        <div class="tile"><div class="t-label">掛売</div><div class="t-value num">¥560,000<small>1件</small></div><div class="t-sub num">掛け入金 0件</div></div>
+        <div class="tile"><div class="t-label">本日の来店予定</div><div class="t-value num">3<small>件</small></div><div class="t-sub">修理引き渡し 2件を含む</div></div>
+      </div>
+
+      <div class="home-cols" style="margin-top:1rem">
+        <div class="card">
+          <h3>今週のお声がけ</h3>
+          <ul class="alert-list">
+            <li><span class="chip chip-gold">誕生日</span>山田 花子 様(7/10)<span class="when">担当: 三輪</span></li>
+            <li><span class="chip chip-gold">誕生日</span>大岡 さゆり 様(7/12)<span class="when">担当: 三輪</span></li>
+            <li><span class="chip chip-green">結婚記念日</span>渡辺 真宏 様(7/11)<span class="when">担当: 田中</span></li>
+            <li><span class="chip chip-warn">ポイント失効間近</span>妻木 亜子 様 — 1,200pt(7月末)<span class="when">担当: 簗瀬</span></li>
+            <li><span class="chip chip-danger">修理納期</span>前田 富佐代 様 — ネックレス糸替え(7/9)<span class="when">本日</span></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>クイックアクション</h3>
+          <div class="quick-actions">
+            <button class="btn" data-goto="register">レジを開く</button>
+            <button class="btn" data-goto="customers">顧客を検索</button>
+            <button class="btn" data-goto="products">仕入を登録</button>
+            <button class="btn" data-goto="reports">日報を見る</button>
+          </div>
+          <div class="section-title">お知らせ</div>
+          <p style="margin:0;color:var(--muted);font-size:0.88em">未読のお知らせはありません。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── レジ ── -->
+    <section class="content" data-screen="register">
+      <div class="pos-grid">
+        <div class="card">
+          <div class="search-row">
+            <div class="field"><label>顧客(カナ・TEL・会員証)</label><input placeholder="スキャンまたは入力して検索"></div>
+            <div class="field"><label>担当者</label><select><option>121 田中 一樹</option><option>019 三輪 祐加</option><option>010 簗瀬 智宏</option></select></div>
+            <button class="btn">顧客を指定しない</button>
+          </div>
+          <div class="table-scroll">
+            <table class="data">
+              <thead><tr><th>商品番号</th><th>商品名</th><th>商品情報</th><th class="r">定価</th><th class="r">買上金額</th><th class="r">割引率</th><th></th></tr></thead>
+              <tbody>
+                <tr><td class="num">*01</td><td>電池交換</td><td>—</td><td class="r num">1,320</td><td class="r num">1,320</td><td class="r num">—</td><td><button class="link-btn">行削除</button></td></tr>
+                <tr><td class="num">14842</td><td>Pt900 ダイヤリング 0.35ct</td><td>E / VS2 / 3EX 鑑定書付</td><td class="r num">572,000</td><td class="r num">560,000</td><td class="r num">2.1%</td><td><button class="link-btn">行削除</button></td></tr>
+                <tr><td colspan="7" style="color:var(--muted)">+ 商品番号スキャンまたは<button class="link-btn">手入力で追加</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="search-row" style="margin-top:1rem">
+            <div class="field"><label>購入動機</label><select><option>選択…</option><option>記念日</option><option>自分用</option><option>贈答</option><option>修理・メンテ</option></select></div>
+            <div class="field"><label>購入場所</label><select><option>店頭</option><option>外商</option><option>催事</option></select></div>
+            <div class="field"><label>メモ</label><input placeholder="備考"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>お会計</h3>
+          <div class="pos-total-row"><span>買上合計</span><span class="v num">¥561,320</span></div>
+          <div class="pos-total-row"><span>使用ポイント</span><span class="v num">−1,000</span></div>
+          <div class="pos-total-row"><span>(内消費税)</span><span class="v num">¥50,938</span></div>
+          <div class="pos-total-row grand"><span>請求金額</span><span class="v num">¥560,320</span></div>
+          <div class="payment-chips">
+            <button class="pay-chip active">現金</button>
+            <button class="pay-chip">クレジット</button>
+            <button class="pay-chip">PayPay</button>
+            <button class="pay-chip">掛売</button>
+            <button class="pay-chip">分割</button>
+          </div>
+          <div class="field"><label>預り金額</label><input id="deposit" class="num" inputmode="numeric" value="0" style="text-align:right;font-size:1.2em;font-weight:700"></div>
+          <div class="pos-total-row"><span>釣銭</span><span class="v num" id="change">¥0</span></div>
+          <div class="tenkey" aria-label="テンキー">
+            <button onclick="key(7)">7</button><button onclick="key(8)">8</button><button onclick="key(9)">9</button>
+            <button onclick="key(4)">4</button><button onclick="key(5)">5</button><button onclick="key(6)">6</button>
+            <button onclick="key(1)">1</button><button onclick="key(2)">2</button><button onclick="key(3)">3</button>
+            <button onclick="key(0)">0</button><button onclick="key('00')">00</button><button onclick="keyClear()">C</button>
+            <button class="wide">取消</button><button class="exec">会計を確定</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 顧客管理 ── -->
+    <section class="content" data-screen="customers">
+      <div class="card">
+        <div class="search-row">
+          <div class="field"><label>顧客名・カナ</label><input placeholder="やまだ / ヤマダ / 山田"></div>
+          <div class="field"><label>電話番号</label><input inputmode="tel" placeholder="下4桁でも可"></div>
+          <div class="field"><label>顧客ランク</label><select><option>すべて</option><option>S</option><option>A</option><option>B</option></select></div>
+          <div class="field"><label>担当者</label><select><option>すべて</option><option>田中</option><option>三輪</option><option>簗瀬</option></select></div>
+          <button class="btn btn-primary">検索</button>
+          <button class="btn">新規顧客登録</button>
+        </div>
+        <div class="table-scroll">
+          <table class="data">
+            <thead><tr><th>顧客ID</th><th>顧客名</th><th>カナ</th><th>ランク</th><th>電話</th><th class="r">累計購入額</th><th class="r">保有pt</th><th>最終来店</th><th>担当</th></tr></thead>
+            <tbody>
+              <tr data-goto="customer-detail" style="cursor:pointer"><td class="num">000482</td><td>大岡 さゆり</td><td>オオオカ サユリ</td><td><span class="chip chip-gold">S</span></td><td class="num">090-****-1234</td><td class="r num">¥2,140,000</td><td class="r num">4,280</td><td class="num">2026/07/01</td><td>三輪</td></tr>
+              <tr data-goto="customer-detail" style="cursor:pointer"><td class="num">001201</td><td>渡辺 真宏</td><td>ワタナベ マサヒロ</td><td><span class="chip chip-green">A</span></td><td class="num">080-****-5678</td><td class="r num">¥486,000</td><td class="r num">960</td><td class="num">2026/07/01</td><td>田中</td></tr>
+              <tr data-goto="customer-detail" style="cursor:pointer"><td class="num">000957</td><td>妻木 亜子</td><td>ツマキ アコ</td><td><span class="chip chip-green">A</span></td><td class="num">090-****-9012</td><td class="r num">¥318,000</td><td class="r num">1,200</td><td class="num">2026/07/01</td><td>簗瀬</td></tr>
+              <tr data-goto="customer-detail" style="cursor:pointer"><td class="num">002044</td><td>前田 富佐代</td><td>マエダ フサヨ</td><td>B</td><td class="num">0263-**-4321</td><td class="r num">¥42,900</td><td class="r num">85</td><td class="num">2026/07/01</td><td>田中</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="color:var(--muted);font-size:0.8em;margin:0.7em 0 0">行をクリックすると顧客詳細を表示します(モックでは大岡様の詳細に遷移)。</p>
+      </div>
+    </section>
+
+    <!-- ── 顧客詳細 ── -->
+    <section class="content" data-screen="customer-detail">
+      <div class="card">
+        <div class="cust-head">
+          <span class="avatar-lg">大</span>
+          <div>
+            <h3>大岡 さゆり 様 <span class="chip chip-gold">ランクS</span></h3>
+            <div class="sub num">顧客ID 000482 / 登録 2014年3月 / 担当 三輪 祐加</div>
+          </div>
+          <span class="spacer" style="flex:1"></span>
+          <button class="btn" data-goto="customers">← 一覧へ戻る</button>
+          <button class="btn">会員証発行</button>
+          <button class="btn btn-primary">編集</button>
+        </div>
+
+        <div class="tabs" data-tabgroup="cust">
+          <button class="tab active" data-tab="c-basic">基本情報</button>
+          <button class="tab" data-tab="c-history">購入・アプローチ履歴</button>
+          <button class="tab" data-tab="c-pay">入金管理</button>
+          <button class="tab" data-tab="c-point">ポイント</button>
+          <button class="tab" data-tab="c-glasses">メガネ処方箋</button>
+        </div>
+
+        <div class="tabpane active" id="c-basic">
+          <div class="kv">
+            <div class="field"><label>顧客名</label><input value="大岡 さゆり" readonly></div>
+            <div class="field"><label>フリガナ</label><input value="オオオカ サユリ" readonly></div>
+            <div class="field"><label>性別</label><input value="女性" readonly></div>
+            <div class="field"><label>生年月日</label><input class="num" value="1968年7月12日(58才)" readonly></div>
+            <div class="field"><label>結婚記念日</label><input class="num" value="1992年11月3日" readonly></div>
+            <div class="field"><label>電話</label><input class="num" value="090-****-1234" readonly></div>
+            <div class="field"><label>Eメール / DM</label><input value="s.ooka@example.com / DM可" readonly></div>
+            <div class="field"><label>住所</label><input value="長野県松本市中央0-0-0" readonly></div>
+            <div class="field"><label>リングサイズ</label><input class="num" value="9号(左薬指)" readonly></div>
+            <div class="field"><label>ピアス穴</label><input value="あり" readonly></div>
+          </div>
+          <div class="section-title">家族情報</div>
+          <div class="table-scroll">
+            <table class="data">
+              <thead><tr><th>氏名</th><th>続柄</th><th>性別</th><th>生年月日</th></tr></thead>
+              <tbody>
+                <tr><td>大岡 健二</td><td>夫</td><td>男性</td><td class="num">1965年2月20日</td></tr>
+                <tr><td>大岡 美咲</td><td>長女</td><td>女性</td><td class="num">1996年5月8日</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="section-title">顧客メモ</div>
+          <p style="margin:0;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:0.7em 1em;font-size:0.9em">エメラルドがお好み。長女の結婚予定あり(来春)→ブライダル提案の好機。来店時はお茶は玄米茶。</p>
+        </div>
+
+        <div class="tabpane" id="c-history">
+          <div class="tiles report-tiles">
+            <div class="tile"><div class="t-label">累計購入額</div><div class="t-value num">¥2,140,000</div></div>
+            <div class="tile"><div class="t-label">購入回数</div><div class="t-value num">14<small>件</small></div></div>
+            <div class="tile"><div class="t-label">2026年度</div><div class="t-value num">¥560,000</div></div>
+          </div>
+          <div class="table-scroll">
+            <table class="data">
+              <thead><tr><th>買上日</th><th>商品名</th><th>商品情報</th><th class="r">購入金額</th><th>支払</th><th>店</th><th>担当</th></tr></thead>
+              <tbody>
+                <tr><td class="num">2026/07/01</td><td>エメラルドリング</td><td>Pt900 / 1.2ct</td><td class="r num">¥560,000</td><td>掛売</td><td>本店</td><td>三輪</td></tr>
+                <tr><td class="num">2025/11/03</td><td>K18ネックレス</td><td>45cm</td><td class="r num">¥128,000</td><td>クレジット</td><td>本店</td><td>三輪</td></tr>
+                <tr><td class="num">2025/07/12</td><td>真珠ピアス</td><td>あこや8.5mm</td><td class="r num">¥86,000</td><td>現金</td><td>本店</td><td>田中</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="section-title">アプローチ履歴</div>
+          <ul class="alert-list">
+            <li><span class="chip chip-green">来店</span>7/1 エメラルドリングお買上げ。次回は留め直し点検を案内<span class="when">三輪</span></li>
+            <li><span class="chip chip-green">DM</span>6/10 夏の宝飾展 招待状送付<span class="when">自動</span></li>
+            <li><span class="chip chip-green">TEL</span>5/22 誕生石フェアのご案内。長女様の話題<span class="when">三輪</span></li>
+          </ul>
+        </div>
+
+        <div class="tabpane" id="c-pay">
+          <div class="tiles report-tiles">
+            <div class="tile"><div class="t-label">売掛残高</div><div class="t-value num" style="color:var(--danger)">¥10,000</div><div class="t-sub num">前月までの繰越 ¥0</div></div>
+          </div>
+          <div class="table-scroll">
+            <table class="data">
+              <thead><tr><th>日付</th><th>区分</th><th>商品名・備考</th><th class="r">購入金額</th><th class="r">入金・頭金</th><th class="r">売掛残</th></tr></thead>
+              <tbody>
+                <tr><td class="num">2026/07/01</td><td>掛売</td><td>エメラルドリング</td><td class="r num">560,000</td><td class="r num">—</td><td class="r num">560,000</td></tr>
+                <tr><td class="num">2026/07/01</td><td>入金</td><td>頭金(現金)</td><td class="r num">—</td><td class="r num">550,000</td><td class="r num">10,000</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="search-row" style="margin-top:1rem">
+            <div class="field"><label>入金日</label><input type="date" value="2026-07-09"></div>
+            <div class="field"><label>入金額</label><input class="num" inputmode="numeric" placeholder="0"></div>
+            <div class="field"><label>備考</label><input></div>
+            <button class="btn btn-primary">入金を登録</button>
+          </div>
+        </div>
+
+        <div class="tabpane" id="c-point">
+          <div class="tiles report-tiles">
+            <div class="tile"><div class="t-label">ポイント残高</div><div class="t-value num">4,280<small>pt</small></div><div class="t-sub">有効期限 2027/07/01</div></div>
+          </div>
+          <div class="table-scroll">
+            <table class="data">
+              <thead><tr><th>処理日時</th><th>区分</th><th>商品名</th><th class="r">加算</th><th class="r">使用</th><th class="r">残高</th></tr></thead>
+              <tbody>
+                <tr><td class="num">2026/07/01 14:02</td><td>加算</td><td>エメラルドリング</td><td class="r num">+2,800</td><td class="r num">—</td><td class="r num">4,280</td></tr>
+                <tr><td class="num">2025/11/03 11:40</td><td>加算</td><td>K18ネックレス</td><td class="r num">+640</td><td class="r num">—</td><td class="r num">1,480</td></tr>
+                <tr><td class="num">2025/07/12 15:21</td><td>使用</td><td>真珠ピアス</td><td class="r num">—</td><td class="r num">−500</td><td class="r num">840</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tabpane" id="c-glasses">
+          <div class="table-scroll">
+            <table class="data">
+              <thead><tr><th></th><th class="r">SPH</th><th class="r">CYL</th><th class="r">AX</th><th class="r">ADD</th><th class="r">PD</th></tr></thead>
+              <tbody>
+                <tr><td>右</td><td class="r num">−2.25</td><td class="r num">−0.50</td><td class="r num">180</td><td class="r num">+1.50</td><td class="r num" rowspan="2" style="vertical-align:middle">62</td></tr>
+                <tr><td>左</td><td class="r num">−2.00</td><td class="r num">−0.75</td><td class="r num">175</td><td class="r num">+1.50</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="kv" style="margin-top:1rem">
+            <div class="field"><label>処方日 / 用途</label><input class="num" value="2025/09/14 / 遠近両用" readonly></div>
+            <div class="field"><label>レンズ</label><input value="ニコン 1.60非球面 UVカット" readonly></div>
+            <div class="field"><label>フレーム</label><input value="シャルマン ラインアート XL1483" readonly></div>
+            <div class="field"><label>対応者</label><input value="簗瀬 智宏" readonly></div>
+          </div>
+          <div class="form-actions"><button class="btn">新しい処方箋を追加</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 商品・在庫 ── -->
+    <section class="content" data-screen="products">
+      <div class="tabs" data-tabgroup="prod">
+        <button class="tab active" data-tab="p-stock">在庫一覧</button>
+        <button class="tab" data-tab="p-purchase">仕入登録</button>
+      </div>
+
+      <div class="tabpane active" id="p-stock">
+        <div class="card">
+          <div class="search-row">
+            <div class="field"><label>商品番号・品名</label><input placeholder="番号スキャン可"></div>
+            <div class="field"><label>分類</label><select><option>すべて</option><option>リング</option><option>ネックレス</option><option>ピアス</option><option>時計</option><option>メガネ</option></select></div>
+            <div class="field"><label>保管場所</label><select><option>すべて</option><option>ショーケースA</option><option>金庫</option><option>バックヤード</option></select></div>
+            <button class="btn btn-primary">絞り込み</button>
+            <button class="btn">棚卸モード</button>
+          </div>
+          <div class="table-scroll">
+            <table class="data">
+              <thead><tr><th>商品番号</th><th>商品名</th><th>中石</th><th>グレード</th><th class="r">定価</th><th class="r">在庫</th><th>保管場所</th><th>状態</th></tr></thead>
+              <tbody>
+                <tr><td class="num">14842</td><td>Pt900 ダイヤリング</td><td class="num">0.35ct</td><td>E / VS2 / 3EX</td><td class="r num">¥572,000</td><td class="r num">1</td><td>金庫</td><td><span class="chip chip-green">展示中</span></td></tr>
+                <tr><td class="num">22139</td><td>エメラルドペンダント</td><td class="num">0.82ct</td><td>鑑別書付</td><td class="r num">¥286,000</td><td class="r num">1</td><td>ショーケースA</td><td><span class="chip chip-green">展示中</span></td></tr>
+                <tr><td class="num">22384</td><td>あこや真珠ネックレス</td><td class="num">7.5–8.0mm</td><td>—</td><td class="r num">¥165,000</td><td class="r num">2</td><td>ショーケースA</td><td><span class="chip chip-green">展示中</span></td></tr>
+                <tr><td class="num">21089</td><td>K18 ブレスレット</td><td>—</td><td>—</td><td class="r num">¥176,000</td><td class="r num">0</td><td>—</td><td><span class="chip chip-warn">⚠ 在庫切れ</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabpane" id="p-purchase">
+        <div class="card">
+          <h3>仕入商品登録</h3>
+          <div class="kv">
+            <div class="field"><label>商品番号</label><input class="num" value="22385" readonly></div>
+            <div class="field"><label>仕入先</label><select><option>選択…</option><option>甲府宝飾(株)</option><option>山梨ジュエリー商会</option></select></div>
+            <div class="field"><label>伝票日付</label><input type="date" value="2026-07-09"></div>
+            <div class="field"><label>仕入担当</label><select><option>田中 一樹</option><option>三輪 祐加</option></select></div>
+            <div class="field"><label>商品名</label><input placeholder="例: Pt900 サファイアリング"></div>
+            <div class="field"><label>商品分類</label><select><option>リング</option><option>ネックレス</option><option>ピアス</option><option>時計</option><option>メガネ</option></select></div>
+          </div>
+          <div class="section-title">宝飾情報</div>
+          <div class="kv">
+            <div class="field"><label>中石重量(ct)</label><input class="num" inputmode="decimal" placeholder="0.00"></div>
+            <div class="field"><label>脇石</label><input placeholder="例: ダイヤ 0.12ct"></div>
+            <div class="field"><label>カラー</label><select><option>—</option><option>D</option><option>E</option><option>F</option><option>G</option><option>H</option></select></div>
+            <div class="field"><label>クラリティ</label><select><option>—</option><option>FL</option><option>VVS1</option><option>VVS2</option><option>VS1</option><option>VS2</option><option>SI1</option></select></div>
+            <div class="field"><label>カット</label><select><option>—</option><option>3EX</option><option>EX</option><option>VG</option><option>G</option></select></div>
+            <div class="field"><label>鑑定書No</label><input class="num"></div>
+          </div>
+          <div class="section-title">価格・保管</div>
+          <div class="kv">
+            <div class="field"><label>仕入単価</label><input class="num" inputmode="numeric" placeholder="0"></div>
+            <div class="field"><label>数量</label><input class="num" inputmode="numeric" value="1"></div>
+            <div class="field"><label>上代(定価)</label><input class="num" inputmode="numeric" placeholder="0"></div>
+            <div class="field"><label>掛率</label><input class="num" placeholder="自動計算" readonly></div>
+            <div class="field"><label>保管場所</label><select><option>金庫</option><option>ショーケースA</option><option>バックヤード</option></select></div>
+            <div class="field"><label>タグ品番</label><input class="num"></div>
+          </div>
+          <div class="form-actions">
+            <button class="btn">中止</button>
+            <button class="btn">タグ印刷</button>
+            <button class="btn btn-primary">登録する</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 日報・帳票 ── -->
+    <section class="content" data-screen="reports">
+      <div class="tabs" data-tabgroup="rep">
+        <button class="tab active" data-tab="r-daily">日報照会</button>
+        <button class="tab" data-tab="r-slip">売上伝票明細表</button>
+      </div>
+
+      <div class="tabpane active" id="r-daily">
+        <div class="search-row">
+          <div class="field"><label>照会日</label><input type="date" value="2026-07-01"></div>
+          <div class="field"><label>店舗</label><select><option>01 本店</option><option>全店</option></select></div>
+          <button class="btn btn-primary">表示</button>
+          <button class="btn">CSV出力</button>
+        </div>
+        <div class="tiles report-tiles">
+          <div class="tile"><div class="t-label">売上(税込)</div><div class="t-value num">¥586,290</div><div class="t-sub num">9件 / 消費税 ¥52,299</div></div>
+          <div class="tile"><div class="t-label">現金</div><div class="t-value num">¥33,550</div><div class="t-sub num">7件</div></div>
+          <div class="tile"><div class="t-label">掛売</div><div class="t-value num">¥560,000</div><div class="t-sub num">1件</div></div>
+          <div class="tile"><div class="t-label">返品</div><div class="t-value num">¥0</div><div class="t-sub num">0件</div></div>
+          <div class="tile"><div class="t-label">入出金合計</div><div class="t-value num">¥565,990</div><div class="t-sub num">9件</div></div>
+        </div>
+        <div class="card">
+          <h3>入出金明細(レジ締め確認用)</h3>
+          <div class="table-scroll">
+            <table class="data">
+              <thead><tr><th>伝票</th><th>内容</th><th class="r">金額</th><th>担当者</th><th>備考</th></tr></thead>
+              <tbody>
+                <tr><td class="num">1260701001</td><td>レジ売上</td><td class="r num">¥1,320</td><td>田中 一樹</td><td>現金</td></tr>
+                <tr><td class="num">1260701002</td><td>レジ売上</td><td class="r num">¥550</td><td>簗瀬 智宏</td><td>現金</td></tr>
+                <tr><td class="num">1260701029</td><td>掛売入金</td><td class="r num">¥550,000</td><td>三輪 祐加</td><td>頭金</td></tr>
+                <tr><td class="num">1260701005</td><td>レジ売上</td><td class="r num">¥6,160</td><td>三輪 祐加</td><td>現金</td></tr>
+                <tr><td class="num">1260701012</td><td>レジ売上</td><td class="r num">¥3,300</td><td>田中 一樹</td><td>宝石修理・現金</td></tr>
+                <tr><td colspan="2" style="font-weight:700">合計</td><td class="r num" style="font-weight:700">¥565,990</td><td colspan="2" class="num">9件</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabpane" id="r-slip">
+        <div class="card">
+          <h3>出力条件</h3>
+          <div class="kv">
+            <div class="field"><label>期間(自)</label><input type="date" value="2026-07-01"></div>
+            <div class="field"><label>期間(至)</label><input type="date" value="2026-07-09"></div>
+            <div class="field"><label>店舗</label><select><option>01 本店</option><option>全店別</option></select></div>
+            <div class="field"><label>担当者</label><select><option>全担当</option><option>田中</option><option>三輪</option><option>簗瀬</option></select></div>
+            <div class="field"><label>仕入先</label><select><option>全仕入先</option><option>甲府宝飾(株)</option></select></div>
+            <div class="field"><label>印刷順序</label><select><option>伝票順</option><option>担当者・伝票順</option></select></div>
+          </div>
+          <div style="margin-top:0.9rem;font-size:0.9em;color:var(--ink-2)">
+            対象データ:
+            <label><input type="checkbox" checked> 登録</label>
+            <label style="margin-left:1em"><input type="checkbox" checked> 修正</label>
+            <label style="margin-left:1em"><input type="checkbox" checked> 削除</label>
+          </div>
+          <div class="form-actions">
+            <button class="btn">CSV出力</button>
+            <button class="btn">プレビュー</button>
+            <button class="btn btn-primary">印刷</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 設定 ── -->
+    <section class="content" data-screen="settings">
+      <div class="settings-grid">
+        <div class="card"><h3>マスター管理</h3><p>担当者・仕入先・商品分類・購入動機などのコード表を管理します。</p></div>
+        <div class="card"><h3>スタッフと権限</h3><p>ユーザーの追加、レジ操作・帳票出力・マスター編集の権限設定。</p></div>
+        <div class="card"><h3>ポイント設定</h3><p>還元率、有効期限、ランク別優待の設定。</p></div>
+        <div class="card"><h3>オフライン同期</h3><p>通信障害時の一時保存と自動再送の設定。未送信キューの確認・手動送信もこちら。</p></div>
+        <div class="card"><h3>帳票・プリンター</h3><p>保証書・タグ・レシートの印刷設定とプリンター割り当て。</p></div>
+        <div class="card"><h3>データ入出力</h3><p>宝飾ナビからの移行データ取り込み、CSVエクスポート、バックアップ。</p></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+  var screenTitles = {
+    home: "ホーム", register: "レジ(売上登録)", customers: "顧客管理",
+    "customer-detail": "顧客詳細", products: "商品・在庫",
+    reports: "日報・帳票", settings: "設定・マスター"
+  };
+
+  function showScreen(name) {
+    document.querySelectorAll(".content").forEach(function (s) {
+      s.classList.toggle("active", s.dataset.screen === name);
+    });
+    document.querySelectorAll(".nav-item").forEach(function (b) {
+      var navName = name === "customer-detail" ? "customers" : name;
+      b.classList.toggle("active", b.dataset.screen === navName);
+    });
+    document.getElementById("screen-title").textContent = screenTitles[name] || name;
+    window.scrollTo(0, 0);
+  }
+
+  document.addEventListener("click", function (e) {
+    var nav = e.target.closest(".nav-item");
+    if (nav) return showScreen(nav.dataset.screen);
+    var goto = e.target.closest("[data-goto]");
+    if (goto) return showScreen(goto.dataset.goto);
+    var tab = e.target.closest(".tab");
+    if (tab) {
+      var group = tab.parentElement;
+      group.querySelectorAll(".tab").forEach(function (t) { t.classList.toggle("active", t === tab); });
+      group.parentElement.querySelectorAll(".tabpane").forEach(function (p) {
+        p.classList.toggle("active", p.id === tab.dataset.tab);
+      });
+    }
+    var pay = e.target.closest(".pay-chip");
+    if (pay) {
+      pay.parentElement.querySelectorAll(".pay-chip").forEach(function (c) { c.classList.toggle("active", c === pay); });
+    }
+  });
+
+  function doLogin(e) {
+    e.preventDefault();
+    document.getElementById("login-view").style.display = "none";
+    document.getElementById("app").classList.add("active");
+    showScreen("home");
+    return false;
+  }
+  function doLogout() {
+    document.getElementById("app").classList.remove("active");
+    document.getElementById("login-view").style.display = "flex";
+  }
+
+  /* テンキー(モック: 預り金額 → 釣銭を計算) */
+  var BILL = 560320;
+  function refreshChange() {
+    var v = parseInt(document.getElementById("deposit").value.replace(/[^0-9]/g, ""), 10) || 0;
+    var diff = v - BILL;
+    document.getElementById("change").textContent = "¥" + (diff > 0 ? diff : 0).toLocaleString();
+  }
+  function key(k) {
+    var el = document.getElementById("deposit");
+    var cur = el.value.replace(/[^0-9]/g, "");
+    if (cur === "0") cur = "";
+    cur = (cur + k).slice(0, 9);
+    el.value = Number(cur || 0).toLocaleString();
+    refreshChange();
+  }
+  function keyClear() {
+    document.getElementById("deposit").value = "0";
+    refreshChange();
+  }
+  document.getElementById("deposit").addEventListener("input", function () {
+    this.value = (parseInt(this.value.replace(/[^0-9]/g, ""), 10) || 0).toLocaleString();
+    refreshChange();
+  });
+
+  /* オフライン縮退運転のデモ */
+  var offline = false;
+  function toggleOffline() {
+    offline = !offline;
+    var pill = document.getElementById("conn-pill");
+    pill.classList.toggle("offline", offline);
+    document.getElementById("conn-label").textContent = offline ? "オフライン — 一時保存中(未送信 3件)" : "オンライン";
+    document.getElementById("offline-banner").classList.toggle("show", offline);
+  }
+</script>
