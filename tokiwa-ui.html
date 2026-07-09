@@ -326,6 +326,34 @@
   }
   .alert-list li:last-child { border-bottom: 0; }
   .alert-list .when { margin-left: auto; color: var(--muted); font-size: 0.85em; white-space: nowrap; }
+  .alert-list .check {
+    flex: none;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    border: 2px solid var(--line);
+    background: var(--surface);
+    color: transparent;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0.75em; font-weight: 700; line-height: 1; padding: 0;
+  }
+  .alert-list .check:hover { border-color: var(--accent); color: var(--accent); }
+  .alert-list li.done .check { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .alert-list li.done .txt { text-decoration: line-through; color: var(--muted); }
+  .alert-list li.done .chip { opacity: 0.55; }
+  .alert-list li { transition: opacity 0.3s ease; }
+  .alert-list li.leaving { opacity: 0; }
+  @media (prefers-reduced-motion: reduce) { .alert-list li { transition: none; } }
+  .care-head { display: flex; align-items: center; gap: 0.7em; margin-bottom: 0.7rem; }
+  .care-head h3 { margin: 0; }
+  .care-foot {
+    margin-top: 0.7rem;
+    display: flex; justify-content: space-between; align-items: center; gap: 1em;
+    font-size: 0.78em; color: var(--muted);
+    border-top: 1px solid var(--line); padding-top: 0.6rem;
+  }
+  #care-empty { display: none; margin: 0.4rem 0 0; color: var(--muted); font-size: 0.9em; }
+  #done-wrap { display: none; margin-top: 0.5rem; border-top: 1px dashed var(--line); padding-top: 0.3rem; }
+  #done-wrap.show { display: block; }
   .quick-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; }
   .quick-actions .btn { padding: 0.9em 0.6em; text-align: center; font-weight: 600; }
 
@@ -470,14 +498,25 @@
 
       <div class="home-cols" style="margin-top:1rem">
         <div class="card">
-          <h3>今週のお声がけ</h3>
-          <ul class="alert-list">
-            <li><span class="chip chip-gold">誕生日</span>山田 花子 様(7/10)<span class="when">担当: 三輪</span></li>
-            <li><span class="chip chip-gold">誕生日</span>大岡 さゆり 様(7/12)<span class="when">担当: 三輪</span></li>
-            <li><span class="chip chip-green">結婚記念日</span>渡辺 真宏 様(7/11)<span class="when">担当: 田中</span></li>
-            <li><span class="chip chip-warn">ポイント失効間近</span>妻木 亜子 様 — 1,200pt(7月末)<span class="when">担当: 簗瀬</span></li>
-            <li><span class="chip chip-danger">修理納期</span>前田 富佐代 様 — ネックレス糸替え(7/9)<span class="when">本日</span></li>
+          <div class="care-head">
+            <h3>今週のお声がけ</h3>
+            <span class="chip chip-green num" id="care-count">残り 5件</span>
+          </div>
+          <ul class="alert-list" id="care-list">
+            <li><button class="check" aria-label="対応済みにする">✓</button><span class="chip chip-gold">誕生日</span><span class="txt">山田 花子 様(7/10)</span><span class="when">担当: 三輪</span></li>
+            <li><button class="check" aria-label="対応済みにする">✓</button><span class="chip chip-gold">誕生日</span><span class="txt">大岡 さゆり 様(7/12)</span><span class="when">担当: 三輪</span></li>
+            <li><button class="check" aria-label="対応済みにする">✓</button><span class="chip chip-green">結婚記念日</span><span class="txt">渡辺 真宏 様(7/11)</span><span class="when">担当: 田中</span></li>
+            <li><button class="check" aria-label="対応済みにする">✓</button><span class="chip chip-warn">ポイント失効間近</span><span class="txt">妻木 亜子 様 — 1,200pt(7月末)</span><span class="when">担当: 簗瀬</span></li>
+            <li><button class="check" aria-label="対応済みにする">✓</button><span class="chip chip-danger">修理納期</span><span class="txt">前田 富佐代 様 — ネックレス糸替え(7/9)</span><span class="when">本日</span></li>
           </ul>
+          <p id="care-empty">今週のお声がけはすべて対応済みです。お疲れさまでした。</p>
+          <div class="care-foot">
+            <span>チェックすると対応済みへ移動します</span>
+            <button class="link-btn" id="done-toggle" onclick="toggleDoneList()">対応済み(0件)を表示</button>
+          </div>
+          <div id="done-wrap">
+            <ul class="alert-list" id="done-list"></ul>
+          </div>
         </div>
         <div class="card">
           <h3>クイックアクション</h3>
@@ -870,6 +909,8 @@
   }
 
   document.addEventListener("click", function (e) {
+    var chk = e.target.closest(".check");
+    if (chk) return toggleCare(chk.closest("li"));
     var nav = e.target.closest(".nav-item");
     if (nav) return showScreen(nav.dataset.screen);
     var goto = e.target.closest("[data-goto]");
@@ -923,6 +964,44 @@
     this.value = (parseInt(this.value.replace(/[^0-9]/g, ""), 10) || 0).toLocaleString();
     refreshChange();
   });
+
+  /* 今週のお声がけ: 済チェックで対応済みへ移動(クリックで戻せる) */
+  function updateCareCounts() {
+    var remain = document.querySelectorAll("#care-list li").length;
+    var done = document.querySelectorAll("#done-list li").length;
+    document.getElementById("care-count").textContent = "残り " + remain + "件";
+    document.getElementById("care-empty").style.display = remain === 0 ? "block" : "none";
+    var shown = document.getElementById("done-wrap").classList.contains("show");
+    document.getElementById("done-toggle").textContent = "対応済み(" + done + "件)を" + (shown ? "隠す" : "表示");
+  }
+  function toggleCare(li) {
+    if (!li || li.dataset.moving) return;
+    var inDone = !!li.closest("#done-list");
+    if (inDone) {
+      li.classList.remove("done");
+      li.querySelector(".check").setAttribute("aria-label", "対応済みにする");
+      document.getElementById("care-list").appendChild(li);
+      updateCareCounts();
+      return;
+    }
+    li.classList.add("done");
+    li.querySelector(".check").setAttribute("aria-label", "未対応に戻す");
+    li.dataset.moving = "1";
+    setTimeout(function () {
+      li.classList.add("leaving");
+      setTimeout(function () {
+        li.classList.remove("leaving");
+        delete li.dataset.moving;
+        document.getElementById("done-list").appendChild(li);
+        updateCareCounts();
+      }, 300);
+    }, 800);
+    updateCareCounts();
+  }
+  function toggleDoneList() {
+    document.getElementById("done-wrap").classList.toggle("show");
+    updateCareCounts();
+  }
 
   /* オフライン縮退運転のデモ */
   var offline = false;
