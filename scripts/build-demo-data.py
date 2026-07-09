@@ -118,11 +118,50 @@ for v in approach.values():
     v.sort(key=lambda x: x[0], reverse=True)
 
 # ── 処方箋 [No, 用途, レンズ, フレーム, 売値計, 定価計, sphR..addL, pd遠R/L/両, pd近R/L/両, 対応者, 処方日]
+# 振り分けルール:
+#   商品台帳の「メガネ商品」フラグは未設定が7,030件中5,471件と多く単独では不十分なため、
+#   フラグ(宝石・時計)+商品名の宝飾語パターンの両方で宝飾品の誤紐づけを検出する。
+#   ・度数入力がなく、メガネ商品にも紐づかない行 → 除外(ゴミデータ)
+#   ・宝飾品が紐づくが度数がある行 → 残して名前に "!" を付け「誤登録」表示
+item_flag = {}
+for r in wb_rows("商品台帳"):
+    item_flag[s(r.get("商品キー"))] = s(r.get("メガネ商品"))
+
+POWER_COLS = ("SPH(右)", "SPH(左)", "CYL(右)", "CYL(左)", "AX(右)", "AX(左)",
+              "ADD(右)", "ADD(左)", "PD遠(両)", "PD近(両)")
+JEWELRY_PAT = re.compile(
+    r"ﾘﾝｸﾞ|リング|ﾈｯｸﾚｽ|ネックレス|ﾀﾞｲﾔ|ダイヤ|ｻﾌｧｲｱ|ﾋﾟｱｽ|ﾌﾞﾚｽ|ﾍﾟﾝﾀﾞ|ﾒﾉｰ|ﾙﾋﾞｰ|ｴﾒﾗﾙﾄﾞ|ﾊﾟｰﾙ|真珠|指輪|K1[048]|PT|SV")
+
 rx = {}
+rx_kept = rx_warned = rx_dropped = 0
 for r in wb_rows("処方箋"):
+    has_power = any(s(r.get(k)) for k in POWER_COLS)
+    is_glasses = False
+    has_jewelry = False
+    names = {}
+    for part, id_col, name_col in (("lens", "商品ID(レンズ)", "商品名(レンズ)"),
+                                   ("frame", "商品ID(フレーム)", "商品名(フレーム)")):
+        pid = s(r.get(id_col))
+        fl = item_flag.get(pid, "")
+        name = s(r.get(name_col), 22)
+        # 名前の宝飾語パターンを優先(IDがメガネ商品を指していても名前欄が宝飾品なら要確認とする)
+        jewelry = fl == "宝石・時計" or bool(JEWELRY_PAT.search(name))
+        if fl == "メガネ":
+            is_glasses = True
+        if jewelry:
+            has_jewelry = True
+            if name:
+                name = "!" + name  # 宝飾品が誤って紐づいている印
+        names[part] = name
+    if not is_glasses and not has_power:
+        rx_dropped += 1
+        continue
+    if has_jewelry:
+        rx_warned += 1
+    rx_kept += 1
     grp(rx, s(r.get("顧客id")), [
         s(r.get("処方箋No.")), s(r.get("用途名称"), 12),
-        s(r.get("商品名(レンズ)"), 22), s(r.get("商品名(フレーム)"), 22),
+        names["lens"], names["frame"],
         n(r.get("合計売値")), n(r.get("合計定価")),
         s(r.get("SPH(右)")), s(r.get("SPH(左)")), s(r.get("CYL(右)")), s(r.get("CYL(左)")),
         s(r.get("AX(右)")), s(r.get("AX(左)")), s(r.get("ADD(右)")), s(r.get("ADD(左)")),
@@ -155,4 +194,5 @@ new = re.sub(
     src, count=1, flags=re.S)
 open(HTML, "w", encoding="utf-8").write(new)
 print(f"customers={len(customers)} products={len(products)} sales_cust={len(sales)}")
+print(f"処方箋: 表示={rx_kept}件(うち商品誤登録の警告付き={rx_warned}件) / 除外={rx_dropped}件")
 print(f"data size={len(blob)/1024:.0f}KB, html size={len(new)/1024:.0f}KB")
