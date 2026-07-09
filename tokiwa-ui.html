@@ -412,6 +412,19 @@
   .tenkey .exec { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .tenkey .exec:hover { background: var(--accent-deep); }
 
+  /* ── メガネ処方箋 ── */
+  .rx-row { cursor: pointer; }
+  .rx-row .rx-arrow { color: var(--muted); width: 1.5em; text-align: center; transition: transform 0.15s ease; }
+  .rx-row.open { background: var(--accent-soft); }
+  .rx-row.open td { border-bottom-color: transparent; }
+  .rx-row.open .rx-arrow { transform: rotate(90deg); color: var(--accent); }
+  .rx-detail-row { display: none; }
+  .rx-detail-row.show { display: table-row; }
+  .rx-detail-row > td { background: var(--bg); padding: 0; }
+  .rx-detail { padding: 1rem 1.2rem 1.2rem; border-left: 3px solid var(--accent); }
+  .rx-detail .data tbody tr:hover { background: transparent; }
+  @media (prefers-reduced-motion: reduce) { .rx-row .rx-arrow { transition: none; } }
+
   /* ── 帳票・設定 ── */
   .report-tiles { margin-bottom: 1rem; }
   .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
@@ -722,20 +735,81 @@
         </div>
 
         <div class="tabpane" id="c-glasses">
+          <p style="margin:0 0 0.7rem;color:var(--muted);font-size:0.82em">行をクリックすると度数などの詳細を表示します。</p>
           <div class="table-scroll">
-            <table class="data">
-              <thead><tr><th></th><th class="r">SPH</th><th class="r">CYL</th><th class="r">AX</th><th class="r">ADD</th><th class="r">PD</th></tr></thead>
+            <table class="data rx-table">
+              <thead><tr><th>購入日</th><th>用途</th><th>レンズ</th><th>フレーム</th><th class="r">合計金額</th><th></th></tr></thead>
               <tbody>
-                <tr><td>右</td><td class="r num">−2.25</td><td class="r num">−0.50</td><td class="r num">180</td><td class="r num">+1.50</td><td class="r num" rowspan="2" style="vertical-align:middle">62</td></tr>
-                <tr><td>左</td><td class="r num">−2.00</td><td class="r num">−0.75</td><td class="r num">175</td><td class="r num">+1.50</td></tr>
+                <tr class="rx-row">
+                  <td class="num">2025/09/14</td><td>遠近両用</td><td>ニコン 1.60非球面 UVカット</td><td>シャルマン ラインアート XL1483</td><td class="r num">¥86,900</td><td class="rx-arrow">▸</td>
+                </tr>
+                <tr class="rx-detail-row"><td colspan="6">
+                  <div class="rx-detail">
+                    <div class="table-scroll">
+                      <table class="data rx-power">
+                        <thead><tr><th></th><th class="r">SPH</th><th class="r">CYL</th><th class="r">AX</th><th class="r">ADD</th><th class="r">PD(遠)</th><th class="r">PD(近)</th></tr></thead>
+                        <tbody>
+                          <tr><td>右</td><td class="r num">−2.25</td><td class="r num">−0.50</td><td class="r num">180</td><td class="r num">+1.50</td><td class="r num">31.0</td><td class="r num">29.5</td></tr>
+                          <tr><td>左</td><td class="r num">−2.00</td><td class="r num">−0.75</td><td class="r num">175</td><td class="r num">+1.50</td><td class="r num">31.0</td><td class="r num">29.5</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div class="kv" style="margin-top:0.9rem">
+                      <div class="field"><label>レンズ詳細</label><input value="ニコン 1.60非球面 / UVカット・撥水コート / ¥39,600" readonly></div>
+                      <div class="field"><label>フレーム詳細</label><input value="シャルマン ラインアート XL1483 / ワインレッド / ¥47,300" readonly></div>
+                      <div class="field"><label>処方箋番号 / 処方</label><input class="num" value="RX-2509-0142 / 眼科処方箋あり" readonly></div>
+                      <div class="field"><label>対応者 / 備考</label><input value="簗瀬 智宏 / 前回よりADD +0.25" readonly></div>
+                    </div>
+                  </div>
+                </td></tr>
+
+                <tr class="rx-row">
+                  <td class="num">2023/04/02</td><td>中近(室内用)</td><td>HOYA 1.55 室内用累進</td><td>ラインアート XL1061</td><td class="r num">¥52,800</td><td class="rx-arrow">▸</td>
+                </tr>
+                <tr class="rx-detail-row"><td colspan="6">
+                  <div class="rx-detail">
+                    <div class="table-scroll">
+                      <table class="data rx-power">
+                        <thead><tr><th></th><th class="r">SPH</th><th class="r">CYL</th><th class="r">AX</th><th class="r">ADD</th><th class="r">PD(遠)</th><th class="r">PD(近)</th></tr></thead>
+                        <tbody>
+                          <tr><td>右</td><td class="r num">−2.00</td><td class="r num">−0.50</td><td class="r num">180</td><td class="r num">+1.25</td><td class="r num">31.0</td><td class="r num">29.5</td></tr>
+                          <tr><td>左</td><td class="r num">−1.75</td><td class="r num">−0.75</td><td class="r num">170</td><td class="r num">+1.25</td><td class="r num">31.0</td><td class="r num">29.5</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div class="kv" style="margin-top:0.9rem">
+                      <div class="field"><label>レンズ詳細</label><input value="HOYA 1.55 室内用累進 / ブルーカット / ¥28,600" readonly></div>
+                      <div class="field"><label>フレーム詳細</label><input value="ラインアート XL1061 / ブラウン / ¥24,200" readonly></div>
+                      <div class="field"><label>処方箋番号 / 処方</label><input class="num" value="RX-2304-0088 / 店内測定" readonly></div>
+                      <div class="field"><label>対応者 / 備考</label><input value="簗瀬 智宏 / パソコン作業用に" readonly></div>
+                    </div>
+                  </div>
+                </td></tr>
+
+                <tr class="rx-row">
+                  <td class="num">2021/06/18</td><td>遠用</td><td>セイコー 1.67非球面</td><td>チタンフレーム TX-204</td><td class="r num">¥68,200</td><td class="rx-arrow">▸</td>
+                </tr>
+                <tr class="rx-detail-row"><td colspan="6">
+                  <div class="rx-detail">
+                    <div class="table-scroll">
+                      <table class="data rx-power">
+                        <thead><tr><th></th><th class="r">SPH</th><th class="r">CYL</th><th class="r">AX</th><th class="r">ADD</th><th class="r">PD(遠)</th><th class="r">PD(近)</th></tr></thead>
+                        <tbody>
+                          <tr><td>右</td><td class="r num">−2.00</td><td class="r num">−0.25</td><td class="r num">180</td><td class="r num">—</td><td class="r num">31.0</td><td class="r num">—</td></tr>
+                          <tr><td>左</td><td class="r num">−1.75</td><td class="r num">−0.50</td><td class="r num">175</td><td class="r num">—</td><td class="r num">31.0</td><td class="r num">—</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div class="kv" style="margin-top:0.9rem">
+                      <div class="field"><label>レンズ詳細</label><input value="セイコー 1.67非球面 / UVカット / ¥33,000" readonly></div>
+                      <div class="field"><label>フレーム詳細</label><input value="チタンフレーム TX-204 / シルバー / ¥35,200" readonly></div>
+                      <div class="field"><label>処方箋番号 / 処方</label><input class="num" value="RX-2106-0031 / 店内測定" readonly></div>
+                      <div class="field"><label>対応者 / 備考</label><input value="簗瀬 智宏 / 運転用" readonly></div>
+                    </div>
+                  </div>
+                </td></tr>
               </tbody>
             </table>
-          </div>
-          <div class="kv" style="margin-top:1rem">
-            <div class="field"><label>処方日 / 用途</label><input class="num" value="2025/09/14 / 遠近両用" readonly></div>
-            <div class="field"><label>レンズ</label><input value="ニコン 1.60非球面 UVカット" readonly></div>
-            <div class="field"><label>フレーム</label><input value="シャルマン ラインアート XL1483" readonly></div>
-            <div class="field"><label>対応者</label><input value="簗瀬 智宏" readonly></div>
           </div>
           <div class="form-actions"><button class="btn">新しい処方箋を追加</button></div>
         </div>
@@ -911,6 +985,17 @@
   document.addEventListener("click", function (e) {
     var chk = e.target.closest(".check");
     if (chk) return toggleCare(chk.closest("li"));
+    var rx = e.target.closest(".rx-row");
+    if (rx) {
+      var wasOpen = rx.classList.contains("open");
+      document.querySelectorAll(".rx-row.open").forEach(function (r) { r.classList.remove("open"); });
+      document.querySelectorAll(".rx-detail-row.show").forEach(function (d) { d.classList.remove("show"); });
+      if (!wasOpen) {
+        rx.classList.add("open");
+        rx.nextElementSibling.classList.add("show");
+      }
+      return;
+    }
     var nav = e.target.closest(".nav-item");
     if (nav) return showScreen(nav.dataset.screen);
     var goto = e.target.closest("[data-goto]");
