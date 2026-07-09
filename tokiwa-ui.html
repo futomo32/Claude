@@ -436,6 +436,17 @@
     letter-spacing: 0.05em;
   }
   .tenkey .exec:disabled { opacity: 0.55; cursor: default; }
+  .amount-input {
+    width: 7.5em;
+    text-align: right;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.3em 0.5em;
+    background: var(--surface);
+    font-variant-numeric: tabular-nums;
+  }
+  .amount-input:hover { border-color: var(--accent); }
+  .amount-input:focus { border-color: var(--accent); }
   .toast {
     position: fixed; left: 50%; bottom: 24px;
     transform: translate(-50%, 16px);
@@ -585,9 +596,9 @@
             <table class="data">
               <thead><tr><th>区分</th><th>商品番号</th><th>商品名</th><th>商品情報</th><th class="r">定価</th><th class="r">買上金額</th><th class="r">割引率</th><th></th></tr></thead>
               <tbody>
-                <tr><td><span class="chip chip-plain">番号なし</span></td><td class="num">—</td><td>電池交換</td><td>—</td><td class="r num">1,320</td><td class="r num">1,320</td><td class="r num">—</td><td><button class="link-btn">行削除</button></td></tr>
-                <tr><td><span class="chip chip-green">在庫品</span></td><td class="num">14842</td><td>Pt900 ダイヤリング 0.35ct</td><td>E / VS2 / 3EX 鑑定書付</td><td class="r num">572,000</td><td class="r num">560,000</td><td class="r num">2.1%</td><td><button class="link-btn">行削除</button></td></tr>
-                <tr><td><span class="chip chip-plain">番号なし</span></td><td class="num">—</td><td>メガネレンズ</td><td><span class="chip chip-warn">種類未定 — 後日入力</span></td><td class="r num">—</td><td class="r num">未定</td><td class="r num">—</td><td><button class="link-btn">行削除</button></td></tr>
+                <tr><td><span class="chip chip-plain">番号なし</span></td><td class="num">—</td><td>電池交換</td><td>—</td><td class="r num">1,320</td><td class="r"><input class="amount-input num" data-list="1320" value="1,320" inputmode="numeric" aria-label="電池交換の買上金額"></td><td class="r num disc-cell">—</td><td><button class="link-btn">行削除</button></td></tr>
+                <tr><td><span class="chip chip-green">在庫品</span></td><td class="num">14842</td><td>Pt900 ダイヤリング 0.35ct</td><td>E / VS2 / 3EX 鑑定書付</td><td class="r num">572,000</td><td class="r"><input class="amount-input num" data-list="572000" value="572,000" inputmode="numeric" aria-label="ダイヤリングの買上金額"></td><td class="r num disc-cell">—</td><td><button class="link-btn">行削除</button></td></tr>
+                <tr data-lens="1"><td><span class="chip chip-plain">番号なし</span></td><td class="num">—</td><td>メガネレンズ</td><td><span class="chip chip-warn">種類未定 — 後日入力</span></td><td class="r num">—</td><td class="r"><input class="amount-input num" data-list="0" value="0" inputmode="numeric" aria-label="メガネレンズの買上金額"></td><td class="r num disc-cell">—</td><td><button class="link-btn">行削除</button></td></tr>
                 <tr><td colspan="8" style="color:var(--muted)">+ <button class="link-btn">商品番号で追加(在庫品)</button> / <button class="link-btn">番号なしで追加(レンズ・修理・電池など)</button></td></tr>
               </tbody>
             </table>
@@ -602,10 +613,10 @@
 
         <div class="card">
           <h3>お会計</h3>
-          <div class="pos-total-row"><span>買上合計</span><span class="v num">¥561,320</span></div>
+          <div class="pos-total-row"><span>買上合計</span><span class="v num" id="sum-total">¥0</span></div>
           <div class="pos-total-row"><span>使用ポイント</span><span class="v num">−1,000</span></div>
-          <div class="pos-total-row"><span>(内消費税)</span><span class="v num">¥50,938</span></div>
-          <div class="pos-total-row grand"><span>請求金額</span><span class="v num">¥560,320</span></div>
+          <div class="pos-total-row"><span>(内消費税)</span><span class="v num" id="sum-tax">¥0</span></div>
+          <div class="pos-total-row grand"><span>請求金額</span><span class="v num" id="sum-bill">¥0</span></div>
           <div class="payment-chips">
             <button class="pay-chip active">現金</button>
             <button class="pay-chip">クレジット</button>
@@ -1082,8 +1093,32 @@
     document.getElementById("login-view").style.display = "flex";
   }
 
+  /* 買上金額の編集 → 合計・請求・消費税・釣銭を再計算 */
+  var BILL = 0;
+  var USE_POINTS = 1000;
+  function yen(n) { return "¥" + n.toLocaleString(); }
+  function recalcPos() {
+    var sum = 0;
+    document.querySelectorAll(".amount-input").forEach(function (inp) {
+      var v = parseInt(inp.value.replace(/[^0-9]/g, ""), 10) || 0;
+      sum += v;
+      var list = parseInt(inp.dataset.list, 10) || 0;
+      var disc = inp.closest("tr").querySelector(".disc-cell");
+      if (disc) disc.textContent = (list > 0 && v < list) ? (Math.round((list - v) / list * 1000) / 10) + "%" : "—";
+    });
+    BILL = Math.max(sum - USE_POINTS, 0);
+    document.getElementById("sum-total").textContent = yen(sum);
+    document.getElementById("sum-bill").textContent = yen(BILL);
+    document.getElementById("sum-tax").textContent = yen(Math.floor(BILL * 10 / 110));
+    refreshChange();
+  }
+  document.addEventListener("input", function (e) {
+    if (!e.target.classList.contains("amount-input")) return;
+    e.target.value = (parseInt(e.target.value.replace(/[^0-9]/g, ""), 10) || 0).toLocaleString();
+    recalcPos();
+  });
+
   /* テンキー(モック: 預り金額 → 釣銭を計算) */
-  var BILL = 560320;
   function refreshChange() {
     var v = parseInt(document.getElementById("deposit").value.replace(/[^0-9]/g, ""), 10) || 0;
     var diff = v - BILL;
@@ -1105,6 +1140,7 @@
     this.value = (parseInt(this.value.replace(/[^0-9]/g, ""), 10) || 0).toLocaleString();
     refreshChange();
   });
+  recalcPos();
 
   /* 今週のお声がけ: 済チェックで対応済みへ移動(クリックで戻せる) */
   function updateCareCounts() {
@@ -1166,12 +1202,14 @@
   function doCheckout(btn) {
     if (checkedOut) return;
     checkedOut = true;
+    var inputs = document.querySelectorAll(".amount-input");
+    var amt = function (i) { return parseInt(inputs[i].value.replace(/[^0-9]/g, ""), 10) || 0; };
     var tb = document.querySelector("#c-history table tbody");
     if (tb) {
       tb.insertAdjacentHTML("afterbegin",
-        '<tr><td class="num">2026/07/09</td><td>Pt900 ダイヤリング 0.35ct</td><td>E / VS2 / 3EX 鑑定書付</td><td class="r num">¥560,000</td><td>現金</td><td>本店</td><td>田中</td></tr>' +
-        '<tr><td class="num">2026/07/09</td><td>メガネレンズ <span class="chip chip-warn">種類未定 — 後日入力</span></td><td>仮登録</td><td class="r num">未定</td><td>現金</td><td>本店</td><td>田中</td></tr>' +
-        '<tr><td class="num">2026/07/09</td><td>電池交換</td><td>—</td><td class="r num">¥1,320</td><td>現金</td><td>本店</td><td>田中</td></tr>');
+        '<tr><td class="num">2026/07/09</td><td>Pt900 ダイヤリング 0.35ct</td><td>E / VS2 / 3EX 鑑定書付</td><td class="r num">' + yen(amt(1)) + '</td><td>現金</td><td>本店</td><td>田中</td></tr>' +
+        '<tr><td class="num">2026/07/09</td><td>メガネレンズ <span class="chip chip-warn">種類未定 — 後日入力</span></td><td>仮登録</td><td class="r num">' + (amt(2) > 0 ? yen(amt(2)) : "未定") + '</td><td>現金</td><td>本店</td><td>田中</td></tr>' +
+        '<tr><td class="num">2026/07/09</td><td>電池交換</td><td>—</td><td class="r num">' + yen(amt(0)) + '</td><td>現金</td><td>本店</td><td>田中</td></tr>');
     }
     var stock = document.getElementById("stock-14842");
     if (stock) {
