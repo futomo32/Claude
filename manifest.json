@@ -1,0 +1,17 @@
+{
+  "name": "ぱっと勤怠",
+  "short_name": "ぱっと勤怠",
+  "description": "パート・アルバイトさん向けのかわいい勤怠記録アプリ",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#fff7f0",
+  "theme_color": "#ffd6e0",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
