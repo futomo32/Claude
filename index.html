@@ -45,10 +45,10 @@
     border-radius: 0 0 var(--radius) var(--radius);
     text-align: center;
   }
-  .brandlogo { height: 22px; width: auto; display: block; margin: 0 auto 2px; }
-  header h1 { font-size: .8rem; font-weight: 700; letter-spacing: .18em; color: var(--ink-light); }
+  .brandlogo { height: 18px; width: auto; display: block; margin: 0 auto 4px; }
+  header h1 { font-size: 1.3rem; font-weight: 800; letter-spacing: .06em; color: var(--ink); line-height: 1.15; }
   #headerDate { font-size: .76rem; color: var(--ink-light); margin-top: 1px; }
-  #headerClock { font-size: 1.7rem; font-weight: bold; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+  #headerClock { font-size: 1.55rem; font-weight: bold; font-variant-numeric: tabular-nums; letter-spacing: .04em; line-height: 1.2; margin-top: 2px; }
 
   main { flex: 1; padding: 14px; }
   .page { display: none; }
@@ -60,16 +60,16 @@
     background: var(--card);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    padding: 12px;
+    padding: 11px;
     text-align: center;
-    margin-bottom: 12px;
+    margin-bottom: 9px;
   }
   .status-emoji { font-size: 2rem; line-height: 1.1; }
   .status-label { font-size: 1rem; font-weight: bold; margin-top: 2px; }
   .status-sub { font-size: .74rem; color: var(--ink-light); margin-top: 1px; }
 
   /* ---------- punch buttons ---------- */
-  .punch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .punch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 9px; }
   .punch-btn {
     border: none;
     border-radius: var(--radius);
@@ -207,6 +207,15 @@
   }
   .setting-card input:focus { outline: none; border-color: var(--pink); }
   .about { font-size: .75rem; color: var(--ink-light); line-height: 1.7; }
+  .guide-link {
+    display: flex; align-items: center; gap: 12px;
+    text-decoration: none; color: var(--ink);
+  }
+  .guide-link .gl-emoji { font-size: 1.6rem; }
+  .guide-link .gl-text { flex: 1; font-weight: bold; font-size: .98rem; }
+  .guide-link .gl-text small { display: block; font-weight: normal; font-size: .78rem; color: var(--ink-light); margin-top: 1px; }
+  .guide-link .gl-arrow { font-size: 1.5rem; color: var(--pink); }
+  .guide-link:active { transform: scale(.98); }
 
   /* ---------- bottom nav ---------- */
   nav {
@@ -331,7 +340,7 @@
 
 <header>
   <img class="brandlogo" src="logo.png" alt="YANASE">
-  <h1>ぱっと勤怠</h1>
+  <h1>ヤナセぱっと勤怠</h1>
   <div id="headerClock">--:--</div>
   <div id="headerDate"></div>
 </header>
@@ -387,6 +396,11 @@
       <label for="setWage">💰 時給（円）を入れると、りれきにお給料のめやすが出ます</label>
       <input type="number" id="setWage" inputmode="numeric" placeholder="例）1100">
     </div>
+    <a class="setting-card guide-link" href="guide.html">
+      <span class="gl-emoji">📖</span>
+      <span class="gl-text">はじめての方へ<small>使い方ガイドを見る</small></span>
+      <span class="gl-arrow">›</span>
+    </a>
     <div class="setting-card about">
       🌸 <b>ヤナセぱっと勤怠</b> はこのスマホの中だけにデータを保存します（サーバーには送りません）。<br>
       📲 ブラウザのメニューから「ホーム画面に追加」すると、アプリみたいに使えます。<br>
