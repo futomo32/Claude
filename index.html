@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#ffd6e0">
 <link rel="manifest" href="manifest.json">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icon.svg">
-<title>ぱっと勤怠 ⏰</title>
+<link rel="icon" href="icon.png" type="image/png">
+<link rel="apple-touch-icon" href="icon.png">
+<title>ヤナセぱっと勤怠</title>
 <style>
   :root {
     --bg: #fff7f0;
@@ -41,11 +41,12 @@
   /* ---------- header ---------- */
   header {
     background: linear-gradient(135deg, var(--pink-soft), #ffe9f0);
-    padding: calc(10px + env(safe-area-inset-top)) 20px 10px;
+    padding: calc(9px + env(safe-area-inset-top)) 20px 8px;
     border-radius: 0 0 var(--radius) var(--radius);
     text-align: center;
   }
-  header h1 { font-size: 1.05rem; letter-spacing: .05em; }
+  .brandlogo { height: 22px; width: auto; display: block; margin: 0 auto 2px; }
+  header h1 { font-size: .8rem; font-weight: 700; letter-spacing: .18em; color: var(--ink-light); }
   #headerDate { font-size: .76rem; color: var(--ink-light); margin-top: 1px; }
   #headerClock { font-size: 1.7rem; font-weight: bold; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
 
@@ -329,7 +330,8 @@
 <body>
 
 <header>
-  <h1>⏰ ぱっと勤怠</h1>
+  <img class="brandlogo" src="logo.png" alt="YANASE">
+  <h1>ぱっと勤怠</h1>
   <div id="headerClock">--:--</div>
   <div id="headerDate"></div>
 </header>
@@ -386,7 +388,7 @@
       <input type="number" id="setWage" inputmode="numeric" placeholder="例）1100">
     </div>
     <div class="setting-card about">
-      🌸 <b>ぱっと勤怠</b> はこのスマホの中だけにデータを保存します（サーバーには送りません）。<br>
+      🌸 <b>ヤナセぱっと勤怠</b> はこのスマホの中だけにデータを保存します（サーバーには送りません）。<br>
       📲 ブラウザのメニューから「ホーム画面に追加」すると、アプリみたいに使えます。<br>
       ⚠️ ブラウザのデータを消すと記録も消えるので、月末に CSV を保存しておくのがおすすめです。
     </div>
