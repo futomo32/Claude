@@ -36,6 +36,9 @@
     max-width: 480px;
     margin: 0 auto;
     padding-bottom: calc(70px + env(safe-area-inset-bottom));
+    /* 日本語を文節単位で折り返し、単語の途中で改行されないようにする */
+    word-break: auto-phrase;
+    line-break: strict;
   }
 
   /* ---------- header ---------- */
@@ -84,6 +87,9 @@
   }
   .punch-btn:active { transform: scale(.95); }
   .punch-btn .big { display: block; font-size: 1.5rem; margin-bottom: 2px; }
+  /* ラベルは単語のまとまりで折り返す（「休憩」「スタート」が途中で切れない） */
+  .punch-btn .lbl { display: block; line-height: 1.25; }
+  .punch-btn .lbl > span { display: inline-block; }
   .punch-btn:disabled { opacity: .35; box-shadow: none; cursor: default; }
   #btnIn    { background: var(--pink-soft); }
   #btnBreak { background: var(--sun-soft); }
@@ -350,21 +356,21 @@
   <section id="page-today" class="page active">
     <div class="status-card">
       <div class="status-emoji" id="statusEmoji">🌸</div>
-      <div class="status-label" id="statusLabel">きょうも おつかれさま！</div>
-      <div class="status-sub" id="statusSub">ボタンを押すと今の時間が記録されます</div>
+      <div class="status-label" id="statusLabel">本日もお疲れさまでした！</div>
+      <div class="status-sub" id="statusSub">ボタンを押すと現在時刻が記録されます</div>
     </div>
 
     <div class="punch-grid">
-      <button class="punch-btn" id="btnIn"><span class="big">🌞</span>出勤</button>
-      <button class="punch-btn" id="btnOut"><span class="big">🌙</span>退勤</button>
-      <button class="punch-btn" id="btnBreak"><span class="big">☕</span>休憩スタート</button>
-      <button class="punch-btn" id="btnBack"><span class="big">💪</span>休憩おわり</button>
+      <button class="punch-btn" id="btnIn"><span class="big">🌞</span><span class="lbl">出勤</span></button>
+      <button class="punch-btn" id="btnOut"><span class="big">🌙</span><span class="lbl">退勤</span></button>
+      <button class="punch-btn" id="btnBreak"><span class="big">☕</span><span class="lbl"><span>休憩</span><span>スタート</span></span></button>
+      <button class="punch-btn" id="btnBack"><span class="big">💪</span><span class="lbl"><span>休憩</span><span>おわり</span></span></button>
     </div>
 
     <div class="record-card">
-      <h2>📝 きょうの記録</h2>
+      <h2>📝 本日の記録</h2>
       <div id="todayRecord"></div>
-      <div class="hint">時間をタップすると手動で直せます ✍️</div>
+      <div class="hint">時刻をタップすると手動で修正できます ✍️</div>
     </div>
   </section>
 
@@ -379,7 +385,7 @@
     <div class="summary-card">
       <div><div class="num" id="sumDays">0</div><div class="cap">出勤日数</div></div>
       <div><div class="num" id="sumHours">0:00</div><div class="cap">勤務時間</div></div>
-      <div id="sumPayWrap" style="display:none"><div class="num" id="sumPay">¥0</div><div class="cap">お給料めやす</div></div>
+      <div id="sumPayWrap" style="display:none"><div class="num" id="sumPay">¥0</div><div class="cap">給与の目安</div></div>
     </div>
 
     <div class="history-list" id="historyList"></div>
@@ -389,11 +395,11 @@
   <!-- ============ settings ============ -->
   <section id="page-settings" class="page">
     <div class="setting-card">
-      <label for="setName">👤 おなまえ（CSVに入ります）</label>
-      <input type="text" id="setName" placeholder="例）山田 はな">
+      <label for="setName">👤 お名前（CSVに記載されます）</label>
+      <input type="text" id="setName" placeholder="例）山田 花子">
     </div>
     <div class="setting-card">
-      <label for="setWage">💰 時給（円）を入れると、りれきにお給料のめやすが出ます</label>
+      <label for="setWage">💰 時給（円）を入力すると、履歴に給与の目安が表示されます</label>
       <input type="number" id="setWage" inputmode="numeric" placeholder="例）1100">
     </div>
     <a class="setting-card guide-link" href="guide.html">
@@ -402,17 +408,17 @@
       <span class="gl-arrow">›</span>
     </a>
     <div class="setting-card about">
-      🌸 <b>ヤナセぱっと勤怠</b> はこのスマホの中だけにデータを保存します（サーバーには送りません）。<br>
-      📲 ブラウザのメニューから「ホーム画面に追加」すると、アプリみたいに使えます。<br>
-      ⚠️ ブラウザのデータを消すと記録も消えるので、月末に CSV を保存しておくのがおすすめです。
+      🌸 <b>ヤナセぱっと勤怠</b> は、このスマートフォンの中だけにデータを保存します（サーバーには送信しません）。<br>
+      📲 ブラウザのメニューから「ホーム画面に追加」すると、アプリのように使用できます。<br>
+      ⚠️ ブラウザのデータを削除すると記録も消えるため、月末に CSV を保存しておくことをおすすめします。
     </div>
   </section>
 </main>
 
 <nav>
-  <button id="tab-today" class="active"><span class="icon">🏠</span>きょう</button>
-  <button id="tab-history"><span class="icon">📅</span>りれき</button>
-  <button id="tab-settings"><span class="icon">⚙️</span>せってい</button>
+  <button id="tab-today" class="active"><span class="icon">🏠</span>今日</button>
+  <button id="tab-history"><span class="icon">📅</span>履歴</button>
+  <button id="tab-settings"><span class="icon">⚙️</span>設定</button>
 </nav>
 
 <!-- ============ edit modal ============ -->
@@ -537,10 +543,10 @@ function toast(msg) {
 
 /* ================= today page ================= */
 const STATUS_VIEW = {
-  before:  { emoji: "🌸", label: "まだ出勤前です",   sub: "「出勤」を押してスタート！" },
-  working: { emoji: "💼", label: "おしごと中！",     sub: "休憩や退勤のときにボタンを押してね" },
-  break:   { emoji: "☕", label: "休憩中〜",         sub: "もどったら「休憩おわり」を押してね" },
-  done:    { emoji: "🎉", label: "きょうもおつかれさま！", sub: "ゆっくり休んでね" },
+  before:  { emoji: "🌸", label: "出勤前です",       sub: "「出勤」を押して開始してください" },
+  working: { emoji: "💼", label: "お仕事中です",     sub: "休憩・退勤の際にボタンを押してください" },
+  break:   { emoji: "☕", label: "休憩中です",       sub: "戻ったら「休憩おわり」を押してください" },
+  done:    { emoji: "🎉", label: "本日もお疲れさまでした！", sub: "ゆっくりお休みください" },
 };
 
 function renderToday() {
@@ -580,18 +586,18 @@ function punch(kind) {
   const rec = records[key] || (records[key] = { breaks: [] });
   rec.breaks = rec.breaks || [];
   const t = nowHM();
-  if (kind === "in") { rec.in = t; toast(`🌞 出勤 ${t} を記録しました！`); }
-  if (kind === "break") { rec.breaks.push({ start: t, end: null }); toast(`☕ 休憩スタート ${t}`); }
+  if (kind === "in") { rec.in = t; toast(`🌞 出勤 ${t} を記録しました`); }
+  if (kind === "break") { rec.breaks.push({ start: t, end: null }); toast(`☕ 休憩を開始しました ${t}`); }
   if (kind === "back") {
     const last = rec.breaks[rec.breaks.length - 1];
     if (last && !last.end) last.end = t;
-    toast(`💪 休憩おわり ${t}`);
+    toast(`💪 休憩を終了しました ${t}`);
   }
   if (kind === "out") {
     const last = rec.breaks[rec.breaks.length - 1];
     if (last && !last.end) last.end = t; /* close open break automatically */
     rec.out = t;
-    toast(`🌙 退勤 ${t} おつかれさま！`);
+    toast(`🌙 退勤 ${t} お疲れさまでした`);
   }
   saveRecords(records);
   renderToday();
