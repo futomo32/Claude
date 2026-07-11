@@ -45,6 +45,8 @@ CREATE TABLE customers (
   staff_name    TEXT,           -- 移行中の参照用。正式運用では staff_code に一本化
   store_code    TEXT REFERENCES stores(store_code),
   registered_at TEXT,
+  is_test       INTEGER NOT NULL DEFAULT 0,  -- 1=検証用ペルソナ(本番では0)
+  note          TEXT,                        -- 検証用の用途メモ等
   created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX idx_customers_kana ON customers(kana);

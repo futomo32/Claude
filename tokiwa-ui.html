@@ -694,6 +694,7 @@
           <div class="field"><label>顧客名・カナ</label><input id="q-name" placeholder="ヤマダ(カタカナ・あいまい可)"></div>
           <div class="field"><label>電話番号</label><input id="q-tel" inputmode="tel" placeholder="一部でも可"></div>
           <div class="field"><label>担当者</label><select id="q-staff"><option value="">すべて</option></select></div>
+          <button class="btn" id="test-cust-btn" style="display:none" onclick="showTestCustomers()">🧪 テスト顧客</button>
           <button class="btn btn-primary" onclick="openCustModal()">+ 新規顧客登録</button>
         </div>
         <p id="cust-count" style="margin:0 0 0.5rem;color:var(--muted);font-size:0.82em"></p>
@@ -1193,21 +1194,36 @@
   function paintCustomers() {
     var tb = document.getElementById("cust-tbody");
     if (!custHasQuery) {
+      var hasTest = D.customers.some(function (c) { return c[11]; });
       tb.innerHTML = '<tr><td colspan="7"><div class="empty-hint"><span class="big">🔍 顧客を検索</span>' +
         'カタカナ(あいまい可)・電話番号・担当者で絞り込めます。<br>全 ' + D.customers.length.toLocaleString() +
-        ' 件の顧客が登録されています。</div></td></tr>';
+        ' 件の顧客が登録されています。' +
+        (hasTest ? '<br><br><button class="btn" onclick="showTestCustomers()">🧪 テスト顧客を表示</button>' : '') +
+        '</div></td></tr>';
       document.getElementById("cust-count").textContent = "";
       document.getElementById("cust-more").style.display = "none";
       return;
     }
     tb.innerHTML = custFiltered.slice(0, custShown).map(function (c) {
-      return '<tr data-cust="' + esc(c[0]) + '" style="cursor:pointer"><td class="num">' + esc(c[0]) + '</td><td>' + esc(c[1]) + '</td><td>' + esc(c[2]) + '</td><td class="num">' + esc(dash(c[3])) + '</td><td class="r num">¥' + num(c[8]) + '</td><td class="r num">¥' + num(c[9]) + '</td><td>' + esc(shortName(c[4])) + '</td></tr>';
+      var nameCell = esc(c[1]) + (c[11] && c[12] ? ' <span class="chip chip-green">' + esc(c[12]) + '</span>' : "");
+      return '<tr data-cust="' + esc(c[0]) + '" style="cursor:pointer"><td class="num">' + esc(c[0]) + '</td><td>' + nameCell + '</td><td>' + esc(c[2]) + '</td><td class="num">' + esc(dash(c[3])) + '</td><td class="r num">¥' + num(c[8]) + '</td><td class="r num">¥' + num(c[9]) + '</td><td>' + esc(shortName(c[4])) + '</td></tr>';
     }).join("") || '<tr><td colspan="7" style="color:var(--muted)">該当する顧客が見つかりません</td></tr>';
     document.getElementById("cust-count").textContent =
       "該当 " + custFiltered.length.toLocaleString() + "件(表示 " + Math.min(custShown, custFiltered.length).toLocaleString() + "件) — 行クリックで詳細";
     document.getElementById("cust-more").style.display = custFiltered.length > custShown ? "" : "none";
   }
   function showMoreCustomers() { custShown += 200; paintCustomers(); }
+  function showTestCustomers() {
+    document.getElementById("q-name").value = "";
+    document.getElementById("q-tel").value = "";
+    document.getElementById("q-staff").value = "";
+    custHasQuery = true;
+    custFiltered = D.customers.filter(function (c) { return c[11]; });
+    custShown = 100;
+    paintCustomers();
+    document.getElementById("cust-count").textContent =
+      "🧪 テスト顧客 " + custFiltered.length + "件 — 名前が確認したい機能を表しています(例: メガネ太郎→処方箋)";
+  }
 
   /* ── 顧客詳細 ── */
   function findCust(id) {
@@ -1399,6 +1415,9 @@
     document.getElementById("cust-modal").addEventListener("click", function (e) {
       if (e.target === this) closeCustModal();
     });
+    if (D.customers.some(function (c) { return c[11]; })) {
+      document.getElementById("test-cust-btn").style.display = "";
+    }
     renderCustomers();
     renderProducts();
   })();

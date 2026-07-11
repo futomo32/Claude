@@ -31,12 +31,14 @@ def build_blob(con):
         y2026[r["cid"]] = r["y26"] or 0
 
     customers = []
-    for r in cur.execute("""SELECT customer_id,name,kana,tel,staff_name,address,birthday,gender,wedding_day
-                            FROM customers ORDER BY CAST(customer_id AS INTEGER)"""):
+    for r in cur.execute("""SELECT customer_id,name,kana,tel,staff_name,address,birthday,gender,wedding_day,
+                                   is_test,note
+                            FROM customers ORDER BY is_test DESC, CAST(customer_id AS INTEGER)"""):
         cid = r["customer_id"]
         customers.append([
             cid, r["name"], r["kana"], r["tel"], r["staff_name"], r["address"],
             r["birthday"], r["gender"], totals.get(cid, 0), y2026.get(cid, 0), r["wedding_day"],
+            r["is_test"], r["note"],  # c[11]=テスト印, c[12]=用途メモ
         ])
 
     def group(sql, key_idx=0):

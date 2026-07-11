@@ -95,123 +95,160 @@ def main():
                     (str(pkey), str(pkey), name, "メガネ", price, int(price * 0.5), "在庫", "メガネ棚"))
         glass_products[name] = str(pkey)
 
-    slip_id = 0
-    stats = {"sales": 0, "receivable": 0, "rx": 0, "families": 0, "approach": 0}
+    FRAME_PRICE = dict(FRAMES)
+    LENS_PRICE = dict(LENSES)
+    slip = [0]
+    rx_seq = [0]
+    stats = {"personas": 0, "sales": 0, "receivable": 0, "rx": 0, "families": 0, "approach": 0}
 
-    for cid in range(1, n_cust + 1):
+    def add_customer(cid, name, kana, gender, birthday, wedding=None, staff=None, is_test=0, note=None):
+        staff = staff or random.choice(STAFF)
+        tel = f"0{random.choice(['90','80','70'])}-{random.randint(1000,9999)}-{random.randint(1000,9999)}"
+        addr = "長野県" + random.choice(CITIES) + f"{random.randint(1,9)}-{random.randint(1,20)}-{random.randint(1,30)}"
+        cur.execute("""INSERT INTO customers(customer_id,name,kana,tel,gender,birthday,wedding_day,
+                       address,staff_code,staff_name,store_code,dm_ok,registered_at,is_test,note)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,'01','可',?,?,?)""",
+                    (str(cid), name, kana, tel, gender, birthday, wedding, addr,
+                     staff[0], staff[1], d(random.randint(2014, 2024)), is_test, note))
+        return staff
+
+    def add_family(cid, sur, members):
+        for fgiv, rel, g in members:
+            cur.execute("""INSERT INTO customer_families(customer_id,name,relation,gender,birthday)
+                           VALUES (?,?,?,?,?)""", (str(cid), f"{sur} {fgiv}", rel, g, d(random.randint(1950, 2015))))
+        stats["families"] += 1
+
+    def add_approach(cid, staff, entries):
+        for dt, kind, title in entries:
+            cur.execute("""INSERT INTO approach_history(customer_id,approach_date,kind,title,staff_name)
+                           VALUES (?,?,?,?,?)""", (str(cid), dt, kind, title, staff[1]))
+        stats["approach"] += 1
+
+    def record_sales(cid, staff, buys, set_balance=True):
+        """buys=[(sold,pay,item,amount)]。日付順に売上・在庫引落・ポイント加算・売掛を記録"""
+        buys.sort(key=lambda b: b[0])
+        added = 0
+        for sold, pay, item, amount in buys:
+            earned = amount // 200
+            slip[0] += 1
+            sid = slip[0]
+            cur.execute("""INSERT INTO sales_slips(slip_id,slip_no,customer_id,staff_code,staff_name,
+                           store_code,sold_at,pay_method,earned_points) VALUES (?,?,?,?,?,?,?,?,?)""",
+                        (sid, f"S{sid:06d}", str(cid), staff[0], staff[1], "01", sold, pay, earned))
+            cur.execute("INSERT INTO sale_lines(slip_id,product_key,list_price,amount) VALUES (?,?,?,?)",
+                        (sid, item[0], item[2], amount))
+            cur.execute("UPDATE products SET state='売上' WHERE product_key=?", (item[0],))
+            cur.execute("INSERT INTO stock_events(product_key,event_type,qty_delta,ref_slip_id) VALUES (?,?,?,?)",
+                        (item[0], "売上引落", -1, sid))
+            stats["sales"] += 1
+            added += earned
+            cur.execute("""INSERT INTO point_transactions(customer_id,tx_type,points,add_points,balance,ref_slip_id,occurred_at)
+                           VALUES (?,?,?,?,?,?,?)""", (str(cid), "加算", earned, earned, added, sid, sold))
+            if pay == "掛売":
+                down = round(amount * random.choice([0.3, 0.5]), -3)
+                cur.execute("""INSERT INTO receivables(customer_id,product_key,product_name,bought_at,down_payment,balance,last_paid_at)
+                               VALUES (?,?,?,?,?,?,?)""", (str(cid), item[0], item[1], sold, down, amount - down, sold))
+                cur.execute("INSERT INTO receivable_entries(customer_id,entry_type,entry_date,product_name,amount,paid) VALUES (?,?,?,?,?,?)",
+                            (str(cid), "掛売", sold, item[1], amount, None))
+                cur.execute("INSERT INTO receivable_entries(customer_id,entry_type,entry_date,product_name,amount,paid) VALUES (?,?,?,?,?,?)",
+                            (str(cid), "入金(頭金)", sold, item[1], None, down))
+                stats["receivable"] += 1
+        if set_balance and added:
+            cur.execute("INSERT OR REPLACE INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)",
+                        (str(cid), added, d(2026)))
+        return added
+
+    def take(n):
+        out = []
+        for _ in range(n):
+            if stock_pool:
+                out.append(stock_pool.pop(random.randrange(len(stock_pool))))
+        return out
+
+    def add_rx(cid, purpose, sph_r, add, when):
+        rx_seq[0] += 1
+        fname, fprice = random.choice(FRAMES)
+        lname, lprice = random.choice(LENSES)
+        pd_r, pd_l = round(random.uniform(30, 33), 1), round(random.uniform(30, 33), 1)
+        cur.execute("""INSERT INTO prescriptions
+            (customer_id,rx_no,purpose,lens_name,frame_name,lens_key,frame_key,
+             sph_r,sph_l,cyl_r,cyl_l,ax_r,ax_l,add_r,add_l,
+             pd_far_r,pd_far_l,pd_far_both,pd_near_r,pd_near_l,pd_near_both,
+             total_list,total_sell,handler,rx_date,jewelry_misassign)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)""",
+            (str(cid), f"RX-{rx_seq[0]:04d}", purpose, lname, fname, glass_products[lname], glass_products[fname],
+             f"{sph_r:+.2f}", f"{sph_r+0.25:+.2f}", "-0.50", "-0.75", "180", "175", add, add,
+             f"{pd_r:.1f}", f"{pd_l:.1f}", f"{pd_r+pd_l:.1f}", f"{pd_r-1.5:.1f}", f"{pd_l-1.5:.1f}", f"{pd_r+pd_l-3:.1f}",
+             lprice + fprice, lprice + fprice, random.choice(STAFF)[1], when))
+        stats["rx"] += 1
+
+    # ══ 検証用ペルソナ(名前が用途を表す。顧客管理の「テスト顧客」から呼び出せる)══
+    S = STAFF
+    # 1) メガネ太郎 — 処方箋確認
+    st = add_customer(1, "メガネ 太郎", "ﾒｶﾞﾈ ﾀﾛｳ", "男", d(1968, 3, 3), staff=S[0], is_test=1, note="処方箋確認")
+    fk = [(glass_products[f], f, FRAME_PRICE[f]) for f in FRAME_PRICE]
+    record_sales(1, st, [("2024-05-10", "現金", fk[0], fk[0][2]), ("2022-09-14", "クレジット", fk[1], fk[1][2])])
+    add_rx(1, "遠近両用", -2.25, "+1.50", "2025-09-14")
+    add_rx(1, "中近(室内用)", -2.00, "+1.25", "2023-04-02")
+    add_rx(1, "遠用", -3.00, "", "2021-06-18")
+
+    # 2) ポイント花子 — ポイント確認(加算+使用、残高が一致)
+    st = add_customer(2, "ポイント 花子", "ﾎﾟｲﾝﾄ ﾊﾅｺ", "女", d(1975, 8, 20), staff=S[0], is_test=1, note="ポイント確認")
+    # 購入日は全て使用日(2026-06-01)より前にし、時系列で残高が正しく推移するようにする
+    pt_dates = ["2021-09-10", "2023-02-01", "2024-07-17", "2025-03-04", "2025-11-20"]
+    added = record_sales(2, st, [(dt, "現金", it, it[2]) for dt, it in zip(pt_dates, take(5))], set_balance=False)
+    cur.execute("""INSERT INTO point_transactions(customer_id,tx_type,points,use_points,balance,occurred_at)
+                   VALUES (?,?,?,?,?,?)""", ("2", "使用", -1000, 1000, added - 1000, "2026-06-01"))
+    cur.execute("INSERT OR REPLACE INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)", ("2", added - 1000, "2026-06-01"))
+
+    # 3) 売掛次郎 — 入金管理(売掛)確認
+    st = add_customer(3, "売掛 次郎", "ｳﾘｶｹ ｼﾞﾛｳ", "男", d(1962, 1, 15), staff=S[1], is_test=1, note="入金管理(売掛)確認")
+    record_sales(3, st, [("2026-03-05", "掛売", take(1)[0], 560000), ("2025-11-20", "掛売", take(1)[0], 280000)])
+
+    # 4) 購入歴子 — 購入履歴確認(多数・高額)
+    st = add_customer(4, "購入 歴子", "ｺｳﾆｭｳ ﾚｷｺ", "女", d(1958, 12, 1), d(1985, 6, 10), staff=S[0], is_test=1, note="購入履歴確認")
+    record_sales(4, st, [(d(y), random.choice(["現金", "クレジット"]), it, it[2]) for y, it in zip([2019, 2020, 2021, 2023, 2024, 2026], take(6))])
+
+    # 5) 家族丸 — 家族情報確認
+    st = add_customer(5, "家族 丸", "ｶｿﾞｸ ﾏﾙ", "男", d(1965, 2, 20), d(1992, 11, 3), staff=S[2], is_test=1, note="家族情報確認")
+    add_family(5, "家族", [("桃子", "妻", "女"), ("一郎", "長男", "男"), ("美咲", "長女", "女"), ("松子", "母", "女")])
+    record_sales(5, st, [("2024-11-03", "現金", take(1)[0], 128000)])
+
+    # 6) 新規子 — 新規/空データ確認(履歴なしの見え方)
+    add_customer(6, "新規 子", "ｼﾝｷﾞ ｺ", "女", d(1990, 1, 1), staff=S[3], is_test=1, note="新規/空データ確認")
+
+    # 7) 声がけ子 — お声がけ/アプローチ確認(誕生日が近い)
+    st = add_customer(7, "声がけ 子", "ｺｴｶｹ ｺ", "女", d(1970, 7, 15), d(2000, 9, 20), staff=S[1], is_test=1, note="お声がけ/アプローチ確認")
+    add_approach(7, st, [("2026-06-22", "TEL", "誕生月のご案内"), ("2026-05-10", "DM", "夏の宝飾展 招待状"), ("2026-03-01", "来店", "リング点検・次回記念日を提案")])
+    record_sales(7, st, [("2025-09-20", "現金", take(1)[0], 96000)])
+    stats["personas"] = 7
+
+    # ══ フィラー顧客(is_test=0)══
+    for cid in range(8, n_cust + 1):
         gender = random.choice(["女", "男"])
         sur = random.choice(SURNAMES)
         giv = random.choice(FEMALE if gender == "女" else MALE)
-        name = f"{sur[0]} {giv[0]}"
-        kana = f"{sur[1]} {giv[1]}"
-        birth = d(random.randint(1948, 1998))
         wedding = d(random.randint(1975, 2020)) if random.random() < 0.5 else None
-        tel = f"0{random.choice(['90','80','70'])}-{random.randint(1000,9999)}-{random.randint(1000,9999)}"
-        staff = random.choice(STAFF)
-        addr = "長野県" + random.choice(CITIES) + f"{random.randint(1,9)}-{random.randint(1,20)}-{random.randint(1,30)}"
-        cur.execute("""INSERT INTO customers(customer_id,name,kana,tel,gender,birthday,wedding_day,
-                       address,staff_code,staff_name,store_code,dm_ok,registered_at)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,'01','可',?)""",
-                    (str(cid), name, kana, tel, gender, birth, wedding, addr,
-                     staff[0], staff[1], d(random.randint(2014, 2024))))
-
-        # 家族
+        st = add_customer(cid, f"{sur[0]} {giv[0]}", f"{sur[1]} {giv[1]}", gender,
+                          d(random.randint(1948, 1998)), wedding)
         if random.random() < 0.4:
-            for _ in range(random.randint(1, 2)):
-                fg = random.choice(["夫", "妻", "長女", "長男", "母"])
-                fgiv = random.choice(FEMALE if fg in ("妻", "長女", "母") else MALE)
-                cur.execute("""INSERT INTO customer_families(customer_id,name,relation,gender,birthday)
-                               VALUES (?,?,?,?,?)""",
-                            (str(cid), f"{sur[0]} {fgiv[0]}", fg,
-                             "女" if fg in ("妻", "長女", "母") else "男", d(random.randint(1950, 2015))))
-            stats["families"] += 1
-
-        # 購入(0〜5件)。累計・年度・ポイントはこの明細から自動で辻褄が合う
+            fg = random.choice([("妻", "女"), ("長女", "女"), ("長男", "男"), ("母", "女")])
+            add_family(cid, sur[0], [(random.choice(FEMALE if fg[1] == "女" else MALE)[0], fg[0], fg[1])])
         n_buy = random.choices([0, 1, 2, 3, 4, 5], weights=[15, 30, 25, 15, 10, 5])[0]
-        pt_balance = 0
-        # 先に購入を作って日付順に並べ、ポイント残高を時系列で積む(推移が自然になる)
         buys = []
-        for _ in range(n_buy):
-            if not stock_pool:
-                break
-            sold = d(random.randint(2019, 2026))
-            pay = random.choices(["現金", "クレジット", "掛売", "PayPay"], weights=[50, 25, 15, 10])[0]
-            item = stock_pool.pop(random.randrange(len(stock_pool)))
-            amount = item[2] - (random.choice([0, 0, 0, 5000, 10000]) if item[2] > 100000 else 0)
-            buys.append((sold, pay, item, amount))
-        buys.sort(key=lambda b: b[0])  # 買上日の昇順
-        for sold, pay, item, amount in buys:
-            earned = amount // 200
-            slip_id += 1
-            cur.execute("""INSERT INTO sales_slips(slip_id,slip_no,customer_id,staff_code,staff_name,
-                           store_code,sold_at,pay_method,earned_points)
-                           VALUES (?,?,?,?,?,?,?,?,?)""",
-                        (slip_id, f"S{slip_id:06d}", str(cid), staff[0], staff[1], "01", sold, pay, earned))
-            cur.execute("""INSERT INTO sale_lines(slip_id,product_key,list_price,amount)
-                           VALUES (?,?,?,?)""", (slip_id, item[0], item[2], amount))
-            cur.execute("UPDATE products SET state='売上' WHERE product_key=?", (item[0],))
-            cur.execute("""INSERT INTO stock_events(product_key,event_type,qty_delta,ref_slip_id)
-                           VALUES (?,?,?,?)""", (item[0], "売上引落", -1, slip_id))
-            stats["sales"] += 1
+        for it in take(n_buy):
+            amount = it[2] - (random.choice([0, 0, 0, 5000, 10000]) if it[2] > 100000 else 0)
+            buys.append((d(random.randint(2019, 2026)),
+                         random.choices(["現金", "クレジット", "掛売", "PayPay"], weights=[50, 25, 15, 10])[0], it, amount))
+        record_sales(cid, st, buys)
+        if random.random() < 0.3:
+            add_approach(cid, st, [(d(random.randint(2024, 2026)), random.choice(["来店", "DM", "TEL"]),
+                                    random.choice(["誕生日のご案内", "宝飾展の招待", "点検のおすすめ"]))])
 
-            # ポイント履歴(加算)
-            pt_balance += earned
-            cur.execute("""INSERT INTO point_transactions(customer_id,tx_type,points,add_points,balance,ref_slip_id,occurred_at)
-                           VALUES (?,?,?,?,?,?,?)""",
-                        (str(cid), "加算", earned, earned, pt_balance, slip_id, sold))
-
-            # 掛売なら売掛(頭金+残高が購入額に一致するよう作る)
-            if pay == "掛売":
-                down = round(amount * random.choice([0.3, 0.5]), -3)
-                bal = amount - down
-                cur.execute("""INSERT INTO receivables(customer_id,product_key,product_name,bought_at,down_payment,balance,last_paid_at)
-                               VALUES (?,?,?,?,?,?,?)""",
-                            (str(cid), item[0], item[1], sold, down, bal, sold))
-                cur.execute("""INSERT INTO receivable_entries(customer_id,entry_type,entry_date,product_name,amount,paid)
-                               VALUES (?,?,?,?,?,?)""", (str(cid), "掛売", sold, item[1], amount, None))
-                cur.execute("""INSERT INTO receivable_entries(customer_id,entry_type,entry_date,product_name,amount,paid)
-                               VALUES (?,?,?,?,?,?)""", (str(cid), "入金(頭金)", sold, item[1], None, down))
-                stats["receivable"] += 1
-
-        # ポイント残高キャッシュ
-        if pt_balance:
-            cur.execute("INSERT INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)",
-                        (str(cid), pt_balance, d(2026)))
-
-        # アプローチ履歴
-        if random.random() < 0.35:
-            for _ in range(random.randint(1, 2)):
-                kind = random.choice(["来店", "DM", "TEL"])
-                cur.execute("""INSERT INTO approach_history(customer_id,approach_date,kind,title,staff_name)
-                               VALUES (?,?,?,?,?)""",
-                            (str(cid), d(random.randint(2024, 2026)), kind,
-                             random.choice(["誕生日のご案内", "宝飾展の招待", "点検のおすすめ", "記念日フェア"]), staff[1]))
-            stats["approach"] += 1
-
-    # ── メガネ処方箋(メガネ商品のみ・整合性あり) ──
-    glasses_custs = random.sample(range(1, n_cust + 1), min(12, n_cust))
-    rx_id = 0
-    for cid in glasses_custs:
-        for _ in range(random.randint(1, 2)):
-            rx_id += 1
-            fname, fprice = random.choice(FRAMES)
-            lname, lprice = random.choice(LENSES)
-            sph_r = -round(random.uniform(0.5, 6.0) * 4) / 4
-            sph_l = sph_r + random.choice([0, 0.25, -0.25])
-            add = random.choice(["", "+1.00", "+1.50", "+2.00"])
-            pd_r, pd_l = round(random.uniform(30, 33), 1), round(random.uniform(30, 33), 1)
-            cur.execute("""INSERT INTO prescriptions
-                (customer_id,rx_no,purpose,lens_name,frame_name,lens_key,frame_key,
-                 sph_r,sph_l,cyl_r,cyl_l,ax_r,ax_l,add_r,add_l,
-                 pd_far_r,pd_far_l,pd_far_both,pd_near_r,pd_near_l,pd_near_both,
-                 total_list,total_sell,handler,rx_date,jewelry_misassign)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)""",
-                (str(cid), f"RX-{rx_id:04d}", random.choice(PURPOSES), lname, fname,
-                 glass_products[lname], glass_products[fname],
-                 f"{sph_r:+.2f}", f"{sph_l:+.2f}", "-0.50", "-0.75", "180", "175", add, add,
-                 f"{pd_r:.1f}", f"{pd_l:.1f}", f"{pd_r+pd_l:.1f}", f"{pd_r-1.5:.1f}", f"{pd_l-1.5:.1f}", f"{pd_r+pd_l-3:.1f}",
-                 lprice + fprice, lprice + fprice, random.choice(STAFF)[1], d(random.randint(2023, 2026))))
-            stats["rx"] += 1
+    # フィラーにも数名メガネ処方箋(ペルソナ以外)
+    for cid in random.sample(range(8, n_cust + 1), min(8, max(0, n_cust - 7))):
+        add_rx(cid, random.choice(PURPOSES), -round(random.uniform(0.5, 6.0) * 4) / 4,
+               random.choice(["", "+1.00", "+1.50"]), d(random.randint(2023, 2026)))
 
     cur.execute("INSERT INTO schema_migrations(version,note) VALUES (1,'サンプルデータ生成')")
     con.commit()
