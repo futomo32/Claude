@@ -94,9 +94,13 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8760
+    # 第1引数が数字のときだけポートとして採用(コメントの貼り付け等は無視)
+    port = 8760
+    if len(sys.argv) > 1 and sys.argv[1].isdigit():
+        port = int(sys.argv[1])
     srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    print(f"トキワ起動: http://localhost:{port}/  (Ctrl+Cで停止)")
+    print(f"トキワ起動: http://localhost:{port}/")
+    print("  → ブラウザで上のURLを開いてください。停止は Ctrl+C。")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
