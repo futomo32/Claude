@@ -537,7 +537,7 @@
       <button class="link-btn" onclick="toggleOffline()">オフライン動作を試す</button>
     </div>
     <div class="offline-banner" id="offline-banner">⚠ サーバーに接続できません — 入力データは端末に一時保存し、復旧後に自動送信します(未送信 3件)</div>
-    <div class="mock-note">画面モック — 表示中の名前・数値はすべてダミーです。データベース接続・保存機能は未実装です。</div>
+    <div class="mock-note" id="mock-note">画面モック — 表示中の名前・数値はすべてダミーです。データベース接続・保存機能は未実装です。</div>
 
     <!-- ── ホーム ── -->
     <section class="content active" data-screen="home">
@@ -946,6 +946,16 @@
   });
   recalcPos();
 
+  /* サーバー接続時は注意書きを「DB接続版」に切り替える */
+  if (window.TOKIWA_API) {
+    var mn = document.getElementById("mock-note");
+    if (mn) {
+      mn.textContent = "データベース接続版 — デモデータ(ダミー)を db/tokiwa.db から表示。会計確定は実際に保存されます。";
+      mn.style.background = "var(--accent-soft)";
+      mn.style.color = "var(--accent)";
+    }
+  }
+
   /* ═══ デモデータの描画 ═══ */
   var D = window.TOKIWA_DATA || { customers: [], sales: {}, families: {}, points: {}, pointTx: {}, urikake: {}, urikakeHist: {}, approach: {}, rx: {}, products: [] };
   // customers: [id, 名前, カナ, TEL, 担当, 住所, 生年月日, 性別, 累計, 2026年度, 結婚記念日]
@@ -1033,8 +1043,9 @@
     if (sales.length) {
       html += '<div class="table-scroll"><table class="data"><thead><tr><th>買上日</th><th>商品名</th><th>商品情報</th><th class="r">購入金額</th><th>支払</th><th>担当</th></tr></thead><tbody>' +
         sales.map(function (s) {
-          var amount = (s[1].indexOf("種類未定") >= 0 && !s[3]) ? "未定" : "¥" + num(s[3]);
-          var nameCell = esc(s[1]) + (s[2] && String(s[2]).indexOf("後日入力") >= 0 ? ' <span class="chip chip-warn">後日入力</span>' : "");
+          var nm = String(s[1] == null ? "" : s[1]);
+          var amount = (nm.indexOf("種類未定") >= 0 && !s[3]) ? "未定" : "¥" + num(s[3]);
+          var nameCell = esc(dash(s[1])) + (s[2] && String(s[2]).indexOf("後日入力") >= 0 ? ' <span class="chip chip-warn">後日入力</span>' : "");
           return '<tr><td class="num">' + esc(s[0]) + '</td><td>' + nameCell + '</td><td>' + esc(dash(s[2])) + '</td><td class="r num">' + amount + '</td><td>' + esc(dash(s[4])) + '</td><td>' + esc(shortName(s[5])) + '</td></tr>';
         }).join("") + '</tbody></table></div>';
     } else {
@@ -1223,10 +1234,11 @@
     toastTimer = setTimeout(function () { t.classList.remove("show"); }, 5200);
   }
 
-  /* 会計確定: 購入履歴への自動記録+在庫引き落としのデモ */
+  /* 会計確定: 購入履歴への自動記録+在庫引き落とし */
   var checkedOut = false;
   function doCheckout(btn) {
     if (checkedOut) return;
+    if (window.TOKIWA_API) return liveCheckout(btn); // サーバー接続時は実DBへ書き込む
     checkedOut = true;
     var inputs = document.querySelectorAll(".amount-input");
     var amt = function (i) { return parseInt(inputs[i].value.replace(/[^0-9]/g, ""), 10) || 0; };
@@ -1239,6 +1251,37 @@
     btn.textContent = "登録済み";
     btn.disabled = true;
     showToast("売上3点を登録しました。山田 太郎様(顧客ID 1)の購入履歴に反映しています — 顧客管理からIDで検索して確認できます。メガネレンズは種類未定のまま仮登録されました(後日入力)。");
+  }
+
+  /* サーバー接続時: 会計を実DBに書き込み、永続化する */
+  function liveCheckout(btn) {
+    if (checkedOut) return;
+    checkedOut = true;
+    var inputs = document.querySelectorAll(".amount-input");
+    var amt = function (i) { return parseInt(inputs[i].value.replace(/[^0-9]/g, ""), 10) || 0; };
+    var payload = {
+      customer_id: "1", staff_name: "田中 一樹", pay_method: "現金",
+      lines: [
+        { free_name: "電池交換", amount: amt(0) },
+        (window.TOKIWA_SAMPLE_STOCK
+          ? { product_key: window.TOKIWA_SAMPLE_STOCK, amount: amt(1) }
+          : { free_name: "Pt900 ダイヤリング 0.35ct", amount: amt(1) }),
+        { free_name: "メガネレンズ(種類未定)", spec_pending: 1, amount: amt(2) }
+      ]
+    };
+    btn.textContent = "登録中…";
+    btn.disabled = true;
+    fetch(window.TOKIWA_API + "/checkout", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    }).then(function (r) { return r.json(); }).then(function (data) {
+      if (data.error) throw new Error(data.error);
+      btn.textContent = "登録済み";
+      showToast("伝票 #" + data.slip_id + " をデータベースに保存しました(合計 ¥" + data.total.toLocaleString() +
+        " / 加算 " + data.earned + "pt)。在庫を引き落とし、購入履歴に反映済み。画面を再読み込みしても残ります。");
+    }).catch(function (e) {
+      checkedOut = false; btn.disabled = false; btn.textContent = "会計を確定";
+      showToast("保存に失敗しました: " + e.message);
+    });
   }
 
   /* オフライン縮退運転のデモ */
