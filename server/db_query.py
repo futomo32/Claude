@@ -104,6 +104,31 @@ def sample_in_stock_key(con):
     return row[0] if row else None
 
 
+CUSTOMER_FIELDS = ("name", "kana", "gender", "birthday", "wedding_day", "tel",
+                   "email", "address", "rank", "dm_ok", "staff_name", "ring_size", "pierce")
+
+
+def upsert_customer(con, payload):
+    """顧客の新規登録/編集。customer_id が空なら採番して新規、あれば更新。"""
+    cur = con.cursor()
+    cid = str(payload.get("customer_id") or "").strip()
+    vals = {k: (payload.get(k) or None) for k in CUSTOMER_FIELDS}
+    is_new = not cid
+    if is_new:
+        row = con.execute("SELECT MAX(CAST(customer_id AS INTEGER)) FROM customers").fetchone()
+        cid = str((row[0] or 0) + 1)
+        cols = ["customer_id"] + list(CUSTOMER_FIELDS) + ["store_code", "registered_at"]
+        ph = ",".join("?" * len(cols))
+        cur.execute(f"INSERT INTO customers({','.join(cols)}) VALUES ({ph})",
+                    [cid] + [vals[k] for k in CUSTOMER_FIELDS] + ["01", None])
+    else:
+        setclause = ",".join(f"{k}=?" for k in CUSTOMER_FIELDS)
+        cur.execute(f"UPDATE customers SET {setclause} WHERE customer_id=?",
+                    [vals[k] for k in CUSTOMER_FIELDS] + [cid])
+    con.commit()
+    return {"customer_id": cid, "new": is_new}
+
+
 def checkout(con, payload):
     """会計を実DBに書き込む。伝票+明細+在庫引落+ポイント加算を1トランザクションで。"""
     cur = con.cursor()

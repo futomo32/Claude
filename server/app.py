@@ -76,11 +76,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         try:
+            length = int(self.headers.get("Content-Length", 0))
+            payload = json.loads(self.rfile.read(length) or b"{}")
             if self.path == "/api/checkout":
-                length = int(self.headers.get("Content-Length", 0))
-                payload = json.loads(self.rfile.read(length) or b"{}")
                 con = connect()
                 result = db_query.checkout(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if self.path == "/api/customer":
+                con = connect()
+                result = db_query.upsert_customer(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             self._send(404, json.dumps({"error": "not found"}).encode())
