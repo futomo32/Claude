@@ -1,0 +1,11 @@
+# ビルド生成物(再生成可能なため管理外)
+db/*.db
+db/*.db-journal
+db/*.db-wal
+
+# Python
+__pycache__/
+*.pyc
+
+# scratch
+*.log
