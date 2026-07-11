@@ -74,7 +74,7 @@ def main():
     # ── 商品カタログ(在庫プール) ──
     pkey = 1000
     stock_pool = []          # 販売に回せる在庫宝飾品 [(product_key, name, price)]
-    for _ in range(90):
+    for _ in range(360):     # 売却分を差し引いても在庫が潤沢に残るよう多めに生成
         cat, base, stone, lo, hi = random.choice(JEWELRY)
         price = round(random.randint(lo, hi), -3)
         pkey += 1
