@@ -32,7 +32,8 @@ CREATE TABLE customers (
   tel           TEXT,
   tel2          TEXT,
   postal        TEXT,
-  address       TEXT,
+  address       TEXT,           -- 住所1: 都道府県・市区町村・番地
+  address2      TEXT,           -- 住所2: 建物名・部屋番号(ラベル印刷ではみ出さないよう分離)
   gender        TEXT,
   birthday      TEXT,           -- YYYY-MM-DD
   wedding_day   TEXT,

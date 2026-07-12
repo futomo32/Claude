@@ -34,13 +34,14 @@ def build_blob(con):
 
     customers = []
     for r in cur.execute("""SELECT customer_id,name,kana,tel,staff_name,address,birthday,gender,wedding_day,
-                                   is_test,note
+                                   is_test,note,postal,address2
                             FROM customers ORDER BY is_test DESC, CAST(customer_id AS INTEGER)"""):
         cid = r["customer_id"]
         customers.append([
             cid, r["name"], r["kana"], r["tel"], r["staff_name"], r["address"],
             r["birthday"], r["gender"], totals.get(cid, 0), y2026.get(cid, 0), r["wedding_day"],
-            r["is_test"], r["note"], last_buy.get(cid),  # c[11]=テスト印, c[12]=用途, c[13]=最終購入日
+            r["is_test"], r["note"], last_buy.get(cid),   # 11=テスト印 12=用途 13=最終購入日
+            r["postal"], r["address2"],                    # 14=郵便番号 15=建物名等
         ])
 
     def group(sql, key_idx=0):
@@ -109,7 +110,8 @@ def sample_in_stock_key(con):
 
 
 CUSTOMER_FIELDS = ("name", "kana", "gender", "birthday", "wedding_day", "tel",
-                   "email", "address", "rank", "dm_ok", "staff_name", "ring_size", "pierce")
+                   "email", "postal", "address", "address2", "rank", "dm_ok",
+                   "staff_name", "ring_size", "pierce")
 
 
 def upsert_customer(con, payload):
@@ -131,6 +133,47 @@ def upsert_customer(con, payload):
                     [vals[k] for k in CUSTOMER_FIELDS] + [cid])
     con.commit()
     return {"customer_id": cid, "new": is_new}
+
+
+def add_prescription(con, p):
+    """メガネ処方箋の新規登録。PD両眼は左右から自動合計。"""
+    cur = con.cursor()
+
+    def v(k):
+        x = p.get(k)
+        x = str(x).strip() if x is not None else ""
+        return x or None
+
+    def fsum(a, b):
+        try:
+            return f"{float(a) + float(b):.1f}"
+        except (TypeError, ValueError):
+            return None
+
+    n = con.execute("SELECT COUNT(*) FROM prescriptions").fetchone()[0]
+    rx_no = f"RX-{n + 1:04d}"
+
+    def n_int(k):
+        try:
+            return int(str(p.get(k)).replace(",", ""))
+        except (TypeError, ValueError):
+            return None
+
+    cur.execute("""INSERT INTO prescriptions
+        (customer_id,rx_no,purpose,lens_name,frame_name,
+         sph_r,sph_l,cyl_r,cyl_l,ax_r,ax_l,add_r,add_l,
+         pd_far_r,pd_far_l,pd_far_both,pd_near_r,pd_near_l,pd_near_both,
+         total_sell,handler,rx_date,jewelry_misassign)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)""",
+        (str(p.get("customer_id")), rx_no, v("purpose"), v("lens_name"), v("frame_name"),
+         v("sph_r"), v("sph_l"), v("cyl_r"), v("cyl_l"), v("ax_r"), v("ax_l"), v("add_r"), v("add_l"),
+         v("pd_far_r"), v("pd_far_l"), fsum(v("pd_far_r"), v("pd_far_l")),
+         v("pd_near_r"), v("pd_near_l"), fsum(v("pd_near_r"), v("pd_near_l")),
+         n_int("total_sell"), v("handler"), v("rx_date")))
+    con.commit()
+    return {"id": cur.lastrowid, "rx_no": rx_no,
+            "pd_far_both": fsum(v("pd_far_r"), v("pd_far_l")),
+            "pd_near_both": fsum(v("pd_near_r"), v("pd_near_l"))}
 
 
 def checkout(con, payload):

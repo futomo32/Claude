@@ -31,14 +31,27 @@ def s(v):
     return t or None
 
 
-def dt(v):
+# 宝飾ナビの「西暦和暦コード」の対応表(実データ移行時の振り分けに使用)
+ERA_MAP = {"1": "明治", "2": "大正", "3": "昭和", "4": "平成", "5": "令和"}
+ERA_BASE = {"明治": 1867, "大正": 1911, "昭和": 1925, "平成": 1988, "令和": 2018}
+
+
+def dt(v, era_code=None):
+    """日付 → YYYY-MM-DD。和暦表記(「36.5.4」+コード3、「昭和36.5.4」等)は西暦に変換"""
     if isinstance(v, datetime.datetime):
         return v.strftime("%Y-%m-%d")
     t = s(v)
     if not t:
         return None
     m = re.match(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", t)
-    return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}" if m else None
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+    era = ERA_MAP.get(s(era_code) or "")
+    m = re.match(r"(?:(明治|大正|昭和|平成|令和))?\s*(\d{1,2})[.年/-](\d{1,2})[.月/-]?(\d{1,2})?", t)
+    if m and (m.group(1) or era) and m.group(3):
+        y = int(m.group(2)) + ERA_BASE[m.group(1) or era]
+        return f"{y}-{int(m.group(3)):02d}-{int(m.group(4) or 1):02d}"
+    return None
 
 
 def n(v):
@@ -88,7 +101,8 @@ def main():
         seen.add(cid)
         custs.append((
             cid, s(r.get("顧客名")), s(r.get("顧客名(フリガナ)")), s(r.get("顧客tel")), s(r.get("顧客tel2")),
-            s(r.get("郵便番号")), s(r.get("住所1")), s(r.get("性別")), dt(r.get("生年月日")), dt(r.get("結婚記念日")),
+            s(r.get("郵便番号")), s(r.get("住所1")), s(r.get("性別")),
+            dt(r.get("生年月日"), r.get("西暦和暦コード")), dt(r.get("結婚記念日"), r.get("結婚西暦和暦コード")),
             s(r.get("顧客ランク")), s(r.get("dm送付有無")), s(r.get("eメール")),
             s(r.get("指1リングサイズ")), s(r.get("ピアス穴有無")),
             s(r.get("担当者コード")), s(r.get("担当者")), s(r.get("店舗コード")), dt(r.get("登録日")),

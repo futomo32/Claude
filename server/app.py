@@ -12,7 +12,7 @@
 正式運用(Windows単機)ではこのサーバーをローカルで起動し、ブラウザで開く構成。
 将来デスクトップアプリ(Electron等)に載せ替える場合もAPIはそのまま流用できる。
 """
-import json, os, sqlite3, sys
+import json, os, re, sqlite3, sys, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = os.path.join(os.path.dirname(__file__), "..")
@@ -70,6 +70,22 @@ class Handler(BaseHTTPRequestHandler):
                 blob = db_query.build_blob(con)
                 con.close()
                 return self._send(200, json.dumps(blob, ensure_ascii=False).encode("utf-8"))
+            if self.path.startswith("/api/postal"):
+                # 郵便番号→住所検索(zipcloudへの中継)。オフライン時はエラーを返すだけ
+                zipc = re.sub(r"[^0-9]", "", self.path.split("zip=")[-1])
+                if len(zipc) != 7:
+                    return self._send(400, json.dumps({"error": "郵便番号は7桁で入力してください"}, ensure_ascii=False).encode("utf-8"))
+                try:
+                    with urllib.request.urlopen(
+                            "https://zipcloud.ibsnet.co.jp/api/search?zipcode=" + zipc, timeout=5) as r:
+                        data = json.load(r)
+                    res = (data.get("results") or [None])[0]
+                    if not res:
+                        return self._send(404, json.dumps({"error": "該当する住所が見つかりません"}, ensure_ascii=False).encode("utf-8"))
+                    addr = (res.get("address1") or "") + (res.get("address2") or "") + (res.get("address3") or "")
+                    return self._send(200, json.dumps({"address": addr}, ensure_ascii=False).encode("utf-8"))
+                except Exception:  # noqa: BLE001
+                    return self._send(502, json.dumps({"error": "住所検索に接続できません(オフライン?)。手入力してください"}, ensure_ascii=False).encode("utf-8"))
             self._send(404, json.dumps({"error": "not found"}).encode())
         except Exception as e:  # noqa: BLE001
             self._send(500, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
@@ -86,6 +102,11 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/customer":
                 con = connect()
                 result = db_query.upsert_customer(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if self.path == "/api/prescription":
+                con = connect()
+                result = db_query.add_prescription(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             self._send(404, json.dumps({"error": "not found"}).encode())

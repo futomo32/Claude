@@ -104,11 +104,13 @@ def main():
     def add_customer(cid, name, kana, gender, birthday, wedding=None, staff=None, is_test=0, note=None):
         staff = staff or random.choice(STAFF)
         tel = f"0{random.choice(['90','80','70'])}-{random.randint(1000,9999)}-{random.randint(1000,9999)}"
+        postal = f"39{random.randint(0,9)}-{random.randint(0,9999):04d}"
         addr = "長野県" + random.choice(CITIES) + f"{random.randint(1,9)}-{random.randint(1,20)}-{random.randint(1,30)}"
+        addr2 = f"コーポ常盤{random.randint(1,5)}0{random.randint(1,8)}号室" if random.random() < 0.3 else None
         cur.execute("""INSERT INTO customers(customer_id,name,kana,tel,gender,birthday,wedding_day,
-                       address,staff_code,staff_name,store_code,dm_ok,registered_at,is_test,note)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,'01','可',?,?,?)""",
-                    (str(cid), name, kana, tel, gender, birthday, wedding, addr,
+                       postal,address,address2,staff_code,staff_name,store_code,dm_ok,registered_at,is_test,note)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'01','可',?,?,?)""",
+                    (str(cid), name, kana, tel, gender, birthday, wedding, postal, addr, addr2,
                      staff[0], staff[1], d(random.randint(2014, 2024)), is_test, note))
         return staff
 
