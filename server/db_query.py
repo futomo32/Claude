@@ -75,18 +75,37 @@ def build_blob(con):
                         FROM approach_history ORDER BY approach_date DESC""")
 
     rx = {}
-    for r in cur.execute("""SELECT customer_id,rx_no,purpose,lens_name,frame_name,total_sell,total_list,
-                                   sph_r,sph_l,cyl_r,cyl_l,ax_r,ax_l,add_r,add_l,
-                                   pd_far_r,pd_far_l,pd_far_both,pd_near_r,pd_near_l,pd_near_both,
-                                   handler,rx_date
-                            FROM prescriptions"""):
-        rx.setdefault(str(r["customer_id"]), []).append([
-            r["rx_no"], r["purpose"], _mark(r["lens_name"]), _mark(r["frame_name"]),
-            r["total_sell"], r["total_list"],
-            r["sph_r"], r["sph_l"], r["cyl_r"], r["cyl_l"], r["ax_r"], r["ax_l"], r["add_r"], r["add_l"],
-            r["pd_far_r"], r["pd_far_l"], r["pd_far_both"], r["pd_near_r"], r["pd_near_l"], r["pd_near_both"],
-            r["handler"], r["rx_date"],
-        ])
+    for r in cur.execute("SELECT * FROM prescriptions ORDER BY id DESC"):
+        name_l, name_f = r["lens_name"], r["frame_name"]
+        misassign = bool(r["jewelry_misassign"]) or bool(_mark(name_l) != name_l) or bool(_mark(name_f) != name_f)
+        rx.setdefault(str(r["customer_id"]), []).append({
+            "rx_no": r["rx_no"], "purpose": r["purpose"],
+            "lens_name": name_l, "frame_name": name_f,
+            "total": r["total_sell"], "misassign": misassign, "sale_line_id": r["sale_line_id"],
+            "sph_r": r["sph_r"], "sph_l": r["sph_l"], "cyl_r": r["cyl_r"], "cyl_l": r["cyl_l"],
+            "ax_r": r["ax_r"], "ax_l": r["ax_l"], "pri_r": r["pri_r"], "pri_l": r["pri_l"],
+            "base_r": r["base_r"], "base_l": r["base_l"], "add_r": r["add_r"], "add_l": r["add_l"],
+            "pd_far_both": r["pd_far_both"], "pd_far_r": r["pd_far_r"], "pd_far_l": r["pd_far_l"],
+            "pd_near_both": r["pd_near_both"], "pd_near_r": r["pd_near_r"], "pd_near_l": r["pd_near_l"],
+            "naked_both": r["naked_both"], "corrected_both": r["corrected_both"],
+            "handler": r["handler"], "rx_date": r["rx_date"],
+        })
+
+    # 処方箋に未紐付けの「メガネ関連の購入明細」(処方箋追加時に選べる候補)
+    linked = set(r[0] for r in cur.execute(
+        "SELECT sale_line_id FROM prescriptions WHERE sale_line_id IS NOT NULL"))
+    rx_candidates = {}
+    for r in cur.execute("""
+        SELECT s.customer_id cid, l.line_id, s.sold_at, l.amount,
+               COALESCE(l.free_name, p.name) nm, p.is_glasses g, l.free_name fn
+        FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
+        LEFT JOIN products p ON l.product_key = p.product_key
+        WHERE s.customer_id IS NOT NULL"""):
+        nm = r["nm"] or ""
+        is_glass = r["g"] == 1 or bool(re.search(r"メガネ|眼鏡|レンズ|フレーム|ﾒｶﾞﾈ|ﾚﾝｽﾞ", nm))
+        if is_glass and r["line_id"] not in linked:
+            rx_candidates.setdefault(str(r["cid"]), []).append(
+                [r["line_id"], r["sold_at"], nm, r["amount"]])
 
     products = []
     for r in cur.execute("""SELECT product_no,name,category,list_price,state,location,
@@ -100,7 +119,7 @@ def build_blob(con):
 
     return dict(customers=customers, sales=sales, families=families, points=points,
                 pointTx=point_tx, urikake=urikake, urikakeHist=urikake_hist,
-                approach=approach, rx=rx, products=products)
+                approach=approach, rx=rx, rxCandidates=rx_candidates, products=products)
 
 
 def sample_in_stock_key(con):
@@ -136,7 +155,7 @@ def upsert_customer(con, payload):
 
 
 def add_prescription(con, p):
-    """メガネ処方箋の新規登録。PD両眼は左右から自動合計。"""
+    """メガネ処方箋の新規登録。PDは両眼(both)が基本、左右は任意。購入明細に紐付け可。"""
     cur = con.cursor()
 
     def v(k):
@@ -144,36 +163,31 @@ def add_prescription(con, p):
         x = str(x).strip() if x is not None else ""
         return x or None
 
-    def fsum(a, b):
-        try:
-            return f"{float(a) + float(b):.1f}"
-        except (TypeError, ValueError):
-            return None
-
-    n = con.execute("SELECT COUNT(*) FROM prescriptions").fetchone()[0]
-    rx_no = f"RX-{n + 1:04d}"
-
     def n_int(k):
         try:
             return int(str(p.get(k)).replace(",", ""))
         except (TypeError, ValueError):
             return None
 
+    n = con.execute("SELECT COUNT(*) FROM prescriptions").fetchone()[0]
+    rx_no = f"RX-{n + 1:04d}"
+
     cur.execute("""INSERT INTO prescriptions
         (customer_id,rx_no,purpose,lens_name,frame_name,
-         sph_r,sph_l,cyl_r,cyl_l,ax_r,ax_l,add_r,add_l,
-         pd_far_r,pd_far_l,pd_far_both,pd_near_r,pd_near_l,pd_near_both,
-         total_sell,handler,rx_date,jewelry_misassign)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)""",
+         sph_r,sph_l,cyl_r,cyl_l,ax_r,ax_l,pri_r,pri_l,base_r,base_l,add_r,add_l,
+         pd_far_both,pd_far_r,pd_far_l,pd_near_both,pd_near_r,pd_near_l,
+         naked_both,corrected_both,
+         total_sell,handler,rx_date,sale_line_id,jewelry_misassign)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)""",
         (str(p.get("customer_id")), rx_no, v("purpose"), v("lens_name"), v("frame_name"),
-         v("sph_r"), v("sph_l"), v("cyl_r"), v("cyl_l"), v("ax_r"), v("ax_l"), v("add_r"), v("add_l"),
-         v("pd_far_r"), v("pd_far_l"), fsum(v("pd_far_r"), v("pd_far_l")),
-         v("pd_near_r"), v("pd_near_l"), fsum(v("pd_near_r"), v("pd_near_l")),
-         n_int("total_sell"), v("handler"), v("rx_date")))
+         v("sph_r"), v("sph_l"), v("cyl_r"), v("cyl_l"), v("ax_r"), v("ax_l"),
+         v("pri_r"), v("pri_l"), v("base_r"), v("base_l"), v("add_r"), v("add_l"),
+         v("pd_far_both"), v("pd_far_r"), v("pd_far_l"),
+         v("pd_near_both"), v("pd_near_r"), v("pd_near_l"),
+         v("naked_both"), v("corrected_both"),
+         n_int("total_sell"), v("handler"), v("rx_date"), n_int("sale_line_id")))
     con.commit()
-    return {"id": cur.lastrowid, "rx_no": rx_no,
-            "pd_far_both": fsum(v("pd_far_r"), v("pd_far_l")),
-            "pd_near_both": fsum(v("pd_near_r"), v("pd_near_l"))}
+    return {"id": cur.lastrowid, "rx_no": rx_no}
 
 
 def checkout(con, payload):

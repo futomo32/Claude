@@ -171,16 +171,19 @@ def main():
         rx_seq[0] += 1
         fname, fprice = random.choice(FRAMES)
         lname, lprice = random.choice(LENSES)
-        pd_r, pd_l = round(random.uniform(30, 33), 1), round(random.uniform(30, 33), 1)
+        pd_far = round(random.uniform(60, 66), 1)      # PDは両眼値が基本
+        pd_near = round(pd_far - 3, 1)
+        naked = random.choice(["0.1", "0.2", "0.3", "0.5"])
+        corrected = random.choice(["1.0", "1.2", "1.5"])
         cur.execute("""INSERT INTO prescriptions
             (customer_id,rx_no,purpose,lens_name,frame_name,lens_key,frame_key,
              sph_r,sph_l,cyl_r,cyl_l,ax_r,ax_l,add_r,add_l,
-             pd_far_r,pd_far_l,pd_far_both,pd_near_r,pd_near_l,pd_near_both,
+             pd_far_both,pd_near_both,naked_both,corrected_both,
              total_list,total_sell,handler,rx_date,jewelry_misassign)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)""",
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)""",
             (str(cid), f"RX-{rx_seq[0]:04d}", purpose, lname, fname, glass_products[lname], glass_products[fname],
              f"{sph_r:+.2f}", f"{sph_r+0.25:+.2f}", "-0.50", "-0.75", "180", "175", add, add,
-             f"{pd_r:.1f}", f"{pd_l:.1f}", f"{pd_r+pd_l:.1f}", f"{pd_r-1.5:.1f}", f"{pd_l-1.5:.1f}", f"{pd_r+pd_l-3:.1f}",
+             f"{pd_far:.1f}", f"{pd_near:.1f}", naked, corrected,
              lprice + fprice, lprice + fprice, random.choice(STAFF)[1], when))
         stats["rx"] += 1
 

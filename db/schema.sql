@@ -213,13 +213,19 @@ CREATE TABLE prescriptions (
   lens_key      TEXT,              -- 商品ID(レンズ)
   frame_key     TEXT,              -- 商品ID(フレーム)
   sph_r TEXT, sph_l TEXT, cyl_r TEXT, cyl_l TEXT,
-  ax_r  TEXT, ax_l  TEXT, add_r TEXT, add_l TEXT,
-  pd_far_r TEXT, pd_far_l TEXT, pd_far_both TEXT,
+  ax_r  TEXT, ax_l  TEXT,
+  pri_r TEXT, pri_l TEXT,          -- プリズム(PRI)
+  base_r TEXT, base_l TEXT,        -- 基底方向(BAS: UP/DOWN/IN/OUT・斜め)
+  add_r TEXT, add_l TEXT,
+  pd_far_r TEXT, pd_far_l TEXT, pd_far_both TEXT,     -- PDは両眼(both)が基本、左右は任意
   pd_near_r TEXT, pd_near_l TEXT, pd_near_both TEXT,
+  naked_both TEXT, naked_r TEXT, naked_l TEXT,        -- 裸眼視力
+  corrected_both TEXT, corrected_r TEXT, corrected_l TEXT, -- 矯正(補正)視力
   total_list  INTEGER,
   total_sell  INTEGER,
   handler     TEXT,               -- 対応者名
   rx_date     TEXT,
+  sale_line_id INTEGER,           -- 紐づく購入明細(sale_lines.line_id)
   jewelry_misassign INTEGER NOT NULL DEFAULT 0 -- 1=宝飾品が誤って紐づいている(要修正)
 );
 CREATE INDEX idx_rx_cust ON prescriptions(customer_id);
