@@ -110,21 +110,25 @@ def main():
             print(f"(ステータス要求はスキップ: {e})\n")
 
         print(">> カードを挿入してください(最大30秒待ちます)...")
-        # 仕様書推奨: 自動識別(22h)は稀に意図せぬフォーマットで読むため、
-        # フォーマット明示(24h)の 7ビットJIS('0')で読む。ダメなら自動識別へ。
+        # 実測(2026-07-12): 7bit指定('0')はLRCエラーになった。宝飾ナビは逆7bit書込の
+        # 可能性が高いため '4' を先に試す(成功すれば書込形式の確定にもなる)。
+        # ダメなら自動識別(22h)へフォールバック。
+        method = "逆7bit指定(24h '2,4')"
         try:
-            status, data = dev.read_track2_fmt("0", resp_timeout=30.0)
+            status, data = dev.read_track2_fmt("4", resp_timeout=30.0)
             if status != 0x20:
-                print(f"(7bit指定リード: {status_text(status)} → 自動識別で再試行)")
+                print(f"(逆7bit指定リード: {status_text(status)} → 自動識別で再試行)")
+                method = "自動識別(22h)"
                 status, data = dev.read_track2(resp_timeout=15.0)
         except TCP300IIError as e:
             note = f"read 失敗: {e}"
             print(f"\n[読み取りエラー] {e}")
             print("→ 通信ログを確認します。カードは排出を試みます。")
             return
+        print(f"読み取り方式: {method}")
 
         print(f"\n読取ステータス: {status_text(status)}")
-        note = f"read_track2 status={status_text(status)}"
+        note = f"{method} status={status_text(status)}"
         if status == 0x20:
             print("第2トラックの磁気データ:")
             dump(data)
@@ -141,7 +145,14 @@ def main():
                 print(f"排出結果: {status_text(est)}")
             except Exception as e:  # noqa: BLE001
                 print(f"排出できませんでした: {e}")
-                print("→ カードが残っている場合は カード排出.bat か、リーダーの電源入れ直しで取り出せます。")
+                print("→ リセット後にもう一度排出を試みます(約3秒)...")
+                try:
+                    dev.reset()
+                    _, est, _ = dev.eject()
+                    print(f"排出結果: {status_text(est)}")
+                except Exception as e2:  # noqa: BLE001
+                    print(f"それでも排出できませんでした: {e2}")
+                    print("→ カード排出.bat か、リーダーの電源入れ直しで取り出してください。")
             save_log(dev, note)
             dev.close()
 

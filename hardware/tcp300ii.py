@@ -195,9 +195,18 @@ class TCP300II:
         _, status, payload = self.command(0x58, resp_timeout=5.0)
         return status, payload
 
-    def eject(self):
-        """カード排出(50h)。"""
-        return self.command(0x50, resp_timeout=10.0)
+    def eject(self, retries=3):
+        """カード排出(50h)。読取直後はDLE拒否されることがある(実機実測)ため、
+        少し待ってリトライする。"""
+        last = None
+        for i in range(retries):
+            if i:
+                time.sleep(0.6)
+            try:
+                return self.command(0x50, resp_timeout=10.0)
+            except TCP300IIError as e:
+                last = e
+        raise last
 
     def cancel_insert_wait(self):
         """カード挿入待ち状態解除(54h・優先コマンド)。"""
