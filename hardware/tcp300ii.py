@@ -75,6 +75,7 @@ class TCP300II:
         if serial is None:
             raise TCP300IIError("pyserial が必要です。pip install pyserial を実行してください。")
         self.ser = serial.Serial(port, baud, timeout=timeout)
+        self.trace = []  # 通信ログ [('TX'|'RX', hex文字列), ...] デバッグ用
 
     def close(self):
         try:
@@ -93,6 +94,7 @@ class TCP300II:
         body = bytes([cmd]) + data + bytes([ETX])
         block = bytes([STX]) + body + bytes([bcc(body)])
         self.ser.reset_input_buffer()
+        self.trace.append(("TX", block.hex(" ")))
         self.ser.write(block)
         self.ser.flush()
 
@@ -100,6 +102,7 @@ class TCP300II:
         while time.time() < deadline:
             b = self.ser.read(1)
             if b:
+                self.trace.append(("RX", f"{b[0]:02x}"))
                 return b[0]
         return None
 
