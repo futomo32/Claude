@@ -103,7 +103,8 @@ def build_blob(con):
             "add_r": r["add_r"], "add_l": r["add_l"],
             "pd_far_both": r["pd_far_both"], "pd_far_r": r["pd_far_r"], "pd_far_l": r["pd_far_l"],
             "pd_near_both": r["pd_near_both"], "pd_near_r": r["pd_near_r"], "pd_near_l": r["pd_near_l"],
-            "naked_both": r["naked_both"], "corrected_both": r["corrected_both"],
+            "naked_both": r["naked_both"], "naked_r": r["naked_r"], "naked_l": r["naked_l"],
+            "corrected_both": r["corrected_both"], "corrected_r": r["corrected_r"], "corrected_l": r["corrected_l"],
             "handler": r["handler"], "rx_date": r["rx_date"],
         })
 
@@ -195,7 +196,8 @@ def add_prescription(con, p):
             "sph_r", "sph_l", "cyl_r", "cyl_l", "ax_r", "ax_l", "pri_r", "pri_l", "base_r", "base_l",
             "pri2_r", "pri2_l", "base2_r", "base2_l", "add_r", "add_l",
             "pd_far_both", "pd_far_r", "pd_far_l", "pd_near_both", "pd_near_r", "pd_near_l",
-            "naked_both", "corrected_both", "handler", "rx_date")
+            "naked_both", "naked_r", "naked_l", "corrected_both", "corrected_r", "corrected_l",
+            "handler", "rx_date")
     vals = [v(c) for c in cols]
 
     rx_id = n_int("id")
