@@ -12,7 +12,7 @@
 正式運用(Windows単機)ではこのサーバーをローカルで起動し、ブラウザで開く構成。
 将来デスクトップアプリ(Electron等)に載せ替える場合もAPIはそのまま流用できる。
 """
-import json, os, re, sqlite3, sys, urllib.request
+import json, os, re, socket, sqlite3, sys, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = os.path.join(os.path.dirname(__file__), "..")
@@ -26,11 +26,31 @@ import db_query  # noqa: E402
 def connect():
     if not os.path.exists(DB):
         raise SystemExit(f"DBがありません: {DB}\n先に `python3 scripts/import_to_sqlite.py` を実行してください。")
-    return sqlite3.connect(DB)
+    con = sqlite3.connect(DB, timeout=10)
+    # 店内共有(複数PC同時アクセス)でも読み書きが衝突しにくいようWALモード
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA busy_timeout=5000")
+    return con
 
 
-def render_index():
-    """UIのHTMLに、DBから組み立てたデータとAPI有効フラグを埋め込んで返す。"""
+def lan_ip():
+    """このPCの店内LAN上のIPアドレスを推測する(外部送信はしない)。"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("192.168.255.255", 1))  # 実際には送信されない(UDPのconnectは経路決定のみ)
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:  # noqa: BLE001
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except Exception:  # noqa: BLE001
+            return None
+
+
+def render_index(remote=False):
+    """UIのHTMLに、DBから組み立てたデータとAPI有効フラグを埋め込んで返す。
+    remote=True(他PCからのアクセス)ではレジ機能をUI側で無効化するフラグを埋め込む。"""
     con = connect()
     blob = db_query.build_blob(con)
     sample = db_query.sample_in_stock_key(con)
@@ -40,6 +60,7 @@ def render_index():
         "window.TOKIWA_DATA=" + json.dumps(blob, ensure_ascii=False, separators=(",", ":")) + ";"
         "window.TOKIWA_API='/api';"
         "window.TOKIWA_SAMPLE_STOCK=" + json.dumps(sample) + ";"
+        "window.TOKIWA_REMOTE=" + ("true" if remote else "false") + ";"
     )
     marker_start = '<script id="tokiwa-data">'
     marker_end = "</script>"
@@ -59,10 +80,17 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass  # 静かに
 
+    def _is_remote(self):
+        """本番機(サーバーを動かしているPC)以外からのアクセスか。
+        テスト用に ?remote=1 でも再現できる(UI表示の切替のみで安全)。"""
+        if "remote=1" in self.path:
+            return True
+        return self.client_address[0] not in ("127.0.0.1", "::1", "localhost")
+
     def do_GET(self):
         try:
             if self.path == "/" or self.path.startswith("/?"):
-                return self._send(200, render_index(), "text/html; charset=utf-8")
+                return self._send(200, render_index(remote=self._is_remote()), "text/html; charset=utf-8")
             if self.path == "/api/health":
                 return self._send(200, json.dumps({"ok": True}).encode())
             if self.path == "/api/data":
@@ -95,6 +123,10 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0))
             payload = json.loads(self.rfile.read(length) or b"{}")
             if self.path == "/api/checkout":
+                if self._is_remote():
+                    # レジ(会計)は機器のある本番機のみ。他PCからは閲覧・登録のみ
+                    return self._send(403, json.dumps(
+                        {"error": "レジ(会計)は本体レジPCでのみ操作できます"}, ensure_ascii=False).encode("utf-8"))
                 con = connect()
                 result = db_query.checkout(con, payload)
                 con.close()
@@ -109,19 +141,39 @@ class Handler(BaseHTTPRequestHandler):
                 result = db_query.add_prescription(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if self.path == "/api/product":
+                con = connect()
+                result = db_query.add_product(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             self._send(404, json.dumps({"error": "not found"}).encode())
+        except ValueError as e:
+            self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
         except Exception as e:  # noqa: BLE001
             self._send(500, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
 
 
 def main():
-    # 第1引数が数字のときだけポートとして採用(コメントの貼り付け等は無視)
+    # 引数: 数字=ポート / "lan"=店内共有モード(他PCからアクセス可)。順不同
     port = 8760
-    if len(sys.argv) > 1 and sys.argv[1].isdigit():
-        port = int(sys.argv[1])
-    srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    lan = False
+    for a in sys.argv[1:]:
+        if a.isdigit():
+            port = int(a)
+        elif a.lower() in ("lan", "share", "kyoyu"):
+            lan = True
+    host = "0.0.0.0" if lan else "127.0.0.1"
+    srv = ThreadingHTTPServer((host, port), Handler)
     print(f"トキワ起動: http://localhost:{port}/")
-    print("  → ブラウザで上のURLを開いてください。停止は Ctrl+C。")
+    if lan:
+        ip = lan_ip()
+        print("【店内共有モード】他のPCからは下のURLで開けます:")
+        print(f"  http://{ip or 'このPCのIPアドレス'}:{port}/")
+        print("  ※他PCではレジ(会計)は使えません(閲覧・顧客登録・商品登録のみ)")
+        print("  ※初回はWindowsファイアウォールの許可画面が出たら「アクセスを許可」してください")
+    else:
+        print("  → このPC専用です。他のPCから使う場合は「店内共有で起動.bat」を使ってください。")
+    print("  → 停止は Ctrl+C。")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

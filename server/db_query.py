@@ -171,6 +171,47 @@ def upsert_customer(con, payload):
     return {"customer_id": cid, "new": is_new}
 
 
+PRODUCT_FIELDS = ("product_no", "name", "category", "supplier", "cost_price",
+                  "list_price", "location", "center_stone", "center_carat",
+                  "color", "clarity", "cut", "cert_no", "info")
+
+
+def add_product(con, payload):
+    """商品(仕入)の新規登録。product_no 空なら自動採番。state は '在庫'。"""
+    cur = con.cursor()
+    vals = {k: (payload.get(k) or None) for k in PRODUCT_FIELDS}
+    name = (vals["name"] or "").strip()
+    if not name:
+        raise ValueError("商品名は必須です")
+    row = con.execute("SELECT MAX(CAST(product_key AS INTEGER)) FROM products").fetchone()
+    key = str((row[0] or 0) + 1)
+    pno = str(vals["product_no"] or "").strip()
+    if not pno:
+        row = con.execute(
+            "SELECT MAX(CAST(product_no AS INTEGER)) FROM products WHERE product_no GLOB '[0-9]*'").fetchone()
+        pno = str((row[0] or 0) + 1).zfill(5)
+    vals["product_no"] = pno
+    for k in ("cost_price", "list_price"):
+        if vals[k] is not None:
+            try:
+                vals[k] = int(str(vals[k]).replace(",", ""))
+            except ValueError:
+                raise ValueError("価格は数字で入力してください")
+    is_glasses = 1 if ("メガネ" in (vals["category"] or "") or "メガネ" in name) else 0
+    cols = ["product_key"] + list(PRODUCT_FIELDS) + ["state", "is_glasses", "registered_at"]
+    cur.execute(
+        f"INSERT INTO products({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+        [key] + [vals[k] for k in PRODUCT_FIELDS]
+        + ["在庫", is_glasses, payload.get("registered_at") or None])
+    con.commit()
+    stone = vals["center_stone"] or ""
+    if stone and vals["center_carat"]:
+        stone += f' {vals["center_carat"]}ct'
+    return {"product_key": key, "product_no": pno,
+            "row": [pno, name, vals["category"], vals["list_price"], "在庫",
+                    vals["location"], stone or None]}
+
+
 def add_prescription(con, p):
     """メガネ処方箋の新規登録/編集。id があれば更新、無ければ採番して新規。
     合計金額はレンズ金額+フレーム金額を優先(無ければ total_sell を使用)。"""
