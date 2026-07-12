@@ -110,10 +110,15 @@ def main():
             print(f"(ステータス要求はスキップ: {e})\n")
 
         print(">> カードを挿入してください(最大30秒待ちます)...")
+        # 仕様書推奨: 自動識別(22h)は稀に意図せぬフォーマットで読むため、
+        # フォーマット明示(24h)の 7ビットJIS('0')で読む。ダメなら自動識別へ。
         try:
-            status, data = dev.read_track2(resp_timeout=30.0)
+            status, data = dev.read_track2_fmt("0", resp_timeout=30.0)
+            if status != 0x20:
+                print(f"(7bit指定リード: {status_text(status)} → 自動識別で再試行)")
+                status, data = dev.read_track2(resp_timeout=15.0)
         except TCP300IIError as e:
-            note = f"read_track2 失敗: {e}"
+            note = f"read 失敗: {e}"
             print(f"\n[読み取りエラー] {e}")
             print("→ 通信ログを確認します。カードは排出を試みます。")
             return

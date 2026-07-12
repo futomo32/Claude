@@ -106,60 +106,72 @@ class TCP300II:
                 return b[0]
         return None
 
-    def _await_ack(self, cmd, data, deadline, retries=3):
-        for _ in range(retries):
+    def _await_ack(self, cmd, data, deadline, max_resend=3):
+        resent = 0
+        while True:
             r = self._read_byte(deadline)
             if r is None:
                 raise TCP300IIError("ACK応答なし(タイムアウト)")
             if r == ACK:
                 return
             if r == NAK:
+                if resent >= max_resend:
+                    raise TCP300IIError("再送要求(NAK)が続き送信できませんでした")
+                resent += 1
                 self._send_block(cmd, data)  # 再送
                 continue
             if r == DLE:
                 raise TCP300IIError("コマンド拒否(DLE)")
-            # それ以外は読み捨て
-        raise TCP300IIError("ACKを受信できませんでした")
+            # 古いフレームの残骸などは読み捨てて ACK を待ち続ける
 
-    def _read_response(self, deadline):
-        # STX を待つ
-        while True:
-            b = self._read_byte(deadline)
-            if b is None:
-                raise TCP300IIError("レスポンス応答なし(タイムアウト)")
-            if b == STX:
-                break
-        # ETX まで読む
-        buf = bytearray()
-        while True:
-            b = self._read_byte(deadline)
-            if b is None:
-                raise TCP300IIError("ETX受信前にタイムアウト")
-            if b == ETX:
-                break
-            buf.append(b)
-        rx_bcc = self._read_byte(deadline)
-        calc = bcc(bytes(buf) + bytes([ETX]))
-        if rx_bcc is None or rx_bcc != calc:
+    def _read_frame(self, deadline):
+        """STX〜BCC の1フレームを受信し (cmd, status, payload) を返す。
+        BCC不一致は NAK を送って再送フレームを受け直す(リトライ)。"""
+        for _ in range(4):  # 初回 + 再送3回まで
+            # STX を待つ
+            while True:
+                b = self._read_byte(deadline)
+                if b is None:
+                    raise TCP300IIError("レスポンス応答なし(タイムアウト)")
+                if b == STX:
+                    break
+            # ETX まで読む
+            buf = bytearray()
+            while True:
+                b = self._read_byte(deadline)
+                if b is None:
+                    raise TCP300IIError("ETX受信前にタイムアウト")
+                if b == ETX:
+                    break
+                buf.append(b)
+            rx_bcc = self._read_byte(deadline)
+            calc = bcc(bytes(buf) + bytes([ETX]))
+            if rx_bcc is not None and rx_bcc == calc:
+                # 正常受信 → ACK 返信
+                self.ser.write(bytes([ACK]))
+                self.ser.flush()
+                cmd = buf[0] if len(buf) >= 1 else None
+                status = buf[1] if len(buf) >= 2 else None
+                return cmd, status, bytes(buf[2:])
+            # BCC不一致 → NAK で再送を要求して受け直す
             try:
                 self.ser.write(bytes([NAK]))
                 self.ser.flush()
             except Exception:
                 pass
-            raise TCP300IIError("BCC不一致(受信データ破損)")
-        # 正常受信 → ACK 返信
-        self.ser.write(bytes([ACK]))
-        self.ser.flush()
-        cmd = buf[0] if len(buf) >= 1 else None
-        status = buf[1] if len(buf) >= 2 else None
-        payload = bytes(buf[2:])
-        return cmd, status, payload
+        raise TCP300IIError("BCC不一致が続き受信できませんでした")
 
     def command(self, cmd, data=b"", ack_timeout=5.0, resp_timeout=30.0):
-        """1コマンド往復。戻り値 (cmd_echo, status, payload)。"""
+        """1コマンド往復。戻り値 (cmd_echo, status, payload)。
+        送ったコマンドと異なるエコーのフレーム(古い再送等)は読み飛ばす。"""
         self._send_block(cmd, data)
         self._await_ack(cmd, data, time.time() + ack_timeout)
-        return self._read_response(time.time() + resp_timeout)
+        deadline = time.time() + resp_timeout
+        while True:
+            cmd_echo, status, payload = self._read_frame(deadline)
+            if cmd_echo == cmd:
+                return cmd_echo, status, payload
+            # 混線した別コマンドの応答(ACK済み)は捨てて、目的の応答を待つ
 
     # ---- 高レベル(読み取り中心) ----
     def read_track2(self, resp_timeout=30.0):
