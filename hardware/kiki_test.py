@@ -46,6 +46,7 @@ def guess_printer(ports):
 def receipt_bytes():
     buf = bytearray()
     buf += ESC + b"@"           # 初期化
+    buf += FS + b"C" + b"\x01"  # 漢字コード系 = Shift-JIS(既定はJISのため化ける・実測2026-07-12)
     buf += ESC + b"a" + b"\x01"  # 中央寄せ
     buf += b"TOKIWA DEVICE TEST\n"
     buf += time.strftime("%Y-%m-%d %H:%M:%S\n").encode("ascii")
@@ -54,8 +55,8 @@ def receipt_bytes():
     buf += "レシート印字 OK\n".encode("shift_jis", "replace")
     buf += FS + b"."            # 漢字モード OFF
     buf += ESC + b"a" + b"\x00"  # 左寄せ
-    buf += b"--------------------------------\n"
-    buf += b"If you can read this, printing works.\n"
+    buf += b"-" * 30 + b"\n"    # 用紙は58mm幅相当の可能性(実測で右端欠け)→30桁に収める
+    buf += b"Printing OK if readable.\n"
     buf += b"\n\n\n"
     buf += GS + b"V" + b"\x00"   # フルカット
     return bytes(buf)
