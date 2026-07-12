@@ -2188,6 +2188,10 @@
       });
       var c = findCust(cid);
       if (c) { c[8] = (c[8] || 0) + totalAdd; c[9] = (c[9] || 0) + totalAdd; c[13] = today; }
+      // 購入したメガネ商品を処方箋の紐付け候補に即時追加(リロード不要)
+      (data.lines || []).forEach(function (l) {
+        if (l.glasses) { (D.rxCandidates[cid] = D.rxCandidates[cid] || []).unshift([l.line_id, today, l.name, l.amount]); }
+      });
       showToast(nm + "様 — 伝票 #" + data.slip_id + " を保存しました(合計 ¥" + data.total.toLocaleString() +
         " / 加算 " + data.earned + "pt)。在庫引き落とし・購入履歴へ反映済み。");
       resetPosAfterSale();

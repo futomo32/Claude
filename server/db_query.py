@@ -208,16 +208,26 @@ def checkout(con, payload):
                 (cid, payload.get("staff_name"), "01", today, payload.get("pay_method", "現金"), earned))
     slip_id = cur.lastrowid
 
+    glass_re = re.compile(r"メガネ|眼鏡|レンズ|フレーム|ﾒｶﾞﾈ|ﾚﾝｽﾞ")
+    lines_out = []
     for l in lines:
         pk = l.get("product_key")
         amt = int(l.get("amount") or 0)
         cur.execute("""INSERT INTO sale_lines(slip_id,product_key,free_name,amount,spec_pending)
                        VALUES (?,?,?,?,?)""",
                     (slip_id, pk, l.get("free_name"), amt, 1 if l.get("spec_pending") else 0))
+        line_id = cur.lastrowid
+        name = l.get("free_name")
+        is_glass = bool(glass_re.search(name or ""))
         if pk:
+            prow = con.execute("SELECT name,is_glasses FROM products WHERE product_key=?", (pk,)).fetchone()
+            if prow:
+                name = prow[0]
+                is_glass = is_glass or prow[1] == 1
             cur.execute("UPDATE products SET state='売上' WHERE product_key=?", (pk,))
             cur.execute("""INSERT INTO stock_events(product_key,event_type,qty_delta,ref_slip_id)
                            VALUES (?,?,?,?)""", (pk, "売上引落", -1, slip_id))
+        lines_out.append({"line_id": line_id, "name": name, "amount": amt, "glasses": is_glass})
 
     if earned:
         row = con.execute("SELECT balance FROM point_balances WHERE customer_id=?", (cid,)).fetchone()
@@ -229,4 +239,4 @@ def checkout(con, payload):
                     (cid, newbal, today))
 
     con.commit()
-    return {"slip_id": slip_id, "earned": earned, "total": total}
+    return {"slip_id": slip_id, "earned": earned, "total": total, "lines": lines_out}
