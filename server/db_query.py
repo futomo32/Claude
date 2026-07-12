@@ -19,16 +19,18 @@ def build_blob(con):
     con.row_factory = sqlite3.Row
     cur = con.cursor()
 
-    # 売上合算(累計・2026年度)を明細から算出
-    totals, y2026 = {}, {}
+    # 売上合算(累計・2026年度・最終購入日)を明細から算出
+    totals, y2026, last_buy = {}, {}, {}
     for r in cur.execute("""
         SELECT s.customer_id cid, SUM(l.amount) tot,
-               SUM(CASE WHEN s.sold_at LIKE '2026%' THEN l.amount ELSE 0 END) y26
+               SUM(CASE WHEN s.sold_at LIKE '2026%' THEN l.amount ELSE 0 END) y26,
+               MAX(s.sold_at) last
         FROM sales_slips s JOIN sale_lines l ON l.slip_id = s.slip_id
         WHERE s.customer_id IS NOT NULL AND l.amount IS NOT NULL
         GROUP BY s.customer_id"""):
         totals[r["cid"]] = r["tot"] or 0
         y2026[r["cid"]] = r["y26"] or 0
+        last_buy[r["cid"]] = r["last"]
 
     customers = []
     for r in cur.execute("""SELECT customer_id,name,kana,tel,staff_name,address,birthday,gender,wedding_day,
@@ -38,7 +40,7 @@ def build_blob(con):
         customers.append([
             cid, r["name"], r["kana"], r["tel"], r["staff_name"], r["address"],
             r["birthday"], r["gender"], totals.get(cid, 0), y2026.get(cid, 0), r["wedding_day"],
-            r["is_test"], r["note"],  # c[11]=テスト印, c[12]=用途メモ
+            r["is_test"], r["note"], last_buy.get(cid),  # c[11]=テスト印, c[12]=用途, c[13]=最終購入日
         ])
 
     def group(sql, key_idx=0):

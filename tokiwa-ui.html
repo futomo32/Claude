@@ -447,6 +447,14 @@
   }
   .amount-input:hover { border-color: var(--accent); }
   .amount-input:focus { border-color: var(--accent); }
+  .pos-error {
+    background: var(--danger-bg); color: var(--danger);
+    border: 1px solid var(--danger); border-radius: 8px;
+    padding: 0.6em 0.85em; font-size: 0.85em; font-weight: 600;
+    margin: 0.7rem 0 0; line-height: 1.7; white-space: pre-line;
+    display: flex; gap: 0.5em; align-items: flex-start;
+  }
+  .pos-error::before { content: "⚠"; }
   .toast {
     position: fixed; left: 50%; bottom: 24px;
     transform: translate(-50%, 16px);
@@ -569,7 +577,7 @@
     <button class="nav-item" data-screen="reports"><span class="ic">▤</span>日報・帳票</button>
     <button class="nav-item" data-screen="settings"><span class="ic">⚙</span>設定・マスター</button>
     <div class="side-foot">
-      <div class="side-user"><span class="avatar">田</span><span>田中 一樹<br><small style="color:var(--muted)">本店 / 管理者</small></span></div>
+      <div class="side-user"><span class="avatar">田</span><span>田中 一槻<br><small style="color:var(--muted)">本店 / 管理者</small></span></div>
       <button class="btn" style="width:100%" onclick="doLogout()">ログアウト</button>
     </div>
   </aside>
@@ -640,7 +648,7 @@
               <input id="pos-cust-input" placeholder="カタカナ・電話番号で検索" autocomplete="off">
               <div class="search-drop" id="pos-cust-drop"></div>
             </div>
-            <div class="field"><label>担当者<span class="req">必須</span></label><select><option>121 田中 一樹</option><option>019 三輪 祐加</option><option>010 簗瀬 智宏</option></select></div>
+            <div class="field"><label>担当者<span class="req">必須</span></label><select><option>121 田中 一槻</option><option>019 三輪 祐加</option><option>010 簗瀬 智宏</option></select></div>
             <button class="btn" onclick="openCustModalForPos()">+ 新規顧客</button>
           </div>
           <div class="table-scroll">
@@ -676,6 +684,7 @@
           </div>
           <div class="field"><label>預り金額</label><input id="deposit" class="num" inputmode="numeric" value="0" style="text-align:right;font-size:1.2em;font-weight:700"></div>
           <div class="pos-total-row"><span>釣銭</span><span class="v num" id="change">¥0</span></div>
+          <div id="pos-error" class="pos-error" style="display:none" role="alert"><span id="pos-error-msg"></span></div>
           <div class="tenkey" aria-label="テンキー">
             <button onclick="key(7)">7</button><button onclick="key(8)">8</button><button onclick="key(9)">9</button>
             <button onclick="key(4)">4</button><button onclick="key(5)">5</button><button onclick="key(6)">6</button>
@@ -772,7 +781,7 @@
             <div class="field"><label>商品番号</label><input class="num" value="22385" readonly></div>
             <div class="field"><label>仕入先</label><select><option>選択…</option><option>甲府宝飾(株)</option><option>山梨ジュエリー商会</option></select></div>
             <div class="field"><label>伝票日付</label><input type="date" value="2026-07-09"></div>
-            <div class="field"><label>仕入担当</label><select><option>田中 一樹</option><option>三輪 祐加</option></select></div>
+            <div class="field"><label>仕入担当</label><select><option>田中 一槻</option><option>三輪 祐加</option></select></div>
             <div class="field"><label>商品名</label><input placeholder="例: Pt900 サファイアリング"></div>
             <div class="field"><label>商品分類</label><select><option>リング</option><option>ネックレス</option><option>ピアス</option><option>時計</option><option>メガネ</option></select></div>
           </div>
@@ -830,11 +839,11 @@
             <table class="data">
               <thead><tr><th>伝票</th><th>内容</th><th class="r">金額</th><th>担当者</th><th>備考</th></tr></thead>
               <tbody>
-                <tr><td class="num">1260701001</td><td>レジ売上</td><td class="r num">¥1,320</td><td>田中 一樹</td><td>現金</td></tr>
+                <tr><td class="num">1260701001</td><td>レジ売上</td><td class="r num">¥1,320</td><td>田中 一槻</td><td>現金</td></tr>
                 <tr><td class="num">1260701002</td><td>レジ売上</td><td class="r num">¥550</td><td>簗瀬 智宏</td><td>現金</td></tr>
                 <tr><td class="num">1260701029</td><td>掛売入金</td><td class="r num">¥550,000</td><td>三輪 祐加</td><td>頭金</td></tr>
                 <tr><td class="num">1260701005</td><td>レジ売上</td><td class="r num">¥6,160</td><td>三輪 祐加</td><td>現金</td></tr>
-                <tr><td class="num">1260701012</td><td>レジ売上</td><td class="r num">¥3,300</td><td>田中 一樹</td><td>宝石修理・現金</td></tr>
+                <tr><td class="num">1260701012</td><td>レジ売上</td><td class="r num">¥3,300</td><td>田中 一槻</td><td>宝石修理・現金</td></tr>
                 <tr><td colspan="2" style="font-weight:700">合計</td><td class="r num" style="font-weight:700">¥565,990</td><td colspan="2" class="num">9件</td></tr>
               </tbody>
             </table>
@@ -935,6 +944,21 @@
     </div>
     <div class="modal-foot">
       <button class="btn" onclick="closeProductPicker()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- 汎用アラート/確認 ポップアップ -->
+<div class="modal-back" id="alert-modal">
+  <div class="modal" style="width:min(440px,100%)" role="alertdialog" aria-modal="true" aria-labelledby="al-title">
+    <div class="modal-head">
+      <h3 id="al-title"><span id="al-icon"></span> <span id="al-title-text">確認</span></h3>
+      <button class="close" aria-label="閉じる" onclick="closeAlert()">×</button>
+    </div>
+    <div class="modal-body"><p id="al-msg" style="margin:0;line-height:1.8;white-space:pre-wrap"></p></div>
+    <div class="modal-foot">
+      <button class="btn" id="al-cancel" style="display:none" onclick="alertCancel()">キャンセル</button>
+      <button class="btn btn-primary" id="al-ok" onclick="alertOk()">OK</button>
     </div>
   </div>
 </div>
@@ -1100,6 +1124,7 @@
     var v = parseInt(document.getElementById("deposit").value.replace(/[^0-9]/g, ""), 10) || 0;
     var diff = v - BILL;
     document.getElementById("change").textContent = "¥" + (diff > 0 ? diff : 0).toLocaleString();
+    if (typeof clearPosError === "function") clearPosError();  // 入力を直したらエラーを消す
   }
   function key(k) {
     var el = document.getElementById("deposit");
@@ -1125,6 +1150,7 @@
     if (p) { addStockLine(p); closeProductPicker(); }
   });
   document.getElementById("prod-modal").addEventListener("click", function (e) { if (e.target === this) closeProductPicker(); });
+  document.getElementById("alert-modal").addEventListener("click", function (e) { if (e.target === this) alertCancel(); });
   renderPosLines();
 
   /* サーバー接続時は注意書きを「DB接続版」に切り替える */
@@ -1172,14 +1198,22 @@
       if (!q) { close(); if (onSelect) onSelect(null); return; }
       var nq = normKana(q), dq = q.replace(/[^0-9]/g, "");
       var hits = D.customers.filter(function (c) {
+        if (String(c[0]) === q) return true;  // 顧客ID完全一致(カード読取=ユニークキーで1名に確定)
         if (nq && (normKana(c[1]).indexOf(nq) >= 0 || normKana(c[2]).indexOf(nq) >= 0)) return true;
         if (dq && String(c[3]).replace(/[^0-9]/g, "").indexOf(dq) >= 0) return true;
         return false;
-      }).slice(0, 12);
+      });
+      var many = hits.length > 1;  // 同姓同名など複数該当時は識別情報を強調
+      hits = hits.slice(0, 15);
       drop.innerHTML = hits.length
-        ? hits.map(function (c) {
+        ? (many ? '<div class="search-empty" style="border-bottom:1px solid var(--line)">' + hits.length + '件が該当。年齢・最終購入日で見分けてください</div>' : "") +
+          hits.map(function (c) {
+            var age = ageFrom(c[6]);
+            var last = c[13] ? "最終 " + c[13] : "購入なし";
+            var meta = (age != null ? age + "歳・" : "") + last;
             return '<div class="search-opt" data-id="' + esc(c[0]) + '"><span class="nm">' + esc(c[1]) +
-              '</span><span class="kn">' + esc(c[2]) + '</span><span class="tl">' + esc(dash(c[3])) + '</span></div>';
+              '</span><span class="kn">' + esc(c[2]) + '</span><span class="tl">' + esc(meta) +
+              '<br><span style="opacity:0.75">' + esc(dash(c[3])) + '</span></span></div>';
           }).join("")
         : '<div class="search-empty">該当する顧客が見つかりません</div>';
       drop.classList.add("show");
@@ -1191,6 +1225,9 @@
           if (onSelect) onSelect(c);
         });
       });
+    });
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { var first = drop.querySelector(".search-opt"); if (first) { e.preventDefault(); first.click(); } }
     });
     document.addEventListener("click", function (e) {
       if (!input.contains(e.target) && !drop.contains(e.target)) close();
@@ -1229,10 +1266,30 @@
     document.getElementById("cm-name").focus();
   }
   function closeCustModal() { document.getElementById("cust-modal").classList.remove("show"); }
+  function fieldError(fieldId, msg) {
+    var err = document.getElementById("cm-error");
+    err.textContent = msg; err.style.display = "block";
+    var el = document.getElementById(fieldId);
+    if (el) { el.focus(); el.style.borderColor = "var(--danger)"; el.addEventListener("input", function h() { el.style.borderColor = ""; el.removeEventListener("input", h); }); }
+  }
   function saveCustomer() {
     var g = function (k) { return document.getElementById(k).value.trim(); };
+    document.getElementById("cm-error").style.display = "none";
+    if (!g("cm-name")) { fieldError("cm-name", "顧客名は必須です。"); return; }
+    // フリガナは全角カタカナで(漢字・英字が混ざっていないか)
+    var kana = g("cm-kana");
+    if (kana && /[一-鿿぀-ゟ]/.test(kana)) {
+      fieldError("cm-kana", "フリガナは全角カタカナで入力してください(漢字・ひらがなが含まれています)。"); return;
+    }
+    if (kana && /[A-Za-zＡ-Ｚ]/.test(kana)) {
+      fieldError("cm-kana", "フリガナに英字が含まれています。全角カタカナで入力してください。"); return;
+    }
+    // 電話番号は数字とハイフンのみ
+    var tel = g("cm-tel");
+    if (tel && /[^0-9０-９\-\s()（）]/.test(tel)) {
+      fieldError("cm-tel", "電話番号は数字とハイフンで入力してください(文字が含まれています)。"); return;
+    }
     var err = document.getElementById("cm-error");
-    if (!g("cm-name")) { err.textContent = "顧客名は必須です。"; err.style.display = "block"; return; }
     var payload = {
       customer_id: g("cm-id"), name: g("cm-name"), kana: g("cm-kana"), gender: g("cm-gender"),
       birthday: g("cm-birthday"), wedding_day: g("cm-wedding"), tel: g("cm-tel"), email: g("cm-email"),
@@ -1518,7 +1575,7 @@
     catSel.addEventListener("change", renderProducts);
     document.getElementById("q-state").addEventListener("change", renderProducts);
     // レジの顧客検索
-    setupCustSearch("pos-cust-input", "pos-cust-drop", function (c) { posCustomer = c; });
+    setupCustSearch("pos-cust-input", "pos-cust-drop", function (c) { posCustomer = c; if (typeof clearPosError === "function") clearPosError(); });
     // モーダルの背景クリックで閉じる
     document.getElementById("cust-modal").addEventListener("click", function (e) {
       if (e.target === this) closeCustModal();
@@ -1585,6 +1642,43 @@
     toastTimer = setTimeout(function () { t.classList.remove("show"); }, 5200);
   }
 
+  /* 汎用アラート/確認ポップアップ */
+  var _alertOk = null, _alertCancel = null;
+  function alertPopup(msg, opts) {
+    opts = opts || {};
+    var type = opts.type || "info";
+    var icons = { error: "⛔", warn: "⚠️", info: "ℹ️", ok: "✅" };
+    var colors = { error: "var(--danger)", warn: "var(--warn)", info: "var(--accent)", ok: "var(--ok)" };
+    document.getElementById("al-icon").textContent = icons[type] || "";
+    var tt = document.getElementById("al-title-text");
+    tt.textContent = opts.title || (type === "error" ? "エラー" : type === "warn" ? "確認" : "お知らせ");
+    tt.style.color = colors[type] || "var(--ink)";
+    document.getElementById("al-msg").textContent = msg;
+    var cancel = document.getElementById("al-cancel");
+    if (opts.onCancel || opts.confirm) { cancel.style.display = ""; cancel.textContent = opts.cancelText || "キャンセル"; }
+    else cancel.style.display = "none";
+    document.getElementById("al-ok").textContent = opts.okText || "OK";
+    _alertOk = opts.onOk || null; _alertCancel = opts.onCancel || null;
+    document.getElementById("alert-modal").classList.add("show");
+  }
+  function closeAlert() { document.getElementById("alert-modal").classList.remove("show"); }
+  function alertOk() { var f = _alertOk; closeAlert(); if (f) f(); }
+  function alertCancel() { var f = _alertCancel; closeAlert(); if (f) f(); }
+
+  var TODAY = { y: 2026, m: 7, d: 11 };
+  function ageFrom(b) {
+    if (!b) return null;
+    var m = String(b).match(/(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+    if (!m) return null;
+    var a = TODAY.y - (+m[1]);
+    if (TODAY.m < +m[2] || (TODAY.m === +m[2] && TODAY.d < +m[3])) a--;
+    return (a >= 0 && a < 130) ? a : null;
+  }
+  function currentPay() {
+    var el = document.querySelector(".pay-chip.active");
+    return el ? el.textContent.trim() : "現金";
+  }
+
   /* 会計確定 */
   var checkedOut = false;
   function currentSaleLines() {
@@ -1594,9 +1688,38 @@
         : { free_name: ln.name || "(名称未設定)", info: ln.info, amount: parseAmt(ln.amount), spec_pending: ln.pending ? 1 : 0 };
     });
   }
+  function posError(msg) {
+    var e = document.getElementById("pos-error");
+    document.getElementById("pos-error-msg").textContent = msg;
+    e.style.display = "flex";
+  }
+  function clearPosError() {
+    var e = document.getElementById("pos-error");
+    if (e) { e.style.display = "none"; document.getElementById("pos-error-msg").textContent = ""; }
+  }
   function validateSale() {
-    if (!posCustomer) { showToast("先に顧客を選択してください(顧客欄でカタカナ・電話番号で検索、または「+ 新規顧客」)。"); return false; }
-    if (!posLines.length) { showToast("明細がありません。「商品番号で追加」または「番号なしで追加」で明細を入れてください。"); return false; }
+    clearPosError();
+    if (!posCustomer) {
+      posError("顧客が選択されていません。カタカナ・電話番号で検索するか「+ 新規顧客」で登録してください。"); return false;
+    }
+    if (!posLines.length) {
+      posError("明細がありません。「商品番号で追加」または「番号なしで追加」で商品を追加してください。"); return false;
+    }
+    for (var i = 0; i < posLines.length; i++) {
+      var ln = posLines[i];
+      if (ln.kind === "free" && !ln.name && !ln.pending) {
+        posError((i + 1) + "行目の品名が未入力です。品名を入力するか「種類未定(後日入力)」にしてください。"); return false;
+      }
+      if (parseAmt(ln.amount) <= 0 && !ln.pending) {
+        posError((i + 1) + "行目の買上金額が0円です。金額を入力するか「種類未定(後日入力)」にしてください。"); return false;
+      }
+    }
+    var pay = currentPay();
+    var deposit = parseAmt(document.getElementById("deposit").value);
+    if (pay === "現金" && deposit < BILL) {
+      posError("預り金額が不足しています。請求 ¥" + BILL.toLocaleString() + " / 預り ¥" + deposit.toLocaleString() +
+        "(不足 ¥" + (BILL - deposit).toLocaleString() + ")"); return false;
+    }
     return true;
   }
   function resetPosAfterSale() {
@@ -1624,7 +1747,7 @@
   }
   function liveCheckout(btn) {
     checkedOut = true;
-    var payload = { customer_id: posCustomer[0], staff_name: "田中 一樹", pay_method: "現金", lines: currentSaleLines() };
+    var payload = { customer_id: posCustomer[0], staff_name: "田中 一槻", pay_method: currentPay(), lines: currentSaleLines() };
     var nm = posCustomer[1];
     btn.textContent = "登録中…"; btn.disabled = true;
     fetch(window.TOKIWA_API + "/checkout", {
