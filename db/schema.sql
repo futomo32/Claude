@@ -214,8 +214,10 @@ CREATE TABLE prescriptions (
   frame_key     TEXT,              -- 商品ID(フレーム)
   sph_r TEXT, sph_l TEXT, cyl_r TEXT, cyl_l TEXT,
   ax_r  TEXT, ax_l  TEXT,
-  pri_r TEXT, pri_l TEXT,          -- プリズム(PRI)
-  base_r TEXT, base_l TEXT,        -- 基底方向(BAS: UP/DOWN/IN/OUT・斜め)
+  pri_r TEXT, pri_l TEXT,          -- プリズム(PRI) 1方向目
+  base_r TEXT, base_l TEXT,        -- 基底方向(BAS: UP/DOWN/IN/OUT)
+  pri2_r TEXT, pri2_l TEXT,        -- プリズム 2方向目(斜め時のみ。例 0.25 UP + 1.0 OUT)
+  base2_r TEXT, base2_l TEXT,
   add_r TEXT, add_l TEXT,
   pd_far_r TEXT, pd_far_l TEXT, pd_far_both TEXT,     -- PDは両眼(both)が基本、左右は任意
   pd_near_r TEXT, pd_near_l TEXT, pd_near_both TEXT,
