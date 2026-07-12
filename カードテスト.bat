@@ -4,10 +4,10 @@ cd /d "%~dp0"
 title トキワ カード読み取りテスト
 
 echo ============================================
-echo   トキワ カード読み取りテスト(TCP300II)
+echo   トキワ カード読み取りテスト（TCP300II）
 echo ============================================
 echo.
-echo  ※ カードには書き込みません(読み取り専用)。
+echo  ※ カードには書き込みません（読み取り専用）。
 echo  ※ COM ポートを直接使うため、宝飾ナビを終了してから実行してください。
 echo.
 pause
@@ -23,7 +23,7 @@ echo.
 
 %PY% -c "import serial" 2>nul
 if errorlevel 1 (
-  echo pyserial を導入します(初回のみ・ネット接続が必要)...
+  echo pyserial を導入します（初回のみ・ネット接続が必要）...
   %PY% -m pip install pyserial
   if errorlevel 1 goto NOSERIAL
 )
@@ -45,7 +45,7 @@ exit /b 1
 
 :NOSERIAL
 echo.
-echo [エラー] pyserial の導入に失敗しました(ネット未接続などの可能性)。
+echo [エラー] pyserial の導入に失敗しました（ネット未接続などの可能性）。
 echo   コマンドプロンプトで手動: pip install pyserial
 echo.
 pause
