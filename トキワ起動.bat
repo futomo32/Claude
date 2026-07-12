@@ -17,16 +17,12 @@ set "PY="
 where py >nul 2>nul && set "PY=py -3"
 if not defined PY ( where python >nul 2>nul && set "PY=python" )
 if not defined PY ( where python3 >nul 2>nul && set "PY=python3" )
-if not defined PY (
-  echo [エラー] Python が見つかりませんでした。
-  echo   https://www.python.org/ からインストールし、
-  echo   「Add python.exe to PATH」に必ずチェックしてください。
-  echo   ※画面だけ見たい場合は tokiwa-ui.html をダブルクリックしてください。
-  echo.
-  pause
-  exit /b 1
-)
+if not defined PY goto NOPYTHON
+
+rem ---- 本物の Python か確認（バージョンを表示できれば本物）----
 echo 使用する Python: %PY%
+%PY% --version
+if errorlevel 1 goto NOPYTHON
 echo.
 
 rem ---- DB が無ければサンプルを作成（既にあれば残す）----
@@ -62,3 +58,22 @@ echo --------------------------------------------
 echo.
 pause
 endlocal
+exit /b 0
+
+:NOPYTHON
+echo.
+echo [エラー] 使用できる Python が見つかりませんでした。
+echo   ※「使用する Python: python」と出ていても、実際は Windows ストアの
+echo      ダミーのショートカットだけの場合があります（本物ではありません）。
+echo.
+echo   対処:
+echo   1) https://www.python.org/downloads/windows/ から Python をインストール
+echo      インストーラの最初の画面で
+echo      「Add python.exe to PATH」に必ずチェックを入れてください。
+echo   2) インストール後、この「トキワ起動.bat」をもう一度ダブルクリック
+echo.
+echo   （Python 無しで画面だけ確認したい場合は tokiwa-ui.html をダブルクリック）
+echo.
+pause
+endlocal
+exit /b 1
