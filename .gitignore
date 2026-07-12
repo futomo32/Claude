@@ -9,3 +9,6 @@ __pycache__/
 
 # scratch
 *.log
+
+# 実顧客データ(個人情報)は絶対にGitに載せない。あなたのPC内だけに留める
+data/real/
