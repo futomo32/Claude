@@ -6,6 +6,19 @@ import re, sqlite3, datetime
 
 JEWELRY_PAT = re.compile(
     r"ﾘﾝｸﾞ|リング|ﾈｯｸﾚｽ|ネックレス|ﾀﾞｲﾔ|ダイヤ|ｻﾌｧｲｱ|ﾋﾟｱｽ|ﾌﾞﾚｽ|ﾍﾟﾝﾀﾞ|ﾒﾉｰ|ﾙﾋﾞｰ|ｴﾒﾗﾙﾄﾞ|ﾊﾟｰﾙ|真珠|指輪|K1[048]|PT|SV")
+GLASS_PAT = re.compile(r"メガネ|眼鏡|レンズ|フレーム|ﾒｶﾞﾈ|ﾚﾝｽﾞ")
+FRAME_PAT = re.compile(r"フレーム|ﾌﾚｰﾑ|frame", re.I)
+LENS_PAT = re.compile(r"レンズ|ﾚﾝｽﾞ|lens|非球面|累進", re.I)
+
+
+def glass_kind(*texts):
+    """フレーム/レンズの別を判定(分類名や品名から)"""
+    s = " ".join(t for t in texts if t)
+    if FRAME_PAT.search(s):
+        return "frame"
+    if LENS_PAT.search(s):
+        return "lens"
+    return ""
 
 
 def _mark(name):
@@ -99,15 +112,15 @@ def build_blob(con):
     rx_candidates = {}
     for r in cur.execute("""
         SELECT s.customer_id cid, l.line_id, s.sold_at, l.amount,
-               COALESCE(l.free_name, p.name) nm, p.is_glasses g, l.free_name fn
+               COALESCE(l.free_name, p.name) nm, p.is_glasses g, p.category cat
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         WHERE s.customer_id IS NOT NULL"""):
         nm = r["nm"] or ""
-        is_glass = r["g"] == 1 or bool(re.search(r"メガネ|眼鏡|レンズ|フレーム|ﾒｶﾞﾈ|ﾚﾝｽﾞ", nm))
+        is_glass = r["g"] == 1 or bool(GLASS_PAT.search(nm))
         if is_glass and r["line_id"] not in linked:
             rx_candidates.setdefault(str(r["cid"]), []).append(
-                [r["line_id"], r["sold_at"], nm, r["amount"]])
+                [r["line_id"], r["sold_at"], nm, r["amount"], glass_kind(r["cat"], nm)])
 
     products = []
     for r in cur.execute("""SELECT product_no,name,category,list_price,state,location,
@@ -208,7 +221,6 @@ def checkout(con, payload):
                 (cid, payload.get("staff_name"), "01", today, payload.get("pay_method", "現金"), earned))
     slip_id = cur.lastrowid
 
-    glass_re = re.compile(r"メガネ|眼鏡|レンズ|フレーム|ﾒｶﾞﾈ|ﾚﾝｽﾞ")
     lines_out = []
     for l in lines:
         pk = l.get("product_key")
@@ -218,16 +230,18 @@ def checkout(con, payload):
                     (slip_id, pk, l.get("free_name"), amt, 1 if l.get("spec_pending") else 0))
         line_id = cur.lastrowid
         name = l.get("free_name")
-        is_glass = bool(glass_re.search(name or ""))
+        cat = None
+        is_glass = bool(GLASS_PAT.search(name or ""))
         if pk:
-            prow = con.execute("SELECT name,is_glasses FROM products WHERE product_key=?", (pk,)).fetchone()
+            prow = con.execute("SELECT name,is_glasses,category FROM products WHERE product_key=?", (pk,)).fetchone()
             if prow:
-                name = prow[0]
+                name, cat = prow[0], prow[2]
                 is_glass = is_glass or prow[1] == 1
             cur.execute("UPDATE products SET state='売上' WHERE product_key=?", (pk,))
             cur.execute("""INSERT INTO stock_events(product_key,event_type,qty_delta,ref_slip_id)
                            VALUES (?,?,?,?)""", (pk, "売上引落", -1, slip_id))
-        lines_out.append({"line_id": line_id, "name": name, "amount": amt, "glasses": is_glass})
+        lines_out.append({"line_id": line_id, "name": name, "amount": amt,
+                          "glasses": is_glass, "kind": glass_kind(cat, name)})
 
     if earned:
         row = con.execute("SELECT balance FROM point_balances WHERE customer_id=?", (cid,)).fetchone()

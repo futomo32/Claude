@@ -90,9 +90,10 @@ def main():
     for name, price in FRAMES + LENSES:
         pkey += 1
         is_lens = (name, price) in LENSES
+        cat = "メガネレンズ" if is_lens else "メガネフレーム"   # フレーム/レンズを分類で区別
         cur.execute("""INSERT INTO products(product_key,product_no,name,category,list_price,cost_price,
                        state,location,is_glasses) VALUES (?,?,?,?,?,?,?,?,1)""",
-                    (str(pkey), str(pkey), name, "メガネ", price, int(price * 0.5), "在庫", "メガネ棚"))
+                    (str(pkey), str(pkey), name, cat, price, int(price * 0.5), "在庫", "メガネ棚"))
         glass_products[name] = str(pkey)
 
     FRAME_PRICE = dict(FRAMES)
