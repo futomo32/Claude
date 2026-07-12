@@ -1,64 +1,63 @@
 @echo off
-chcp 65001 >nul
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
-title トキワ 起動ランチャー
+title �g�L�� �N�������`���[
 
 echo ============================================
-echo   トキワ 宝飾店管理システム を起動します
+echo   �g�L�� ����X�Ǘ��V�X�e�� ���N�����܂�
 echo ============================================
 echo.
-echo  ・このランチャーは localhost（このPC内）だけで動きます
-echo  ・宝飾ナビは開いたままで問題ありません（閉じる必要なし）
-echo  ・プリンター/ドロワー/カードリーダーは操作しません
+echo  �E���̃����`���[�� localhost�i����PC���j�����œ����܂�
+echo  �E����i�r�͊J�����܂܂Ŗ�肠��܂���i����K�v�Ȃ��j
+echo  �E�v�����^�[/�h�����[/�J�[�h���[�_�[�͑��삵�܂���
 echo.
 
-rem ---- Python を探す（py 優先、無ければ python / python3）----
+rem ---- Python ��T���ipy �D��A������� python / python3�j----
 set "PY="
 where py >nul 2>nul && set "PY=py -3"
 if not defined PY ( where python >nul 2>nul && set "PY=python" )
 if not defined PY ( where python3 >nul 2>nul && set "PY=python3" )
 if not defined PY (
-  echo [エラー] Python が見つかりませんでした。
-  echo   https://www.python.org/ からインストールし、
-  echo   インストール時に「Add python.exe to PATH」に必ずチェックしてください。
-  echo   ※ Python 無しで画面だけ見たい場合は tokiwa-ui.html をダブルクリックしてください。
+  echo [�G���[] Python ��������܂���ł����B
+  echo   https://www.python.org/ ����C���X�g�[�����A
+  echo   �uAdd python.exe to PATH�v�ɕK���`�F�b�N���Ă��������B
+  echo   ����ʂ����������ꍇ�� tokiwa-ui.html ���_�u���N���b�N���Ă��������B
   echo.
   pause
   exit /b 1
 )
-echo 使用する Python: %PY%
+echo �g�p���� Python: %PY%
 echo.
 
-rem ---- DB が無ければサンプルを作成（既にあれば残す＝テストデータを消さない）----
+rem ---- DB ��������΃T���v�����쐬�i���ɂ���Ύc���j----
 if not exist "db\tokiwa.db" (
-  echo サンプルDBを作成します（初回のみ）...
+  echo �T���v��DB���쐬���܂��i����̂݁j...
   %PY% scripts\make_sample_data.py
   if errorlevel 1 (
-    echo [エラー] サンプルDBの作成に失敗しました。上のメッセージを確認してください。
+    echo.
+    echo [�G���[] �T���v��DB�̍쐬�Ɏ��s���܂����B��̓��e���m�F���Ă��������B
     echo.
     pause
     exit /b 1
   )
 ) else (
-  echo 既存のDB（db\tokiwa.db）を使用します。作り直したい時はこのファイルを削除してください。
+  echo ������DB�idb\tokiwa.db�j���g�p���܂��B��蒼�����͂��̃t�@�C�����폜���Ă��������B
 )
 echo.
 
-rem ---- サーバーを別ウィンドウで起動 ----
-echo トキワサーバーを起動します...
-start "トキワ サーバー（このウィンドウを閉じると停止します）" %PY% server\app.py
+rem ---- �T�[�o�[��ʃE�B���h�E�ŋN�� ----
+echo �g�L���T�[�o�[���N�����܂�...
+start "�g�L�� �T�[�o�[�i���̃E�B���h�E�����ƒ�~���܂��j" %PY% server\app.py
 
-rem ---- サーバーの立ち上がりを少し待ってからブラウザを開く ----
+rem ---- �T�[�o�[�̗����オ��������҂��Ă���u���E�U���J�� ----
 timeout /t 3 >nul
-echo ブラウザを開きます: http://localhost:8760/
+echo �u���E�U���J���܂�: http://localhost:8760/
 start "" "http://localhost:8760/"
 
 echo.
 echo --------------------------------------------
-echo  起動しました。
-echo  ・使うとき   : 開いたブラウザで操作してください
-echo  ・終了するとき: 「トキワ サーバー」ウィンドウを閉じてください
+echo  �N�����܂����B�I������ɂ�
+echo  �u�g�L�� �T�[�o�[�v�E�B���h�E����Ă��������B
 echo --------------------------------------------
 echo.
 pause
