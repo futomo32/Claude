@@ -141,17 +141,17 @@ def main():
             # 成否に関わらず必ず排出を試みる(カードを飲み込んだままにしない)
             try:
                 print("\nカードを排出します...")
+                time.sleep(1.0)  # 読取直後の排出はDLE拒否されやすい(実測)ため少し待つ
                 _, est, _ = dev.eject()
                 print(f"排出結果: {status_text(est)}")
             except Exception as e:  # noqa: BLE001
-                print(f"排出できませんでした: {e}")
-                print("→ リセット後にもう一度排出を試みます(約3秒)...")
+                print(f"排出コマンドが通りません({e})")
+                print("→ リセットで初期化します(約3秒)。初期化時にカードは排出されます...")
                 try:
                     dev.reset()
-                    _, est, _ = dev.eject()
-                    print(f"排出結果: {status_text(est)}")
+                    print("→ カードが出てきているはずです。取り出してください。")
                 except Exception as e2:  # noqa: BLE001
-                    print(f"それでも排出できませんでした: {e2}")
+                    print(f"リセットも失敗: {e2}")
                     print("→ カード排出.bat か、リーダーの電源入れ直しで取り出してください。")
             save_log(dev, note)
             dev.close()
