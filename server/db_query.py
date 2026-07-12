@@ -92,9 +92,10 @@ def build_blob(con):
         name_l, name_f = r["lens_name"], r["frame_name"]
         misassign = bool(r["jewelry_misassign"]) or bool(_mark(name_l) != name_l) or bool(_mark(name_f) != name_f)
         rx.setdefault(str(r["customer_id"]), []).append({
-            "rx_no": r["rx_no"], "purpose": r["purpose"],
+            "id": r["id"], "rx_no": r["rx_no"], "purpose": r["purpose"],
             "lens_name": name_l, "frame_name": name_f,
-            "total": r["total_sell"], "misassign": misassign, "sale_line_id": r["sale_line_id"],
+            "lens_price": r["lens_price"], "frame_price": r["frame_price"], "total": r["total_sell"],
+            "misassign": misassign, "sale_line_id": r["sale_line_id"],
             "sph_r": r["sph_r"], "sph_l": r["sph_l"], "cyl_r": r["cyl_r"], "cyl_l": r["cyl_l"],
             "ax_r": r["ax_r"], "ax_l": r["ax_l"], "pri_r": r["pri_r"], "pri_l": r["pri_l"],
             "base_r": r["base_r"], "base_l": r["base_l"],
@@ -170,7 +171,8 @@ def upsert_customer(con, payload):
 
 
 def add_prescription(con, p):
-    """メガネ処方箋の新規登録。PDは両眼(both)が基本、左右は任意。購入明細に紐付け可。"""
+    """メガネ処方箋の新規登録/編集。id があれば更新、無ければ採番して新規。
+    合計金額はレンズ金額+フレーム金額を優先(無ければ total_sell を使用)。"""
     cur = con.cursor()
 
     def v(k):
@@ -184,27 +186,35 @@ def add_prescription(con, p):
         except (TypeError, ValueError):
             return None
 
+    lens_price, frame_price = n_int("lens_price"), n_int("frame_price")
+    total = (lens_price or 0) + (frame_price or 0)
+    if not total:
+        total = n_int("total_sell")
+
+    cols = ("purpose", "lens_name", "frame_name",
+            "sph_r", "sph_l", "cyl_r", "cyl_l", "ax_r", "ax_l", "pri_r", "pri_l", "base_r", "base_l",
+            "pri2_r", "pri2_l", "base2_r", "base2_l", "add_r", "add_l",
+            "pd_far_both", "pd_far_r", "pd_far_l", "pd_near_both", "pd_near_r", "pd_near_l",
+            "naked_both", "corrected_both", "handler", "rx_date")
+    vals = [v(c) for c in cols]
+
+    rx_id = n_int("id")
+    if rx_id:  # 編集(既存を更新)
+        setclause = ",".join(f"{c}=?" for c in cols) + ",lens_price=?,frame_price=?,total_sell=?,sale_line_id=?"
+        cur.execute(f"UPDATE prescriptions SET {setclause} WHERE id=?",
+                    vals + [lens_price, frame_price, total, n_int("sale_line_id"), rx_id])
+        con.commit()
+        row = con.execute("SELECT rx_no FROM prescriptions WHERE id=?", (rx_id,)).fetchone()
+        return {"id": rx_id, "rx_no": row[0] if row else None, "total": total}
+
     n = con.execute("SELECT COUNT(*) FROM prescriptions").fetchone()[0]
     rx_no = f"RX-{n + 1:04d}"
-
-    cur.execute("""INSERT INTO prescriptions
-        (customer_id,rx_no,purpose,lens_name,frame_name,
-         sph_r,sph_l,cyl_r,cyl_l,ax_r,ax_l,pri_r,pri_l,base_r,base_l,
-         pri2_r,pri2_l,base2_r,base2_l,add_r,add_l,
-         pd_far_both,pd_far_r,pd_far_l,pd_near_both,pd_near_r,pd_near_l,
-         naked_both,corrected_both,
-         total_sell,handler,rx_date,sale_line_id,jewelry_misassign)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)""",
-        (str(p.get("customer_id")), rx_no, v("purpose"), v("lens_name"), v("frame_name"),
-         v("sph_r"), v("sph_l"), v("cyl_r"), v("cyl_l"), v("ax_r"), v("ax_l"),
-         v("pri_r"), v("pri_l"), v("base_r"), v("base_l"),
-         v("pri2_r"), v("pri2_l"), v("base2_r"), v("base2_l"), v("add_r"), v("add_l"),
-         v("pd_far_both"), v("pd_far_r"), v("pd_far_l"),
-         v("pd_near_both"), v("pd_near_r"), v("pd_near_l"),
-         v("naked_both"), v("corrected_both"),
-         n_int("total_sell"), v("handler"), v("rx_date"), n_int("sale_line_id")))
+    cur.execute(f"""INSERT INTO prescriptions
+        (customer_id,rx_no,{",".join(cols)},lens_price,frame_price,total_sell,sale_line_id,jewelry_misassign)
+        VALUES (?,?,{",".join("?" * len(cols))},?,?,?,?,0)""",
+        [str(p.get("customer_id")), rx_no] + vals + [lens_price, frame_price, total, n_int("sale_line_id")])
     con.commit()
-    return {"id": cur.lastrowid, "rx_no": rx_no}
+    return {"id": cur.lastrowid, "rx_no": rx_no, "total": total}
 
 
 def checkout(con, payload):

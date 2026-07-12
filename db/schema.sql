@@ -223,8 +223,10 @@ CREATE TABLE prescriptions (
   pd_near_r TEXT, pd_near_l TEXT, pd_near_both TEXT,
   naked_both TEXT, naked_r TEXT, naked_l TEXT,        -- 裸眼視力
   corrected_both TEXT, corrected_r TEXT, corrected_l TEXT, -- 矯正(補正)視力
+  lens_price  INTEGER,            -- レンズ金額
+  frame_price INTEGER,            -- フレーム金額
   total_list  INTEGER,
-  total_sell  INTEGER,
+  total_sell  INTEGER,            -- 合計(レンズ+フレーム)
   handler     TEXT,               -- 対応者名
   rx_date     TEXT,
   sale_line_id INTEGER,           -- 紐づく購入明細(sale_lines.line_id)

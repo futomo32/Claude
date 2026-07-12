@@ -180,12 +180,12 @@ def main():
             (customer_id,rx_no,purpose,lens_name,frame_name,lens_key,frame_key,
              sph_r,sph_l,cyl_r,cyl_l,ax_r,ax_l,add_r,add_l,
              pd_far_both,pd_near_both,naked_both,corrected_both,
-             total_list,total_sell,handler,rx_date,jewelry_misassign)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)""",
+             lens_price,frame_price,total_list,total_sell,handler,rx_date,jewelry_misassign)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)""",
             (str(cid), f"RX-{rx_seq[0]:04d}", purpose, lname, fname, glass_products[lname], glass_products[fname],
              f"{sph_r:+.2f}", f"{sph_r+0.25:+.2f}", "-0.50", "-0.75", "180", "175", add, add,
              f"{pd_far:.1f}", f"{pd_near:.1f}", naked, corrected,
-             lprice + fprice, lprice + fprice, random.choice(STAFF)[1], when))
+             lprice, fprice, lprice + fprice, lprice + fprice, random.choice(STAFF)[1], when))
         stats["rx"] += 1
 
     # ══ 検証用ペルソナ(名前が用途を表す。顧客管理の「テスト顧客」から呼び出せる)══
