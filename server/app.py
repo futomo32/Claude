@@ -89,16 +89,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         try:
-            if self.path == "/" or self.path.startswith("/?"):
+            path = self.path.split("?", 1)[0]  # クエリを除いた経路で判定
+            if path == "/":
                 return self._send(200, render_index(remote=self._is_remote()), "text/html; charset=utf-8")
-            if self.path == "/api/health":
+            if path == "/api/health":
                 return self._send(200, json.dumps({"ok": True}).encode())
-            if self.path == "/api/data":
+            if path == "/api/data":
                 con = connect()
                 blob = db_query.build_blob(con)
                 con.close()
                 return self._send(200, json.dumps(blob, ensure_ascii=False).encode("utf-8"))
-            if self.path.startswith("/api/postal"):
+            if path == "/api/postal":
                 # 郵便番号→住所検索(zipcloudへの中継)。オフライン時はエラーを返すだけ
                 zipc = re.sub(r"[^0-9]", "", self.path.split("zip=")[-1])
                 if len(zipc) != 7:
@@ -120,9 +121,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         try:
+            path = self.path.split("?", 1)[0]  # クエリを除いた経路で判定
             length = int(self.headers.get("Content-Length", 0))
             payload = json.loads(self.rfile.read(length) or b"{}")
-            if self.path == "/api/checkout":
+            if path == "/api/checkout":
                 if self._is_remote():
                     # レジ(会計)は機器のある本番機のみ。他PCからは閲覧・登録のみ
                     return self._send(403, json.dumps(
@@ -131,17 +133,17 @@ class Handler(BaseHTTPRequestHandler):
                 result = db_query.checkout(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
-            if self.path == "/api/customer":
+            if path == "/api/customer":
                 con = connect()
                 result = db_query.upsert_customer(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
-            if self.path == "/api/prescription":
+            if path == "/api/prescription":
                 con = connect()
                 result = db_query.add_prescription(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
-            if self.path == "/api/product":
+            if path == "/api/product":
                 con = connect()
                 result = db_query.add_product(con, payload)
                 con.close()
