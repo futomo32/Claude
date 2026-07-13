@@ -1462,10 +1462,14 @@
         PAY_METHODS.map(function (m) {
           return '<option value="' + m + '"' + (m === r.method ? " selected" : "") + '>' + m + '</option>';
         }).join("") + '</select>' +
-        '<input class="num" inputmode="numeric" value="' + (r.amount || 0).toLocaleString() + '" onchange="setPayAmount(' + i + ',this.value)">' +
+        '<input class="num" inputmode="numeric" value="' + (r.amount || 0).toLocaleString() + '" oninput="setPayAmount(' + i + ',this.value)">' +
         (payRows.length > 1 ? '<button class="btn" onclick="removePayRow(' + i + ')" title="削除">×</button>' : '') +
         '</div>';
     }).join("");
+    updatePayTotals();
+  }
+  // 金額入力の途中(oninput)では行を作り直さず合計だけ更新する(入力欄のフォーカスが飛ばないように)
+  function updatePayTotals() {
     var sum = payRows.reduce(function (t, r) { return t + (r.amount || 0); }, 0);
     document.getElementById("pay-sum").textContent = yen(sum);
     var hasCash = payRows.some(function (r) { return r.method === "現金" && r.amount > 0; });
@@ -1474,7 +1478,7 @@
     refreshChange();
   }
   function setPayMethod(i, v) { if (payRows[i]) { payRows[i].method = v; renderPayRows(); } }
-  function setPayAmount(i, v) { if (payRows[i]) { payRows[i].amount = parseAmt(v); renderPayRows(); } }
+  function setPayAmount(i, v) { if (payRows[i]) { payRows[i].amount = parseAmt(v); updatePayTotals(); } }
   function addPayRow() {
     var sum = payRows.reduce(function (t, r) { return t + (r.amount || 0); }, 0);
     var remain = Math.max(0, BILL - sum);
@@ -1485,7 +1489,8 @@
   }
   function removePayRow(i) {
     payRows.splice(i, 1);
-    if (!payRows.length) payRows.push({ method: "現金", amount: 0 });
+    if (payRows.length === 1) payRows[0].amount = BILL; // 1行に戻ったら請求額に自動追従
+    else if (!payRows.length) payRows.push({ method: "現金", amount: BILL });
     renderPayRows();
   }
   function currentPayments() {
@@ -1495,9 +1500,9 @@
   function togglePosBackdate() {
     var on = document.getElementById("pos-backdate").checked;
     document.getElementById("pos-sold-at-wrap").style.display = on ? "" : "none";
-    if (on && !document.getElementById("pos-sold-at").value) {
-      document.getElementById("pos-sold-at").value = TODAY_ISO;
-    }
+    var input = document.getElementById("pos-sold-at");
+    if (!input.max) input.max = new Date().toISOString().slice(0, 10); // 未来日をピッカーの時点で選べないように
+    if (on && !input.value) input.value = TODAY_ISO;
   }
   function currentSoldAt() {
     if (!document.getElementById("pos-backdate").checked) return null;
