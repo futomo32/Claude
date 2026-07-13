@@ -100,7 +100,8 @@ def main():
     LENS_PRICE = dict(LENSES)
     slip = [0]
     rx_seq = [0]
-    stats = {"personas": 0, "sales": 0, "receivable": 0, "rx": 0, "families": 0, "approach": 0}
+    repair_seq = [0]
+    stats = {"personas": 0, "sales": 0, "receivable": 0, "rx": 0, "families": 0, "approach": 0, "repairs": 0}
 
     def add_customer(cid, name, kana, gender, birthday, wedding=None, staff=None, is_test=0, note=None):
         staff = staff or random.choice(STAFF)
@@ -188,6 +189,16 @@ def main():
              lprice, fprice, lprice + fprice, lprice + fprice, random.choice(STAFF)[1], when))
         stats["rx"] += 1
 
+    def add_repair_seed(cid, item_name, issue, estimate, received_at, promised_at, status, staff, note=None):
+        repair_seq[0] += 1
+        completed_at = promised_at if status == "引渡済み" else None
+        cur.execute("""INSERT INTO repairs
+            (repair_no,customer_id,item_name,issue,estimate,received_at,promised_at,status,completed_at,staff_name,note)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (f"R-{repair_seq[0]:06d}", str(cid), item_name, issue, estimate,
+             received_at, promised_at, status, completed_at, staff, note))
+        stats["repairs"] += 1
+
     # ══ 検証用ペルソナ(名前が用途を表す。顧客管理の「テスト顧客」から呼び出せる)══
     S = STAFF
     # 1) メガネ太郎 — 処方箋確認
@@ -227,10 +238,17 @@ def main():
     st = add_customer(7, "声がけ 子", "ｺｴｶｹ ｺ", "女", d(1970, 7, 15), d(2000, 9, 20), staff=S[1], is_test=1, note="お声がけ/アプローチ確認")
     add_approach(7, st, [("2026-06-22", "TEL", "誕生月のご案内"), ("2026-05-10", "DM", "夏の宝飾展 招待状"), ("2026-03-01", "来店", "リング点検・次回記念日を提案")])
     record_sales(7, st, [("2025-09-20", "現金", take(1)[0], 96000)])
-    stats["personas"] = 7
+
+    # 8) 修理 実子 — 修理伝票の進捗確認(預かり中/修理中/連絡済み/引渡済み)
+    st = add_customer(8, "修理 実子", "ｼｭｳﾘ ﾐﾂｺ", "女", d(1980, 4, 10), staff=S[2], is_test=1, note="修理伝票確認")
+    add_repair_seed(8, "ネックレス", "チェーン切れ", 3000, "2026-06-20", "2026-07-11", "連絡済み", S[2][1], "急ぎ希望")
+    add_repair_seed(8, "指輪", "サイズ直し(9号→11号)", 2000, "2026-07-05", "2026-07-18", "修理中", S[0][1])
+    add_repair_seed(8, "腕時計", "電池交換", 1320, "2026-07-11", "2026-07-11", "預かり中", S[1][1])
+    add_repair_seed(8, "ピアス", "キャッチ紛失", 500, "2026-05-01", "2026-05-10", "引渡済み", S[2][1])
+    stats["personas"] = 8
 
     # ══ フィラー顧客(is_test=0)══
-    for cid in range(8, n_cust + 1):
+    for cid in range(9, n_cust + 1):
         gender = random.choice(["女", "男"])
         sur = random.choice(SURNAMES)
         giv = random.choice(FEMALE if gender == "女" else MALE)
@@ -252,9 +270,21 @@ def main():
                                     random.choice(["誕生日のご案内", "宝飾展の招待", "点検のおすすめ"]))])
 
     # フィラーにも数名メガネ処方箋(ペルソナ以外)
-    for cid in random.sample(range(8, n_cust + 1), min(8, max(0, n_cust - 7))):
+    for cid in random.sample(range(9, n_cust + 1), min(8, max(0, n_cust - 8))):
         add_rx(cid, random.choice(PURPOSES), -round(random.uniform(0.5, 6.0) * 4) / 4,
                random.choice(["", "+1.00", "+1.50"]), d(random.randint(2023, 2026)))
+
+    # フィラーにも数件の修理伝票(進行中・完了それぞれ)
+    REPAIR_ITEMS = [("指輪", "サイズ直し", 2000), ("ネックレス", "チェーン修理", 3500),
+                     ("腕時計", "電池交換", 1320), ("ピアス", "キャッチ交換", 800),
+                     ("メガネ", "ネジ緩み調整", 500)]
+    for cid in random.sample(range(9, n_cust + 1), min(10, max(0, n_cust - 8))):
+        item, issue, price = random.choice(REPAIR_ITEMS)
+        status = random.choice(["預かり中", "修理中", "連絡済み", "引渡済み"])
+        received = d(random.randint(2026, 2026), random.randint(1, 7))
+        promised = d(2026, min(random.randint(1, 7) + 1, 12), random.randint(1, 28))
+        add_repair_seed(cid, item, issue, price, received, promised, status,
+                        random.choice(STAFF)[1])
 
     cur.execute("INSERT INTO schema_migrations(version,note) VALUES (1,'サンプルデータ生成')")
     con.commit()
@@ -281,6 +311,9 @@ def main():
     # 処方箋に宝飾品混入がないこと
     mis = cur.execute("SELECT COUNT(*) FROM prescriptions WHERE jewelry_misassign=1").fetchone()[0]
     print(f"  処方箋への宝飾品混入: {mis}件(0であるべき)")
+    # 修理伝票の状態別件数
+    rep_counts = cur.execute("SELECT status, COUNT(*) FROM repairs GROUP BY status").fetchall()
+    print("  修理伝票: " + ", ".join(f"{s}{n}件" for s, n in rep_counts))
     print(f"\nDB作成: {DB} ({os.path.getsize(DB)/1024:.0f}KB)")
     con.close()
 

@@ -234,6 +234,25 @@ CREATE TABLE prescriptions (
 );
 CREATE INDEX idx_rx_cust ON prescriptions(customer_id);
 
+-- ── 修理伝票(宝飾ナビに無かった新機能。預かり〜引渡までの進捗管理) ──
+CREATE TABLE repairs (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  repair_no     TEXT,              -- 伝票番号(表示用。R-000001 等)
+  customer_id   TEXT NOT NULL REFERENCES customers(customer_id),
+  item_name     TEXT,              -- お預かり品
+  issue         TEXT,              -- 症状・依頼内容
+  estimate      INTEGER,           -- 概算金額
+  received_at   TEXT,              -- 預かり日
+  promised_at   TEXT,              -- 引渡予定日
+  status        TEXT NOT NULL DEFAULT '預かり中', -- 預かり中/修理中/連絡済み/引渡済み
+  completed_at  TEXT,              -- 引渡済みになった日
+  staff_name    TEXT,
+  note          TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX idx_repairs_cust   ON repairs(customer_id);
+CREATE INDEX idx_repairs_status ON repairs(status);
+
 -- ── 運用系 ────────────────────────────────
 -- オフライン時の未送信キュー(将来のクラウド同期用。単機運用では未使用)
 CREATE TABLE sync_queue (

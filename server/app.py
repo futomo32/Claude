@@ -148,6 +148,16 @@ class Handler(BaseHTTPRequestHandler):
                 result = db_query.add_product(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/repair":
+                con = connect()
+                result = db_query.add_repair(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/repair_status":
+                con = connect()
+                result = db_query.update_repair_status(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             self._send(404, json.dumps({"error": "not found"}).encode())
         except ValueError as e:
             self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))

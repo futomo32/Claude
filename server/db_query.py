@@ -134,9 +134,22 @@ def build_blob(con):
         products.append([r["product_no"], r["name"], r["category"], r["list_price"],
                          r["state"], r["location"], stone or None])
 
+    repairs = []
+    for r in cur.execute("""SELECT id,repair_no,customer_id,item_name,issue,estimate,
+                                   received_at,promised_at,status,completed_at,staff_name,note
+                            FROM repairs ORDER BY id DESC"""):
+        repairs.append({
+            "id": r["id"], "repair_no": r["repair_no"], "customer_id": r["customer_id"],
+            "item_name": r["item_name"], "issue": r["issue"], "estimate": r["estimate"],
+            "received_at": r["received_at"], "promised_at": r["promised_at"],
+            "status": r["status"], "completed_at": r["completed_at"],
+            "staff_name": r["staff_name"], "note": r["note"],
+        })
+
     return dict(customers=customers, sales=sales, families=families, points=points,
                 pointTx=point_tx, urikake=urikake, urikakeHist=urikake_hist,
-                approach=approach, rx=rx, rxCandidates=rx_candidates, products=products)
+                approach=approach, rx=rx, rxCandidates=rx_candidates, products=products,
+                repairs=repairs)
 
 
 def sample_in_stock_key(con):
@@ -258,6 +271,44 @@ def add_prescription(con, p):
         [str(p.get("customer_id")), rx_no] + vals + [lens_price, frame_price, total, n_int("sale_line_id")])
     con.commit()
     return {"id": cur.lastrowid, "rx_no": rx_no, "total": total}
+
+
+REPAIR_STATUSES = ["預かり中", "修理中", "連絡済み", "引渡済み"]
+
+
+def add_repair(con, p):
+    """修理伝票の新規登録(預かり)。伝票番号を採番して返す。"""
+    cur = con.cursor()
+
+    def n_int(k):
+        try:
+            return int(str(p.get(k)).replace(",", ""))
+        except (TypeError, ValueError):
+            return None
+
+    n = con.execute("SELECT COUNT(*) FROM repairs").fetchone()[0]
+    repair_no = f"R-{n + 1:06d}"
+    cur.execute("""INSERT INTO repairs
+        (repair_no,customer_id,item_name,issue,estimate,received_at,promised_at,status,staff_name,note)
+        VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (repair_no, str(p.get("customer_id")), p.get("item_name"), p.get("issue"),
+         n_int("estimate"), p.get("received_at"), p.get("promised_at"), "預かり中",
+         p.get("staff_name"), p.get("note")))
+    con.commit()
+    return {"id": cur.lastrowid, "repair_no": repair_no, "status": "預かり中"}
+
+
+def update_repair_status(con, p):
+    """修理の進捗を更新(預かり中→修理中→連絡済み→引渡済み)。引渡済みの完了日はサーバー日時を正とする。"""
+    repair_id = p.get("id")
+    status = p.get("status")
+    if status not in REPAIR_STATUSES:
+        raise ValueError(f"不正な状態です: {status}")
+    completed_at = datetime.date.today().isoformat() if status == "引渡済み" else None
+    con.execute("UPDATE repairs SET status=?, completed_at=? WHERE id=?",
+                (status, completed_at, repair_id))
+    con.commit()
+    return {"id": repair_id, "status": status, "completed_at": completed_at}
 
 
 def checkout(con, payload):
