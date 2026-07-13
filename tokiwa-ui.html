@@ -394,12 +394,10 @@
   .pos-total-row { display: flex; justify-content: space-between; align-items: baseline; padding: 0.3em 0; font-size: 0.95em; }
   .pos-total-row.grand { font-size: 1.15em; font-weight: 700; border-top: 2px solid var(--line); margin-top: 0.4em; padding-top: 0.6em; }
   .pos-total-row .v { font-variant-numeric: tabular-nums; }
-  .payment-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.7rem 0 1rem; }
-  .pay-chip {
-    border: 1px solid var(--line); background: var(--surface);
-    border-radius: 999px; padding: 0.35em 1em; font-weight: 600; color: var(--ink-2);
-  }
-  .pay-chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .pay-row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+  .pay-row select { flex: 1; }
+  .pay-row input { width: 9em; text-align: right; }
+  .pay-row button { flex: none; }
   .tenkey { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 0.8rem; }
   .tenkey button {
     padding: 0.8em 0;
@@ -735,6 +733,12 @@
             <div class="field"><label>担当者<span class="req">必須</span></label><select><option>121 田中 一槻</option><option>019 三輪 祐加</option><option>010 簗瀬 智宏</option></select></div>
             <button class="btn" onclick="openCustModalForPos()">+ 新規顧客</button>
           </div>
+          <div class="search-row" style="margin-top:0.2rem;align-items:center">
+            <label style="font-size:0.85em;color:var(--ink-2);display:flex;align-items:center;gap:0.4em">
+              <input type="checkbox" id="pos-backdate" onchange="togglePosBackdate()"> 過去の日付で登録する(店外イベントの後日精算など)
+            </label>
+            <div class="field" id="pos-sold-at-wrap" style="display:none"><label>売上日</label><input type="date" id="pos-sold-at"></div>
+          </div>
           <div class="table-scroll">
             <table class="data">
               <thead><tr><th>区分</th><th>商品番号</th><th>商品名</th><th>商品情報</th><th class="r">定価</th><th class="r">買上金額</th><th class="r">割引率</th><th></th></tr></thead>
@@ -759,15 +763,14 @@
           <div class="pos-total-row"><span>使用ポイント</span><span class="v num" id="sum-used">0</span></div>
           <div class="pos-total-row"><span>(内消費税)</span><span class="v num" id="sum-tax">¥0</span></div>
           <div class="pos-total-row grand"><span>請求金額</span><span class="v num" id="sum-bill">¥0</span></div>
-          <div class="payment-chips">
-            <button class="pay-chip active">現金</button>
-            <button class="pay-chip">クレジット</button>
-            <button class="pay-chip">PayPay</button>
-            <button class="pay-chip">掛売</button>
-            <button class="pay-chip">分割</button>
+          <div class="section-title">支払方法</div>
+          <div id="pay-rows"></div>
+          <button class="btn" style="margin-bottom:0.6rem" onclick="addPayRow()">+ 支払方法を追加(分割払い)</button>
+          <div class="pos-total-row"><span>内訳合計</span><span class="v num" id="pay-sum">¥0</span></div>
+          <div id="pos-cash-wrap">
+            <div class="field"><label>お預かり(現金)</label><input id="deposit" class="num" inputmode="numeric" value="0" style="text-align:right;font-size:1.2em;font-weight:700"></div>
+            <div class="pos-total-row"><span>釣銭</span><span class="v num" id="change">¥0</span></div>
           </div>
-          <div class="field"><label>預り金額</label><input id="deposit" class="num" inputmode="numeric" value="0" style="text-align:right;font-size:1.2em;font-weight:700"></div>
-          <div class="pos-total-row"><span>釣銭</span><span class="v num" id="change">¥0</span></div>
           <div id="pos-error" class="pos-error" style="display:none" role="alert"><span id="pos-error-msg"></span></div>
           <button class="btn" style="width:100%;margin-bottom:0.6rem" onclick="printQuote()">見積書を印刷(保存はされません)</button>
           <div class="tenkey" aria-label="テンキー">
@@ -1362,13 +1365,6 @@
         p.classList.toggle("active", p.id === tab.dataset.tab);
       });
     }
-    var pay = e.target.closest(".pay-chip");
-    if (pay) {
-      pay.parentElement.querySelectorAll(".pay-chip").forEach(function (c) { c.classList.toggle("active", c === pay); });
-      // 現金以外(クレジット/PayPay/掛売/分割)は預り金額に請求額を自動セット。現金は0に戻す
-      var dep = document.getElementById("deposit");
-      if (dep) { dep.value = (pay.textContent.trim() === "現金" ? 0 : BILL).toLocaleString(); refreshChange(); }
-    }
   });
 
   function doLogin(e) {
@@ -1386,6 +1382,7 @@
   /* ═══ レジ(POS)明細 ═══ */
   var posLines = [];  // {kind:'stock'|'free', key, no, name, info, list, amount, pending}
   var BILL = 0;
+  var payRows = [{ method: "現金", amount: 0 }]; // 支払方法の内訳(複数方法に分割可)
   function yen(n) { return "¥" + (parseInt(n, 10) || 0).toLocaleString(); }
   function parseAmt(v) { return parseInt(zen2han(v).replace(/[^0-9]/g, ""), 10) || 0; }
 
@@ -1450,7 +1447,61 @@
     st.textContent = yen(sum);
     document.getElementById("sum-bill").textContent = yen(BILL);
     document.getElementById("sum-tax").textContent = yen(Math.floor(BILL * 10 / 110));
+    if (payRows.length === 1) payRows[0].amount = BILL; // 支払方法が1つの間は請求額に自動追従(従来どおりの使い心地)
+    renderPayRows();
+  }
+
+  /* 支払方法の内訳(1会計を複数方法に分けられる。例: 現金5万+クレジット5万) */
+  var PAY_METHODS = ["現金", "クレジット", "PayPay", "掛売", "分割"];
+  function renderPayRows() {
+    var wrap = document.getElementById("pay-rows");
+    if (!wrap) return;
+    wrap.innerHTML = payRows.map(function (r, i) {
+      return '<div class="pay-row">' +
+        '<select onchange="setPayMethod(' + i + ',this.value)">' +
+        PAY_METHODS.map(function (m) {
+          return '<option value="' + m + '"' + (m === r.method ? " selected" : "") + '>' + m + '</option>';
+        }).join("") + '</select>' +
+        '<input class="num" inputmode="numeric" value="' + (r.amount || 0).toLocaleString() + '" onchange="setPayAmount(' + i + ',this.value)">' +
+        (payRows.length > 1 ? '<button class="btn" onclick="removePayRow(' + i + ')" title="削除">×</button>' : '') +
+        '</div>';
+    }).join("");
+    var sum = payRows.reduce(function (t, r) { return t + (r.amount || 0); }, 0);
+    document.getElementById("pay-sum").textContent = yen(sum);
+    var hasCash = payRows.some(function (r) { return r.method === "現金" && r.amount > 0; });
+    var cashWrap = document.getElementById("pos-cash-wrap");
+    if (cashWrap) cashWrap.style.display = hasCash ? "" : "none";
     refreshChange();
+  }
+  function setPayMethod(i, v) { if (payRows[i]) { payRows[i].method = v; renderPayRows(); } }
+  function setPayAmount(i, v) { if (payRows[i]) { payRows[i].amount = parseAmt(v); renderPayRows(); } }
+  function addPayRow() {
+    var sum = payRows.reduce(function (t, r) { return t + (r.amount || 0); }, 0);
+    var remain = Math.max(0, BILL - sum);
+    var used = payRows.map(function (r) { return r.method; });
+    var next = PAY_METHODS.filter(function (m) { return used.indexOf(m) < 0; })[0] || "クレジット";
+    payRows.push({ method: next, amount: remain });
+    renderPayRows();
+  }
+  function removePayRow(i) {
+    payRows.splice(i, 1);
+    if (!payRows.length) payRows.push({ method: "現金", amount: 0 });
+    renderPayRows();
+  }
+  function currentPayments() {
+    return payRows.filter(function (r) { return (r.amount || 0) > 0; })
+      .map(function (r) { return { method: r.method, amount: r.amount }; });
+  }
+  function togglePosBackdate() {
+    var on = document.getElementById("pos-backdate").checked;
+    document.getElementById("pos-sold-at-wrap").style.display = on ? "" : "none";
+    if (on && !document.getElementById("pos-sold-at").value) {
+      document.getElementById("pos-sold-at").value = TODAY_ISO;
+    }
+  }
+  function currentSoldAt() {
+    if (!document.getElementById("pos-backdate").checked) return null;
+    return document.getElementById("pos-sold-at").value || null;
   }
 
   /* 商品ピッカー(在庫品) */
@@ -1480,7 +1531,9 @@
   /* テンキー(モック: 預り金額 → 釣銭を計算) */
   function refreshChange() {
     var v = parseInt(document.getElementById("deposit").value.replace(/[^0-9]/g, ""), 10) || 0;
-    var diff = v - BILL;
+    var cashRow = payRows.filter(function (r) { return r.method === "現金"; })[0];
+    var cashAmt = cashRow ? (cashRow.amount || 0) : 0;
+    var diff = v - cashAmt;
     document.getElementById("change").textContent = "¥" + (diff > 0 ? diff : 0).toLocaleString();
     if (typeof clearPosError === "function") clearPosError();  // 入力を直したらエラーを消す
   }
@@ -1526,8 +1579,9 @@
   }
 
   /* ═══ デモデータの描画 ═══ */
-  var D = window.TOKIWA_DATA || { customers: [], sales: {}, families: {}, points: {}, pointTx: {}, urikake: {}, urikakeHist: {}, approach: {}, rx: {}, rxCandidates: {}, products: [], repairs: [] };
+  var D = window.TOKIWA_DATA || { customers: [], sales: {}, families: {}, points: {}, pointTx: {}, urikake: {}, urikakeHist: {}, approach: {}, rx: {}, rxCandidates: {}, products: [], repairs: [], tenders: [] };
   if (!D.repairs) D.repairs = [];
+  if (!D.tenders) D.tenders = [];
   if (!D.rxCandidates) D.rxCandidates = {};
   // customers: [id, 名前, カナ, TEL, 担当, 住所, 生年月日, 性別, 累計, 2026年度, 結婚記念日]
   // sales[id]: [日付, 商品名, 商品情報, 金額, 支払, 担当]
@@ -2066,39 +2120,51 @@
     });
     return out;
   }
-  function dailyTilesHtml(lines, payments) {
+  function dailyTenders(dateStr) {
+    return (D.tenders || []).filter(function (t) { return t[0] === dateStr; })
+      .map(function (t) { return { method: t[1], amount: t[2] || 0, cid: t[3] }; });
+  }
+  function dailyTilesHtml(lines, payments, tenders) {
     var salesTotal = lines.reduce(function (t, l) { return t + l.amount; }, 0);
+    // 「掛売」の内訳は本日はまだ未回収(お金は入っていない)ため、レジの入出金合計からは除外する
+    var settled = tenders.filter(function (t) { return t.method !== "掛売"; });
+    var newReceivable = tenders.filter(function (t) { return t.method === "掛売"; })
+      .reduce(function (t, x) { return t + x.amount; }, 0);
     var byPay = {};
-    lines.forEach(function (l) { byPay[l.pay] = (byPay[l.pay] || 0) + l.amount; });
+    settled.forEach(function (t) { byPay[t.method] = (byPay[t.method] || 0) + t.amount; });
+    var settledTotal = settled.reduce(function (t, x) { return t + x.amount; }, 0);
     var payTotal = payments.reduce(function (t, p) { return t + p.amount; }, 0);
     var tax = Math.floor(salesTotal * 10 / 110);
     var tiles = '<div class="tile"><div class="t-label">売上(税込)</div><div class="t-value num">¥' + num(salesTotal) +
       '</div><div class="t-sub num">' + lines.length + '件 / 消費税 ¥' + num(tax) + '</div></div>';
     Object.keys(byPay).sort().forEach(function (k) {
-      var cnt = lines.filter(function (l) { return l.pay === k; }).length;
+      var cnt = settled.filter(function (t) { return t.method === k; }).length;
       tiles += '<div class="tile"><div class="t-label">' + esc(k) + '</div><div class="t-value num">¥' + num(byPay[k]) +
         '</div><div class="t-sub num">' + cnt + '件</div></div>';
     });
+    if (newReceivable) {
+      tiles += '<div class="tile"><div class="t-label">本日発生の掛売(未回収)</div><div class="t-value num">¥' + num(newReceivable) + '</div></div>';
+    }
     tiles += '<div class="tile"><div class="t-label">売掛入金</div><div class="t-value num">¥' + num(payTotal) +
       '</div><div class="t-sub num">' + payments.length + '件</div></div>';
-    tiles += '<div class="tile"><div class="t-label">入出金合計</div><div class="t-value num">¥' + num(salesTotal + payTotal) +
-      '</div><div class="t-sub num">' + (lines.length + payments.length) + '件</div></div>';
+    tiles += '<div class="tile"><div class="t-label">入出金合計</div><div class="t-value num">¥' + num(settledTotal + payTotal) +
+      '</div><div class="t-sub num">' + (settled.length + payments.length) + '件</div></div>';
     return tiles;
   }
   function renderHomeTiles() {
-    var lines = dailySalesLines(TODAY_ISO), payments = dailyPayments(TODAY_ISO);
+    var lines = dailySalesLines(TODAY_ISO), payments = dailyPayments(TODAY_ISO), tenders = dailyTenders(TODAY_ISO);
     var pickups = (D.repairs || []).filter(function (r) {
       return r.promised_at === TODAY_ISO && r.status !== "引渡済み";
     });
-    document.getElementById("home-tiles").innerHTML = dailyTilesHtml(lines, payments) +
+    document.getElementById("home-tiles").innerHTML = dailyTilesHtml(lines, payments, tenders) +
       '<div class="tile"><div class="t-label">本日の引渡予定</div><div class="t-value num">' + pickups.length +
       '<small>件</small></div><div class="t-sub">修理のお預かり品(未引渡)</div></div>';
   }
   function renderDailyReport() {
     var date = document.getElementById("rep-date").value;
     if (!date) return;
-    var lines = dailySalesLines(date), payments = dailyPayments(date);
-    document.getElementById("rep-daily-tiles").innerHTML = dailyTilesHtml(lines, payments);
+    var lines = dailySalesLines(date), payments = dailyPayments(date), tenders = dailyTenders(date);
+    document.getElementById("rep-daily-tiles").innerHTML = dailyTilesHtml(lines, payments, tenders);
     var rows = lines.map(function (l) {
       return { name: l.name, kind: "レジ売上", content: l.item, amount: l.amount, staff: l.staff };
     }).concat(payments.map(function (p) {
@@ -2454,10 +2520,6 @@
     var a = TODAY.y - (+m[1]);
     if (TODAY.m < +m[2] || (TODAY.m === +m[2] && TODAY.d < +m[3])) a--;
     return (a >= 0 && a < 130) ? a : null;
-  }
-  function currentPay() {
-    var el = document.querySelector(".pay-chip.active");
-    return el ? el.textContent.trim() : "現金";
   }
 
   /* メガネ処方箋の追加 */
@@ -2912,11 +2974,21 @@
         posError((i + 1) + "行目の買上金額が0円です。金額を入力するか「種類未定(後日入力)」にしてください。"); return false;
       }
     }
-    var pay = currentPay();
-    var deposit = parseAmt(document.getElementById("deposit").value);
-    if (pay === "現金" && deposit < BILL) {
-      posError("預り金額が不足しています。請求 ¥" + BILL.toLocaleString() + " / 預り ¥" + deposit.toLocaleString() +
-        "(不足 ¥" + (BILL - deposit).toLocaleString() + ")"); return false;
+    var paySum = payRows.reduce(function (t, r) { return t + (r.amount || 0); }, 0);
+    if (paySum !== BILL) {
+      posError("支払方法の内訳合計(¥" + paySum.toLocaleString() + ")が請求金額(¥" + BILL.toLocaleString() + ")と一致しません。"); return false;
+    }
+    var cashRow = payRows.filter(function (r) { return r.method === "現金"; })[0];
+    if (cashRow && cashRow.amount > 0) {
+      var deposit = parseAmt(document.getElementById("deposit").value);
+      if (deposit < cashRow.amount) {
+        posError("預り金額が不足しています。現金分 ¥" + cashRow.amount.toLocaleString() + " / 預り ¥" + deposit.toLocaleString() +
+          "(不足 ¥" + (cashRow.amount - deposit).toLocaleString() + ")"); return false;
+      }
+    }
+    var soldAt = currentSoldAt();
+    if (document.getElementById("pos-backdate").checked && !soldAt) {
+      posError("売上日を指定してください。"); return false;
     }
     return true;
   }
@@ -2925,8 +2997,11 @@
     posCustomer = null;
     document.getElementById("pos-cust-input").value = "";
     renderPosLines();
+    payRows = [{ method: "現金", amount: 0 }];
+    renderPayRows();
     document.getElementById("deposit").value = "0";
     refreshChange();
+    // 「過去の日付で登録する」は解除しない: 店外イベント精算など同じ日付で連続入力する運用のため
   }
   function doCheckout(btn) {
     if (checkedOut) return;
@@ -2934,9 +3009,11 @@
     if (window.TOKIWA_API) return liveCheckout(btn);
     // 埋め込み(サーバー無し)モード: ローカルのDに記録して履歴に反映
     checkedOut = true;
+    var soldAt = currentSoldAt() || TODAY_ISO;
+    var payLabel = currentPayments().map(function (p) { return p.method; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join("+") || "現金";
     var arr = D.sales[posCustomer[0]] = D.sales[posCustomer[0]] || [];
     currentSaleLines().forEach(function (l) {
-      arr.unshift(["2026/07/11", l.name || l.free_name, l.spec_pending ? "仮登録 — 後日入力" : dash(l.info), l.amount, "現金", "田中"]);
+      arr.unshift([soldAt, l.name || l.free_name, l.spec_pending ? "仮登録 — 後日入力" : dash(l.info), l.amount, payLabel, "田中"]);
     });
     var nm = posCustomer[1];
     showToast(nm + "様の購入履歴に " + posLines.length + " 明細を登録しました(デモ)。顧客詳細で確認できます。");
@@ -2946,7 +3023,10 @@
   function liveCheckout(btn) {
     checkedOut = true;
     var cid = String(posCustomer[0]), nm = posCustomer[1];
-    var payload = { customer_id: cid, staff_name: "田中 一槻", pay_method: currentPay(), lines: currentSaleLines() };
+    var payload = {
+      customer_id: cid, staff_name: "田中 一槻", lines: currentSaleLines(),
+      payments: currentPayments(), sold_at: currentSoldAt()
+    };
     btn.textContent = "登録中…"; btn.disabled = true;
     fetch(window.TOKIWA_API + "/checkout", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
@@ -2954,12 +3034,15 @@
       if (data.error) throw new Error(data.error);
       btn.textContent = "会計を確定"; btn.disabled = false; checkedOut = false;
       // 画面側データにも即時反映(リロード不要で購入履歴・累計に出る)
-      var today = "2026-07-11", totalAdd = 0;
+      var today = data.sold_at, totalAdd = 0;
       var arr = D.sales[cid] = D.sales[cid] || [];
       payload.lines.slice().reverse().forEach(function (l) {
         arr.unshift([today, l.name || l.free_name,
-          l.spec_pending ? "仮登録 — 後日入力" : (l.info || ""), l.amount, payload.pay_method, "田中"]);
+          l.spec_pending ? "仮登録 — 後日入力" : (l.info || ""), l.amount, data.pay_method, "田中"]);
         totalAdd += l.amount || 0;
+      });
+      currentPayments().forEach(function (p) {
+        (D.tenders = D.tenders || []).push([today, p.method, p.amount, cid]);
       });
       var c = findCust(cid);
       if (c) { c[8] = (c[8] || 0) + totalAdd; c[9] = (c[9] || 0) + totalAdd; c[13] = today; }

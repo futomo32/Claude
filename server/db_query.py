@@ -146,10 +146,18 @@ def build_blob(con):
             "staff_name": r["staff_name"], "note": r["note"],
         })
 
+    # 支払方法の内訳(フラット配列)。日報等で「支払方法別の実額」を正確に集計するために使う
+    # (1会計が複数方法に分かれる場合、明細1行ごとの支払方法は代表ラベルに過ぎないため)
+    tenders = []
+    for r in cur.execute("""SELECT s.sold_at, sp.method, sp.amount, s.customer_id
+                            FROM sale_payments sp JOIN sales_slips s ON s.slip_id = sp.slip_id
+                            ORDER BY s.sold_at DESC"""):
+        tenders.append([r["sold_at"], r["method"], r["amount"], str(r["customer_id"])])
+
     return dict(customers=customers, sales=sales, families=families, points=points,
                 pointTx=point_tx, urikake=urikake, urikakeHist=urikake_hist,
                 approach=approach, rx=rx, rxCandidates=rx_candidates, products=products,
-                repairs=repairs)
+                repairs=repairs, tenders=tenders)
 
 
 def sample_in_stock_key(con):
@@ -312,17 +320,42 @@ def update_repair_status(con, p):
 
 
 def checkout(con, payload):
-    """会計を実DBに書き込む。伝票+明細+在庫引落+ポイント加算を1トランザクションで。"""
+    """会計を実DBに書き込む。伝票+明細+支払内訳+在庫引落+ポイント加算を1トランザクションで。
+
+    支払は複数方法に分けられる(例: 現金5万+クレジット5万)。payments=[{method,amount},...]
+    を渡すと、その内訳ごとに sale_payments へ記録し、method="掛売" の内訳は自動的に
+    売掛(receivables/receivable_entries)を起票する(店外イベント等の一部後払いに対応)。
+    payments を渡さない場合は pay_method 1本(従来どおり)として扱う。
+
+    sold_at を渡すと当日以外の日付(過去)で登録できる(店外イベントの後日精算など)。
+    未来日は不可。created_at(登録日時)は別途サーバー時刻で自動記録されるため、
+    実際の入力日は後から追跡できる。
+    """
     cur = con.cursor()
     today = datetime.date.today().isoformat()
+    sold_at = payload.get("sold_at") or today
+    try:
+        sd = datetime.date.fromisoformat(sold_at)
+    except (ValueError, TypeError):
+        raise ValueError("売上日の形式が正しくありません(YYYY-MM-DD)")
+    if sd > datetime.date.today():
+        raise ValueError("売上日は本日より後の日付にはできません")
+
     cid = str(payload.get("customer_id"))
     lines = payload.get("lines", [])
     total = sum(int(l.get("amount") or 0) for l in lines)
     earned = total // 200  # デモ: 200円=1pt
 
+    payments = payload.get("payments") or [{"method": payload.get("pay_method", "現金"), "amount": total}]
+    pay_total = sum(int(p.get("amount") or 0) for p in payments)
+    if pay_total != total:
+        raise ValueError(f"支払方法の内訳合計(¥{pay_total:,})が請求金額(¥{total:,})と一致しません")
+    methods = [p.get("method") for p in payments if p.get("method") and int(p.get("amount") or 0) > 0]
+    pay_label = "+".join(dict.fromkeys(methods)) if methods else "現金"
+
     cur.execute("""INSERT INTO sales_slips(customer_id,staff_name,store_code,sold_at,pay_method,earned_points)
                    VALUES (?,?,?,?,?,?)""",
-                (cid, payload.get("staff_name"), "01", today, payload.get("pay_method", "現金"), earned))
+                (cid, payload.get("staff_name"), "01", sold_at, pay_label, earned))
     slip_id = cur.lastrowid
 
     lines_out = []
@@ -347,14 +380,32 @@ def checkout(con, payload):
         lines_out.append({"line_id": line_id, "name": name, "amount": amt,
                           "glasses": is_glass, "kind": glass_kind(cat, name)})
 
+    item_names = [ln["name"] for ln in lines_out if ln["name"]]
+    summary_name = "、".join(dict.fromkeys(item_names)) or None
+    if summary_name and len(summary_name) > 60:
+        summary_name = summary_name[:59] + "…"
+
+    for p in payments:
+        method = p.get("method") or "現金"
+        amt = int(p.get("amount") or 0)
+        if amt <= 0:
+            continue
+        cur.execute("INSERT INTO sale_payments(slip_id,method,amount) VALUES (?,?,?)", (slip_id, method, amt))
+        if method == "掛売":
+            cur.execute("""INSERT INTO receivables(customer_id,product_name,bought_at,down_payment,balance,last_paid_at)
+                           VALUES (?,?,?,?,?,?)""", (cid, summary_name, sold_at, 0, amt, None))
+            cur.execute("""INSERT INTO receivable_entries(customer_id,entry_type,entry_date,product_name,amount,paid)
+                           VALUES (?,?,?,?,?,?)""", (cid, "掛売", sold_at, summary_name, amt, None))
+
     if earned:
         row = con.execute("SELECT balance FROM point_balances WHERE customer_id=?", (cid,)).fetchone()
         newbal = (row[0] if row else 0) + earned
         cur.execute("""INSERT INTO point_transactions(customer_id,tx_type,points,add_points,balance,ref_slip_id,occurred_at)
-                       VALUES (?,?,?,?,?,?,?)""", (cid, "加算", earned, earned, newbal, slip_id, today))
+                       VALUES (?,?,?,?,?,?,?)""", (cid, "加算", earned, earned, newbal, slip_id, sold_at))
         cur.execute("""INSERT INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)
                        ON CONFLICT(customer_id) DO UPDATE SET balance=excluded.balance, updated_at=excluded.updated_at""",
-                    (cid, newbal, today))
+                    (cid, newbal, sold_at))
 
     con.commit()
-    return {"slip_id": slip_id, "earned": earned, "total": total, "lines": lines_out}
+    return {"slip_id": slip_id, "earned": earned, "total": total, "lines": lines_out,
+            "sold_at": sold_at, "pay_method": pay_label}

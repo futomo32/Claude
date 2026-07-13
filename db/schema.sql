@@ -143,6 +143,15 @@ CREATE TABLE sale_lines (
 );
 CREATE INDEX idx_lines_slip ON sale_lines(slip_id);
 
+-- 支払方法の内訳(1会計を複数の支払方法に分けられる。宝飾ナビに無かった新機能)
+CREATE TABLE sale_payments (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  slip_id  INTEGER NOT NULL REFERENCES sales_slips(slip_id),
+  method   TEXT NOT NULL,   -- 現金/クレジット/PayPay/掛売/分割
+  amount   INTEGER NOT NULL
+);
+CREATE INDEX idx_sale_payments_slip ON sale_payments(slip_id);
+
 -- ── 売掛 ──────────────────────────────────
 CREATE TABLE receivables (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
