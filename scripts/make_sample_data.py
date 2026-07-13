@@ -286,6 +286,42 @@ def main():
         add_repair_seed(cid, item, issue, price, received, promised, status,
                         random.choice(STAFF)[1])
 
+    # ── 本日(2026-07-11)の営業サンプル(ホーム/日報のデモが空にならないように) ──
+    TODAY = "2026-07-11"
+
+    def record_today(cid, staff, pay, item, amount):
+        slip[0] += 1
+        sid = slip[0]
+        earned = amount // 200
+        cur.execute("""INSERT INTO sales_slips(slip_id,slip_no,customer_id,staff_code,staff_name,
+                       store_code,sold_at,pay_method,earned_points) VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (sid, f"S{sid:06d}", str(cid), staff[0], staff[1], "01", TODAY, pay, earned))
+        cur.execute("INSERT INTO sale_lines(slip_id,product_key,list_price,amount) VALUES (?,?,?,?)",
+                    (sid, item[0], item[2], amount))
+        cur.execute("UPDATE products SET state='売上' WHERE product_key=?", (item[0],))
+        cur.execute("INSERT INTO stock_events(product_key,event_type,qty_delta,ref_slip_id) VALUES (?,?,?,?)",
+                    (item[0], "売上引落", -1, sid))
+        row = cur.execute("SELECT balance FROM point_balances WHERE customer_id=?", (str(cid),)).fetchone()
+        bal = (row[0] if row else 0) + earned
+        cur.execute("INSERT OR REPLACE INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)",
+                    (str(cid), bal, TODAY))
+        cur.execute("""INSERT INTO point_transactions(customer_id,tx_type,points,add_points,balance,ref_slip_id,occurred_at)
+                       VALUES (?,?,?,?,?,?,?)""", (str(cid), "加算", earned, earned, bal, sid, TODAY))
+        stats["sales"] += 1
+
+    today_stock = take(3)
+    if len(today_stock) == 3:
+        record_today(9, STAFF[0], "現金", today_stock[0], today_stock[0][2])
+        record_today(10, STAFF[2], "クレジット", today_stock[1], today_stock[1][2])
+        record_today(11, STAFF[1], "PayPay", today_stock[2], 6160)
+    # 本日の売掛入金(売掛次郎の残高へ一部入金)
+    rc = cur.execute("SELECT id,balance FROM receivables WHERE customer_id='3' AND balance>0 ORDER BY balance DESC LIMIT 1").fetchone()
+    if rc:
+        pay_amt = min(100000, rc[1])
+        cur.execute("UPDATE receivables SET balance=balance-?, last_paid_at=? WHERE id=?", (pay_amt, TODAY, rc[0]))
+        cur.execute("""INSERT INTO receivable_entries(customer_id,entry_type,entry_date,product_name,amount,paid)
+                       VALUES (?,?,?,?,?,?)""", ("3", "入金", TODAY, "売掛入金", None, pay_amt))
+
     cur.execute("INSERT INTO schema_migrations(version,note) VALUES (1,'サンプルデータ生成')")
     con.commit()
 
