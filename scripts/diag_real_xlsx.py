@@ -45,6 +45,25 @@ for fn in files:
     wb.close()
     print()
 
+# ── 範囲情報を無視して実データを数え直す(reset_dimensions) ──
+print("== reset_dimensions で数え直し(壊れた範囲情報を無視して実際のセルを走査) ==")
+print()
+for fn in files:
+    wb = openpyxl.load_workbook(fn, read_only=True, data_only=True)
+    ws = wb.active
+    ws.reset_dimensions()
+    n_rows = 0
+    n_cols_header = 0
+    for i, row in enumerate(ws.iter_rows(values_only=True), start=1):
+        if row is None or all(c is None for c in row):
+            continue
+        if i == 1:
+            n_cols_header = sum(1 for c in row if c is not None and str(c).strip() != "")
+        n_rows += 1
+    wb.close()
+    print(f"  {os.path.basename(fn)}: 実データ行数(見出し込み)={n_rows:,}  見出し列数={n_cols_header}")
+
+print()
 # ── A1セルの「中身の形」だけを見る(個人情報は表示しない) ──
 print("== A1セルの形チェック(内容は表示しません。文字数と区切り文字の有無のみ) ==")
 print()

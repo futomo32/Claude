@@ -23,6 +23,9 @@ def wb_rows(key):
         if key in unicodedata.normalize("NFC", os.path.basename(p)):
             wb = openpyxl.load_workbook(p, read_only=True)
             ws = wb.worksheets[0]
+            # 宝飾ナビのxlsxは内部の範囲情報が壊れている(A1のみと記録)ことがあり、
+            # read_onlyモードだと1行しか読めない。実際のセルを走査させるためリセットする。
+            ws.reset_dimensions()
             it = ws.iter_rows(values_only=True)
             header = [str(h) if h is not None else "" for h in next(it)]
             rows = [dict(zip(header, r)) for r in it]

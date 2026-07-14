@@ -54,6 +54,9 @@ def load(fn):
     """xlsxを (header:list, rows:list[dict]) で読む。列名→値の辞書。"""
     wb = openpyxl.load_workbook(fn, read_only=True, data_only=True)
     ws = wb.active
+    # 宝飾ナビのxlsxは内部の範囲情報が壊れている(A1のみと記録)ことがあり、
+    # read_onlyモードだと1行しか読めない。実際のセルを走査させるためリセットする。
+    ws.reset_dimensions()
     it = ws.iter_rows(values_only=True)
     header = [str(h) if h is not None else "" for h in (next(it, ()) or ())]
     rows = []
