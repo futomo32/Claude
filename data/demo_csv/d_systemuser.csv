@@ -1,0 +1,3 @@
+﻿struserid,strsytencode,strdispname,lngmasterflg,strpassword
+admin,01,管理者,1,secret
+staff1,01,築瀬 太郎,0,x

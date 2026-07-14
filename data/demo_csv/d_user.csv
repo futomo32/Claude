@@ -1,0 +1,4 @@
+﻿strkotencode,lngkokey,strkoname,strkokana,strkotel,strtel2,strkopos,strkojyu1,strkojyu2,strsexkbn,datbirthday,datwedddate,strrank,strdmkbn,strpcmail,strkeitaimail,lngfinsize1,strpiasukbn,strtancode,strkanritenpo,dattoudate
+01,100,田中 一郎,ﾀﾅｶ ｲﾁﾛｳ,0565-00-0001,,471-0001,豊田市○○町1-2,△△マンション101,1,1975/6/12,2000/3/3,A,1,a@example.com,,9,1,001,01,2010/1/5
+01,101,鈴木 幸子,ｽｽﾞｷ ｻﾁｺ,0565-00-0002,,471-0001,豊田市○○町1-2,△△マンション101,2,1975/6/12,2000/3/3,A,1,a@example.com,,9,1,002,01,2010/1/5
+02,100,佐藤 三郎,ｻﾄｳ ｻﾌﾞﾛｳ,0565-00-0003,,471-0001,豊田市○○町1-2,△△マンション101,1,1975/6/12,2000/3/3,A,1,a@example.com,,9,1,050,02,2010/1/5
