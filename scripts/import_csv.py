@@ -378,6 +378,18 @@ def main():
     cur.executemany("INSERT OR IGNORE INTO app_users(user_id,store_code,display_name,role) VALUES (?,?,?,?)", au)
     log["app_users"] = len(au)
 
+    # ── 店舗マスタに無いが顧客・担当者が使う店舗コードに名前を付ける ──
+    # 99=宝飾ナビ導入前の旧既存客 / 00=店頭現金(匿名) / 1=01の表記ゆれ / 98=ビジュ旧台帳
+    STORE_NAMES = {"99": "本店(旧台帳)", "00": "店頭現金", "1": "本店", "98": "ビジュ(旧台帳)"}
+    missing = cur.execute("""
+      SELECT DISTINCT store_code FROM (
+        SELECT store_code FROM customers UNION SELECT store_code FROM staff
+      ) WHERE store_code IS NOT NULL
+        AND store_code NOT IN (SELECT store_code FROM stores)""").fetchall()
+    extra = [(c[0], STORE_NAMES.get(c[0], f"(不明店舗{c[0]})")) for c in missing]
+    cur.executemany("INSERT INTO stores VALUES (?,?)", extra)
+    log["stores"] += len(extra)
+
     cur.execute("INSERT INTO schema_migrations(version,note) VALUES (1,'フルCSV移行(宝飾ナビ114テーブル)')")
     con.commit()
 
