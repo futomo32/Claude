@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
-"""data/demo/ のxlsxを読み、db/schema.sql から db/tokiwa.db を構築して流し込む。
+"""宝飾ナビの xlsx を読み、db/schema.sql から db/tokiwa.db を構築して流し込む(本番移行ツール)。
 
-再実行すると tokiwa.db を作り直す(冪等)。移行ロジックの叩き台。
+  python3 scripts/import_to_sqlite.py            # data/real/ の実データを移行(本番)
+  python3 scripts/import_to_sqlite.py --demo     # data/demo/ で予行演習(リハーサル)
+  python3 scripts/import_to_sqlite.py <フォルダ> # 任意フォルダのxlsxを移行
+
+再実行すると tokiwa.db を作り直す(冪等)。data/real/ は .gitignore 済み(PC内のみ)。
 """
-import openpyxl, glob, os, re, sqlite3, unicodedata, datetime
+import openpyxl, glob, os, re, sqlite3, sys, unicodedata, datetime
 
 BASE = os.path.join(os.path.dirname(__file__), "..")
-DEMO = os.path.join(BASE, "data", "demo")
 SCHEMA = os.path.join(BASE, "db", "schema.sql")
 DB = os.path.join(BASE, "db", "tokiwa.db")
 
+# 読み込み元フォルダ(既定は data/real。--demo でデモ、パス指定も可)
+SRC = os.path.join(BASE, "data", "real")
+
 
 def wb_rows(key):
-    for p in glob.glob(os.path.join(DEMO, "*.xlsx")):
+    """フォルダ内の、ファイル名に key を含む xlsx を辞書行のリストで返す。"""
+    for p in glob.glob(os.path.join(SRC, "*.xlsx")):
         if key in unicodedata.normalize("NFC", os.path.basename(p)):
             wb = openpyxl.load_workbook(p, read_only=True)
             ws = wb.worksheets[0]
@@ -21,7 +28,7 @@ def wb_rows(key):
             rows = [dict(zip(header, r)) for r in it]
             wb.close()
             return rows
-    raise FileNotFoundError(key)
+    raise FileNotFoundError(f"「{key}」を含むxlsxが {SRC} に見つかりません")
 
 
 def s(v):
@@ -68,6 +75,19 @@ POWER_COLS = ("SPH(右)", "SPH(左)", "CYL(右)", "CYL(左)", "AX(右)", "AX(左
 
 
 def main():
+    global SRC
+    args = sys.argv[1:]
+    if "--demo" in args:
+        SRC = os.path.join(BASE, "data", "demo")
+        args.remove("--demo")
+    if args:
+        SRC = args[0]
+    if not os.path.isdir(SRC) or not glob.glob(os.path.join(SRC, "*.xlsx")):
+        print(f"[エラー] xlsx が見つかりません: {SRC}")
+        print("  実データを data/real/ に置いてから実行してください(予行演習は --demo)。")
+        sys.exit(1)
+    print(f"読み込み元: {SRC}\n")
+
     if os.path.exists(DB):
         os.remove(DB)
     con = sqlite3.connect(DB)
@@ -267,17 +287,22 @@ def main():
             s(r.get("商品ID(レンズ)")), s(r.get("商品ID(フレーム)")),
             s(r.get("SPH(右)")), s(r.get("SPH(左)")), s(r.get("CYL(右)")), s(r.get("CYL(左)")),
             s(r.get("AX(右)")), s(r.get("AX(左)")), s(r.get("ADD(右)")), s(r.get("ADD(左)")),
+            s(r.get("PR(右)")), s(r.get("PR(左)")), s(r.get("ベース(右)")), s(r.get("ベース(左)")),
             s(r.get("PD遠(右)")), s(r.get("PD遠(左)")), s(r.get("PD遠(両)")),
             s(r.get("PD近(右)")), s(r.get("PD近(左)")), s(r.get("PD近(両)")),
+            s(r.get("裸眼(右)")), s(r.get("裸眼(左)")), s(r.get("裸眼(両)")),
+            s(r.get("矯正(右)")), s(r.get("矯正(左)")), s(r.get("矯正(両)")),
             n(r.get("合計定価")), n(r.get("合計売値")), s(r.get("対応者名")), dt(r.get("処理日付")),
             1 if misassign else 0,
         ))
-    cur.executemany("""INSERT INTO prescriptions
-      (customer_id,rx_no,purpose,lens_name,frame_name,lens_key,frame_key,
-       sph_r,sph_l,cyl_r,cyl_l,ax_r,ax_l,add_r,add_l,
-       pd_far_r,pd_far_l,pd_far_both,pd_near_r,pd_near_l,pd_near_both,
-       total_list,total_sell,handler,rx_date,jewelry_misassign)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", rx)
+    rx_cols = ("customer_id,rx_no,purpose,lens_name,frame_name,lens_key,frame_key,"
+               "sph_r,sph_l,cyl_r,cyl_l,ax_r,ax_l,add_r,add_l,"
+               "pri_r,pri_l,base_r,base_l,"
+               "pd_far_r,pd_far_l,pd_far_both,pd_near_r,pd_near_l,pd_near_both,"
+               "naked_r,naked_l,naked_both,corrected_r,corrected_l,corrected_both,"
+               "total_list,total_sell,handler,rx_date,jewelry_misassign")
+    ph = ",".join("?" * len(rx_cols.split(",")))  # 列数からプレースホルダを自動生成(手打ちのズレ防止)
+    cur.executemany(f"INSERT INTO prescriptions ({rx_cols}) VALUES ({ph})", rx)
     log["prescriptions"], log["rx_dropped"] = len(rx), rx_drop
 
     cur.execute("INSERT INTO schema_migrations(version,note) VALUES (1,'初期スキーマ+デモデータ移行')")
