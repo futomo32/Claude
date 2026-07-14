@@ -200,8 +200,9 @@ def main():
     w("- ※品名は販売台帳側に残るため表示上の実害は小。廃番・削除品の可能性。")
     w("")
 
-    report = os.path.join(SRC, "..", "紐づけ確認レポート.md")
-    report = os.path.normpath(report)
+    # レポートは読み込み元(SRC)の中に出す。実データ時は data/real/csv/(gitignore下)、
+    # デモ時は data/demo_csv/。いずれも下記 .gitignore の生成物パターンで管理外。
+    report = os.path.join(SRC, "紐づけ確認レポート.md")
     with open(report, "w", encoding="utf-8") as f:
         f.write("\n".join(out))
     for line in out:

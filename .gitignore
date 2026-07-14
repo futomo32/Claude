@@ -12,3 +12,11 @@ __pycache__/
 
 # 実顧客データ(個人情報)は絶対にGitに載せない。あなたのPC内だけに留める
 data/real/
+
+# 診断・分析レポートの生成物(デモ実行分含む。再生成可能)
+分析レポート.md
+紐づけ確認レポート.md
+全ヘッダ一覧.txt
+csv一覧.txt
+data/demo_csv/*.md
+data/demo_csv/*.txt
