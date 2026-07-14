@@ -45,6 +45,25 @@ for fn in files:
     wb.close()
     print()
 
+# ── A1セルの「中身の形」だけを見る(個人情報は表示しない) ──
+print("== A1セルの形チェック(内容は表示しません。文字数と区切り文字の有無のみ) ==")
+print()
+for fn in files:
+    wb = openpyxl.load_workbook(fn, read_only=True, data_only=True)
+    ws = wb.active
+    a1 = None
+    for row in ws.iter_rows(min_row=1, max_row=1, values_only=True):
+        a1 = row[0] if row else None
+        break
+    wb.close()
+    if a1 is None:
+        print(f"  {os.path.basename(fn)}: A1は空です")
+        continue
+    txt = str(a1)
+    print(f"  {os.path.basename(fn)}: 型={type(a1).__name__} 文字数={len(txt)} "
+          f"カンマ含む={',' in txt} タブ含む={chr(9) in txt} 改行含む={chr(10) in txt}")
+
+print()
 print("見るポイント:")
 print("- 実データが入っていそうな行数・列数のシートが「アクティブシート」と一致しているか")
 print("- 一致していない場合、そのシート名を教えてください(analyze/importの読み込み先を修正します)")
