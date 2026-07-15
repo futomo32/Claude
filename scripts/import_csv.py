@@ -119,6 +119,8 @@ KAKE = {"1": "現金", "2": "掛売", "3": "クレジット", "4": "分割",
 CREDIT = {"1": "JCB", "2": "VISA", "3": "UFJミリオン", "7": "TS3",
           "8": "セディナ", "9": "オリエント", "A": "山陰信販", "B": "オリコ"}
 YOTO = {"1": "常用", "2": "遠用", "3": "近用"}  # 処方箋の用途区分
+ZOKUGARA = {"0": "本人", "1": "父", "2": "母", "3": "夫", "4": "妻",
+            "5": "長男", "6": "次男", "7": "長女", "8": "次女", "9": "他"}  # m_kubun種別013
 
 JEWELRY_PAT = re.compile(
     r"ﾘﾝｸﾞ|リング|ﾈｯｸﾚｽ|ネックレス|ﾀﾞｲﾔ|ダイヤ|ﾋﾟｱｽ|ﾌﾞﾚｽ|ﾍﾟﾝﾀﾞ|ﾙﾋﾞｰ|ｴﾒﾗﾙﾄﾞ|ﾊﾟｰﾙ|真珠|指輪|K1[048]|PT|SV")
@@ -218,7 +220,8 @@ def main():
     for r in rows("d_famiry"):
         cid = cid_of(r)
         if cid in seen:
-            fam.append((cid, s(r.get("strfamiryname")), s(r.get("strzokukbn")),
+            zoku = s(r.get("strzokukbn"))
+            fam.append((cid, s(r.get("strfamiryname")), ZOKUGARA.get(zoku, zoku),
                         SEX.get(s(r.get("strsexkbn")), s(r.get("strsexkbn"))), dt(r.get("datbirthday"))))
     cur.executemany("INSERT INTO customer_families(customer_id,name,relation,gender,birthday) VALUES (?,?,?,?,?)", fam)
     log["families"] = len(fam)
