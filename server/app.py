@@ -12,12 +12,13 @@
 正式運用(Windows単機)ではこのサーバーをローカルで起動し、ブラウザで開く構成。
 将来デスクトップアプリ(Electron等)に載せ替える場合もAPIはそのまま流用できる。
 """
-import json, os, re, socket, sqlite3, sys, urllib.request
+import json, mimetypes, os, re, socket, sqlite3, sys, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = os.path.join(os.path.dirname(__file__), "..")
 DB = os.path.join(BASE, "db", "tokiwa.db")
 UI = os.path.join(BASE, "tokiwa-ui.html")
+ASSETS = os.path.join(BASE, "assets")
 
 sys.path.insert(0, os.path.dirname(__file__))
 import db_query  # noqa: E402
@@ -94,6 +95,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, render_index(remote=self._is_remote()), "text/html; charset=utf-8")
             if path == "/api/health":
                 return self._send(200, json.dumps({"ok": True}).encode())
+            if path.startswith("/assets/"):
+                # ロゴ等の静的ファイル配信(帳票ヘッダ表示用)。フォルダ外は不可
+                fname = os.path.basename(path)
+                fpath = os.path.join(ASSETS, fname)
+                if fname != path[len("/assets/"):] or not os.path.isfile(fpath):
+                    return self._send(404, json.dumps({"error": "not found"}).encode())
+                ctype = mimetypes.guess_type(fpath)[0] or "application/octet-stream"
+                with open(fpath, "rb") as f:
+                    return self._send(200, f.read(), ctype)
             if path == "/api/data":
                 con = connect()
                 blob = db_query.build_blob(con)
