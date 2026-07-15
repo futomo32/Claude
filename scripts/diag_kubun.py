@@ -32,6 +32,7 @@ TARGETS = [
               ("住居コード", "住居"), ("ピアス穴有無コード", "ピアス穴有無"),
               ("顧客ランクコード", "顧客ランク")]),
     ("shohosen", [("用途区分", "用途名称"), ("処方区分", "処方名称")]),
+    ("family", [("続柄コード", "続柄"), ("続柄区分", "続柄"), ("続柄区分コード", "続柄名称")]),
 ]
 
 
@@ -50,7 +51,31 @@ def find(key):
     return None
 
 
+def dump_m_kubun():
+    """m_kubun.csv(汎用区分マスタ)を種別ごとに全部出す(続柄などの正解対応表)。"""
+    import csv as _csv
+    path = os.path.join(XDIR, "csv", "m_kubun.csv")
+    if not os.path.exists(path):
+        print("[スキップ] m_kubun.csv が見つかりません")
+        return
+    with open(path, "r", encoding="utf-8-sig", newline="") as f:
+        rows = list(_csv.DictReader(f))
+    by_type = {}
+    for r in rows:
+        by_type.setdefault(s(r.get("strsyubetu")) or "?", []).append(
+            (s(r.get("strcode")), s(r.get("strname")), s(r.get("strryaku"))))
+    print(f"■ m_kubun.csv(汎用区分マスタ {len(rows)}行 / 種別 {len(by_type)}種)")
+    for typ, items in sorted(by_type.items()):
+        print(f"  ── 種別『{typ}』({len(items)}件) ──")
+        for c, nm, ry in items[:40]:
+            print(f"     コード {c!r:8} → {nm!r}" + (f" (略:{ry})" if ry else ""))
+        if len(items) > 40:
+            print(f"     …他 {len(items) - 40} 件")
+    print()
+
+
 def main():
+    dump_m_kubun()
     for key, pairs in TARGETS:
         p = find(key)
         if not p:

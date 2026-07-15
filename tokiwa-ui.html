@@ -591,6 +591,9 @@
     display: grid; grid-template-columns: repeat(3, 66mm); grid-template-rows: repeat(8, 33.9mm);
   }
   .label-sheet + .label-sheet { break-before: page; page-break-before: always; }
+  /* 印刷時は下余白と高さ指定を外す: ちょうど297mmだと丸め誤差で白紙ページが出るため
+     (ラベル位置は上・左からのグリッドで決まるので影響しない) */
+  @media print { .label-sheet { height: auto; padding-bottom: 0; } }
   .label-cell {
     box-sizing: border-box; width: 66mm; height: 33.9mm; overflow: hidden;
     padding: 3mm 4mm; display: flex; flex-direction: column; justify-content: center;
@@ -1317,11 +1320,26 @@
     reports: "日報・帳票", settings: "設定・マスター"
   };
 
+  // fetch失敗の理由を人が分かる言葉に変換(Load failed等=サーバー停止がほとんど)
+  function fetchErrMsg(e) {
+    var m = (e && e.message) || "";
+    if (m === "Load failed" || m === "Failed to fetch" || m === "NetworkError when attempting to fetch resource." || (e && e.name === "TypeError")) {
+      return "サーバーに接続できません。ターミナルで python3 server/app.py が動いているか確認してください";
+    }
+    return m;
+  }
+
   function showScreen(name) {
     if (name === "register" && window.TOKIWA_REMOTE) {
       // 店内共有(他PC)ではレジは使えない(機器が本体レジPCにしか無いため)
       showToast("レジ(会計)は本体レジPCでのみ操作できます。");
       return;
+    }
+    // レジに未確定の明細を残したまま他画面へ移動する時の案内(内容は消えずに保持される)
+    var curActive = document.querySelector(".content.active");
+    if (curActive && curActive.dataset.screen === "register" && name !== "register" &&
+        window.posLines && posLines.length) {
+      showToast("レジの入力内容は保持されています(会計は未確定)。レジに戻ると続きから入力できます。");
     }
     document.querySelectorAll(".content").forEach(function (s) {
       s.classList.toggle("active", s.dataset.screen === name);
@@ -1779,7 +1797,7 @@
         done(res.customer_id);
       }).catch(function (e2) {
         btn.disabled = false; btn.textContent = "保存";
-        err.textContent = "保存に失敗しました: " + e2.message; err.style.display = "block";
+        err.textContent = "保存に失敗しました: " + fetchErrMsg(e2); err.style.display = "block";
       });
     } else {
       var maxid = 0;
@@ -2837,10 +2855,12 @@
   }
 
   /* ── 汎用帳票印刷(見積書・請求書・修理伝票): 保存はせずその場で印刷するだけ ── */
+  // 帳票の発行元表記(お客様に見える正式店名)。ロゴ画像を受領したらここを画像に差し替える
+  var STORE_PRINT_NAME = "宝石・メガネ・時計 ヤナセ";
   function buildDocHtml(title, docNo, toName, innerHtml) {
     return '<div class="doc-sheet">' +
       '<div class="doc-head"><div class="doc-no">No. ' + esc(docNo) + '<br>発行日: ' + TODAY_ISO + '</div>' +
-      '<div class="doc-store">トキワ 宝飾店</div></div>' +
+      '<div class="doc-store">' + esc(STORE_PRINT_NAME) + '</div></div>' +
       '<div class="doc-title">' + esc(title) + '</div>' +
       '<div class="doc-to">' + esc(toName) + ' 様</div>' +
       innerHtml +
@@ -2953,7 +2973,7 @@
         if (res.error) throw new Error(res.error);
         btn.disabled = false; btn.textContent = "保存"; done(res.rx_no, res.id, res.total);
       }).catch(function (e) {
-        btn.disabled = false; btn.textContent = "保存"; rxError("保存に失敗しました: " + e.message);
+        btn.disabled = false; btn.textContent = "保存"; rxError("保存に失敗しました: " + fetchErrMsg(e));
       });
     } else {
       btn.disabled = false; btn.textContent = "保存"; done(payload.id ? "RX-編集" : "RX-仮", payload.id, payload.total_sell);
@@ -3076,7 +3096,7 @@
       resetPosAfterSale();
     }).catch(function (e) {
       checkedOut = false; btn.disabled = false; btn.textContent = "会計を確定";
-      showToast("保存に失敗しました: " + e.message);
+      showToast("保存に失敗しました: " + fetchErrMsg(e));
     });
   }
 
