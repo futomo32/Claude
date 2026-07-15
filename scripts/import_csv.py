@@ -218,6 +218,7 @@ def main():
 
     # ── 商品(d_item) ── 大きいのでバッチ投入
     pseen = set()
+    prod_names = {}   # 商品キー→商品名(処方箋のレンズ/フレーム名解決に使う)
     buf, cnt = [], 0
     ins_prod = """INSERT INTO products
       (product_key,product_no,name,info,category,supplier,cost_price,list_price,state,
@@ -230,6 +231,7 @@ def main():
         pseen.add(pk)
         cat = m_dbun.get(s(r.get("strdbuncode")))
         name = s(r.get("strsyname")) or ""
+        prod_names[pk] = name
         is_glass = 1 if (cat and re.search(r"メガネ|眼鏡|レンズ|フレーム", cat)) or \
                         re.search(r"メガネ|眼鏡|ﾒｶﾞﾈ|ﾚﾝｽﾞ|ﾌﾚｰﾑ", name) else 0
         buf.append((
@@ -320,16 +322,28 @@ def main():
 
     # ── ポイント(d_point 残高 / d_pointhistory 取引) ──
     pbal, ptx = [], []
+    have_bal = set()
     for r in rows("d_point"):
         cid = cid_of(r)
         if cid in seen:
             pbal.append((cid, n(r.get("curpointzan")) or 0, dt(r.get("datkoshinbi"))))
+            have_bal.add(cid)
+    # 台帳(d_point)に残高が無い顧客は、履歴の最終行(連番最大)の残高で補完する
+    last_seq, last_bal, last_date = {}, {}, {}
     for r in rows("d_pointhistory"):
         cid = cid_of(r)
         if cid in seen:
             add, use = n(r.get("curkasanpoint")) or 0, n(r.get("curusepoint")) or 0
+            when = dt(r.get("dathakko")) or dt(r.get("datinpdate"))  # 発行日が空なら処理日で補完
             ptx.append((cid, s(r.get("lngpointkbn")), add - use, add, use,
-                        n(r.get("curzanpoint")), s(r.get("strsyname")), dt(r.get("dathakko"))))
+                        n(r.get("curzanpoint")), s(r.get("strsyname")), when))
+            seq = n(r.get("lngpointseq")) or 0
+            if cid not in have_bal and seq >= last_seq.get(cid, -1):
+                last_seq[cid] = seq
+                last_bal[cid] = n(r.get("curzanpoint")) or 0
+                last_date[cid] = when
+    for cid2, b in last_bal.items():
+        pbal.append((cid2, b, last_date.get(cid2)))
     cur.executemany("INSERT OR REPLACE INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)", pbal)
     cur.executemany("""INSERT INTO point_transactions(customer_id,tx_type,points,add_points,use_points,balance,product_name,occurred_at)
                        VALUES (?,?,?,?,?,?,?,?)""", ptx)
@@ -343,10 +357,13 @@ def main():
             continue
         lens_key = pk_of(r, "strsytencode1", "lngsykey1")
         frame_key = pk_of(r, "strsytencode2", "lngsykey2")
-        misassign = 1 if JEWELRY_PAT.search((s(r.get("strbiko2")) or "")) else 0
+        lens_name = prod_names.get(lens_key)
+        frame_name = prod_names.get(frame_key)
+        misassign = 1 if JEWELRY_PAT.search(
+            " ".join(x for x in (lens_name, frame_name, s(r.get("strbiko2"))) if x)) else 0
         rx.append((
             cid, s(r.get("lngshohosenno")), s(r.get("stryotokbn")),
-            None, None, lens_key, frame_key,
+            lens_name, frame_name, lens_key, frame_key,
             s(r.get("strsph_r")), s(r.get("strsph_l")), s(r.get("strcyl_r")), s(r.get("strcyl_l")),
             s(r.get("strax_r")), s(r.get("strax_l")), s(r.get("stradd_r")), s(r.get("stradd_l")),
             s(r.get("strpr_r")), s(r.get("strpr_l")), s(r.get("strbase_r")), s(r.get("strbase_l")),

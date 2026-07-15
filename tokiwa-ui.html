@@ -674,7 +674,7 @@
       <h2 id="screen-title">ホーム</h2>
       <span class="store-chip">01 本店</span>
       <span class="spacer"></span>
-      <span class="store-chip num">2026/07/09(木)</span>
+      <span class="store-chip num" id="topbar-date"></span>
       <span class="conn-pill" id="conn-pill"><span class="dot"></span><span id="conn-label">オンライン</span></span>
       <button class="link-btn" onclick="toggleOffline()">オフライン動作を試す</button>
     </div>
@@ -751,8 +751,9 @@
           </div>
           <p style="margin:0.6rem 0 0;font-size:0.78em;color:var(--muted)">会計確定と同時に、全明細を顧客の購入履歴へ自動記録し、在庫品は在庫から引き落とします。「種類未定」の明細は仮登録され、後日顧客の購入履歴から仕様・金額を入力できます。</p>
           <div class="search-row" style="margin-top:1rem">
-            <div class="field"><label>購入動機</label><select><option>選択…</option><option>記念日</option><option>自分用</option><option>贈答</option><option>修理・メンテ</option></select></div>
-            <div class="field"><label>購入場所</label><select><option>店頭</option><option>外商</option><option>催事</option></select></div>
+            <!-- 購入動機・購入場所は要望により非表示(2026-07)。復活する場合は display:none を外す -->
+            <div class="field" style="display:none"><label>購入動機</label><select><option>選択…</option><option>記念日</option><option>自分用</option><option>贈答</option><option>修理・メンテ</option></select></div>
+            <div class="field" style="display:none"><label>購入場所</label><select><option>店頭</option><option>外商</option><option>催事</option></select></div>
             <div class="field"><label>メモ</label><input placeholder="備考"></div>
           </div>
         </div>
@@ -1940,11 +1941,13 @@
     var id = String(c[0]);
     var bal = D.points[id];
     var tx = D.pointTx[id] || [];
+    // 台帳の残高が無い顧客は履歴の最新残高を表示(履歴は日付降順)
+    if (bal == null && tx.length) bal = tx[0][4];
     var html = '<div class="tiles report-tiles"><div class="tile"><div class="t-label">ポイント残高</div><div class="t-value num">' + num(bal || 0) + '<small>pt</small></div></div></div>';
     if (tx.length) {
-      html += '<div class="table-scroll"><table class="data"><thead><tr><th>日付</th><th>区分</th><th class="r">加算</th><th class="r">使用</th><th class="r">残高</th></tr></thead><tbody>' +
+      html += '<div class="table-scroll"><table class="data"><thead><tr><th>日付</th><th class="r">加算</th><th class="r">使用</th><th class="r">残高</th></tr></thead><tbody>' +
         tx.map(function (t) {
-          return '<tr><td class="num">' + esc(t[0]) + '</td><td>' + esc(dash(t[1])) + '</td><td class="r num">' + (t[2] ? "+" + num(t[2]) : "—") + '</td><td class="r num">' + (t[3] ? "−" + num(t[3]) : "—") + '</td><td class="r num">' + num(t[4]) + '</td></tr>';
+          return '<tr><td class="num">' + esc(dash(t[0])) + '</td><td class="r num">' + (t[2] ? "+" + num(t[2]) : "—") + '</td><td class="r num">' + (t[3] ? "−" + num(t[3]) : "—") + '</td><td class="r num">' + num(t[4]) + '</td></tr>';
         }).join("") + '</tbody></table></div>';
     } else {
       html += '<p style="margin:0;color:var(--muted);font-size:0.9em">ポイント履歴はありません。</p>';
@@ -2408,6 +2411,17 @@
     document.getElementById("rep-date").value = TODAY_ISO;
     document.getElementById("rep-from").value = TODAY_ISO.slice(0, 8) + "01";
     document.getElementById("rep-to").value = TODAY_ISO;
+    // ヘッダーの日付はシステム日付を表示(日跨ぎでも自動で切り替え)
+    (function () {
+      var el = document.getElementById("topbar-date");
+      function paintDate() {
+        var d = new Date();
+        var yobi = "日月火水木金土".charAt(d.getDay());
+        el.textContent = d.getFullYear() + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + ("0" + d.getDate()).slice(-2) + "(" + yobi + ")";
+      }
+      paintDate();
+      setInterval(paintDate, 60 * 1000);
+    })();
     renderHomeTiles();
     renderDailyReport();
     ["q-name", "q-tel"].forEach(function (id) { document.getElementById(id).addEventListener("input", renderCustomers); });
