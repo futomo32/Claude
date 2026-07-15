@@ -1,2 +1,3 @@
 ﻿strkotencode,lngkokey,lngshohosenno,stryotokbn,strsytencode1,lngsykey1,strsytencode2,lngsykey2,strsph_r,strsph_l,strcyl_r,strcyl_l,strax_r,strax_l,stradd_r,stradd_l,strpr_r,strpr_l,strbase_r,strbase_l,strpden_r,strpden_l,strpden_b,strpdkin_r,strpdkin_l,strpdkin_b,strragan_r,strragan_l,strragan_b,strkyosei_r,strkyosei_l,strkyosei_b,curgokeiteika,curgokeiurine,strtaioshacode,strbiko2,datinpdate
 01,101,1,常用,01,5001,,,-2.00,-2.25,-0.50,-0.75,180,170,,,,,,,,,64,,,61,0.1,0.1,,1.2,1.2,,40000,36000,002,,2022/5/1
+01,100,2,遠用,01,5000,,,-1.00,-1.00,,,,,,,,,,,,,62,,,,,,,,,,,,001,,2021/2/1

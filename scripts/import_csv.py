@@ -122,9 +122,6 @@ YOTO = {"1": "常用", "2": "遠用", "3": "近用"}  # 処方箋の用途区分
 ZOKUGARA = {"0": "本人", "1": "父", "2": "母", "3": "夫", "4": "妻",
             "5": "長男", "6": "次男", "7": "長女", "8": "次女", "9": "他"}  # m_kubun種別013
 
-JEWELRY_PAT = re.compile(
-    r"ﾘﾝｸﾞ|リング|ﾈｯｸﾚｽ|ネックレス|ﾀﾞｲﾔ|ダイヤ|ﾋﾟｱｽ|ﾌﾞﾚｽ|ﾍﾟﾝﾀﾞ|ﾙﾋﾞｰ|ｴﾒﾗﾙﾄﾞ|ﾊﾟｰﾙ|真珠|指輪|K1[048]|PT|SV")
-
 
 def main():
     global SRC
@@ -228,7 +225,8 @@ def main():
 
     # ── 商品(d_item) ── 大きいのでバッチ投入
     pseen = set()
-    prod_names = {}   # 商品キー→商品名(処方箋のレンズ/フレーム名解決に使う)
+    prod_names = {}     # 商品キー→商品名(処方箋のレンズ/フレーム名解決に使う)
+    prod_is_glass = {}  # 商品キー→メガネ商品か(処方箋の宝飾誤登録判定に使う)
     buf, cnt = [], 0
     ins_prod = """INSERT INTO products
       (product_key,product_no,name,info,category,supplier,cost_price,list_price,state,
@@ -244,6 +242,7 @@ def main():
         prod_names[pk] = name
         is_glass = 1 if (cat and re.search(r"メガネ|眼鏡|レンズ|フレーム", cat)) or \
                         re.search(r"メガネ|眼鏡|ﾒｶﾞﾈ|ﾚﾝｽﾞ|ﾌﾚｰﾑ", name) else 0
+        prod_is_glass[pk] = is_glass
         buf.append((
             pk, s(r.get("strsyno")), name, s(r.get("strsyinfo")), cat,
             m_sir.get(s(r.get("strsirsakicode"))), n(r.get("curorokin")), n(r.get("curkoukin")),
@@ -369,8 +368,9 @@ def main():
         frame_key = pk_of(r, "strsytencode2", "lngsykey2")
         lens_name = prod_names.get(lens_key)
         frame_name = prod_names.get(frame_key)
-        misassign = 1 if JEWELRY_PAT.search(
-            " ".join(x for x in (lens_name, frame_name, s(r.get("strbiko2"))) if x)) else 0
+        # 宝飾誤登録の判定は「紐づく商品が実際にメガネ分類か」で行う(商品名の文字列に
+        # PT/SV等の短い断片が偶然含まれるだけで誤検知するテキスト正規表現は使わない)
+        misassign = 1 if (prod_is_glass.get(lens_key) == 0 or prod_is_glass.get(frame_key) == 0) else 0
         rx.append((
             cid, s(r.get("lngshohosenno")), YOTO.get(s(r.get("stryotokbn")), s(r.get("stryotokbn"))),
             lens_name, frame_name, lens_key, frame_key,

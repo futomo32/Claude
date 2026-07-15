@@ -142,7 +142,17 @@ write("d_shohosen",
         "strpden_b": "64", "strpdkin_b": "61",
         "strragan_r": "0.1", "strragan_l": "0.1", "strkyosei_r": "1.2", "strkyosei_l": "1.2",
         "curgokeiteika": "40000", "curgokeiurine": "36000", "strtaioshacode": "002",
-        "strbiko2": "", "datinpdate": "2022/5/1"}])
+        "strbiko2": "", "datinpdate": "2022/5/1"},
+       # 誤登録テスト用: レンズ欄に宝飾品(01-5000 ダイヤリング)が紐づいているケース
+       {"strkotencode": "01", "lngkokey": "100", "lngshohosenno": "2", "stryotokbn": "遠用",
+        "strsytencode1": "01", "lngsykey1": "5000", "strsytencode2": "", "lngsykey2": "",
+        "strsph_r": "-1.00", "strsph_l": "-1.00", "strcyl_r": "", "strcyl_l": "",
+        "strax_r": "", "strax_l": "", "stradd_r": "", "stradd_l": "",
+        "strpr_r": "", "strpr_l": "", "strbase_r": "", "strbase_l": "",
+        "strpden_b": "62", "strpdkin_b": "",
+        "strragan_r": "", "strragan_l": "", "strkyosei_r": "", "strkyosei_l": "",
+        "curgokeiteika": "", "curgokeiurine": "", "strtaioshacode": "001",
+        "strbiko2": "", "datinpdate": "2021/2/1"}])
 
 # ── システムユーザー ──
 write("d_systemuser", ["struserid", "strsytencode", "strdispname", "lngmasterflg", "strpassword"],

@@ -4,8 +4,6 @@ UIの描画コードを変えずに済むよう、埋め込み版と同じ配列
 """
 import re, sqlite3, datetime
 
-JEWELRY_PAT = re.compile(
-    r"ﾘﾝｸﾞ|リング|ﾈｯｸﾚｽ|ネックレス|ﾀﾞｲﾔ|ダイヤ|ｻﾌｧｲｱ|ﾋﾟｱｽ|ﾌﾞﾚｽ|ﾍﾟﾝﾀﾞ|ﾒﾉｰ|ﾙﾋﾞｰ|ｴﾒﾗﾙﾄﾞ|ﾊﾟｰﾙ|真珠|指輪|K1[048]|PT|SV")
 GLASS_PAT = re.compile(r"メガネ|眼鏡|レンズ|フレーム|ﾒｶﾞﾈ|ﾚﾝｽﾞ")
 FRAME_PAT = re.compile(r"フレーム|ﾌﾚｰﾑ|frame", re.I)
 LENS_PAT = re.compile(r"レンズ|ﾚﾝｽﾞ|lens|非球面|累進", re.I)
@@ -20,11 +18,6 @@ def glass_kind(*texts):
         return "lens"
     return ""
 
-
-def _mark(name):
-    if name and JEWELRY_PAT.search(name):
-        return "!" + name
-    return name
 
 
 def build_blob(con):
@@ -90,7 +83,9 @@ def build_blob(con):
     rx = {}
     for r in cur.execute("SELECT * FROM prescriptions ORDER BY id DESC"):
         name_l, name_f = r["lens_name"], r["frame_name"]
-        misassign = bool(r["jewelry_misassign"]) or bool(_mark(name_l) != name_l) or bool(_mark(name_f) != name_f)
+        # 誤登録判定は取込時に商品分類で確定済み(jewelry_misassign)の値のみを使う。
+        # 商品名の文字列に対する正規表現の再判定はPT/SV等の短い断片で誤検知するため行わない。
+        misassign = bool(r["jewelry_misassign"])
         rx.setdefault(str(r["customer_id"]), []).append({
             "id": r["id"], "rx_no": r["rx_no"], "purpose": r["purpose"],
             "lens_name": name_l, "frame_name": name_f,
