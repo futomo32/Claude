@@ -62,8 +62,9 @@ write("d_user", UCOLS, [
 write("d_user_memo", ["strkotencode", "lngkokey", "strmemo01", "strmemo02", "datinpdate"],
       [{"strkotencode": "01", "lngkokey": "100", "strmemo01": "誕生月に来店", "strmemo02": "", "datinpdate": "2020/5/1"}])
 
+# 続柄コードは実データ準拠(m_kubun種別013): 4=妻
 write("d_famiry", ["strkotencode", "lngkokey", "strfamiryname", "strzokukbn", "strsexkbn", "datbirthday"],
-      [{"strkotencode": "01", "lngkokey": "100", "strfamiryname": "田中 花", "strzokukbn": "妻",
+      [{"strkotencode": "01", "lngkokey": "100", "strfamiryname": "田中 花", "strzokukbn": "4",
         "strsexkbn": "1", "datbirthday": "1978/8/8"}])
 
 # ── 商品(店01に5000/5001、店02に5000=衝突) ──
