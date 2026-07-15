@@ -40,7 +40,8 @@ write("m_dbunrui", ["strdbuncode", "strdbunname"],
 write("m_siiresaki", ["strsircode", "strsirname"], [{"strsircode": "S1", "strsirname": "○○貿易"}])
 
 # ── 顧客(店01に100/101、店02に100=複合キー衝突テスト) ──
-def user(tc, kk, name, kana, tel, tan, sex="1", rank="A"):
+# 性別コードは実データ準拠: 1=女, 2=男
+def user(tc, kk, name, kana, tel, tan, sex="2", rank="A"):
     return {"strkotencode": tc, "lngkokey": kk, "strkoname": name, "strkokana": kana,
             "strkotel": tel, "strtel2": "", "strkopos": "471-0001", "strkojyu1": "豊田市○○町1-2",
             "strkojyu2": "△△マンション101", "strsexkbn": sex, "datbirthday": "1975/6/12",
@@ -53,9 +54,9 @@ UCOLS = ["strkotencode", "lngkokey", "strkoname", "strkokana", "strkotel", "strt
          "strkojyu1", "strkojyu2", "strsexkbn", "datbirthday", "datwedddate", "strrank", "strdmkbn",
          "strpcmail", "strkeitaimail", "lngfinsize1", "strpiasukbn", "strtancode", "strkanritenpo", "dattoudate"]
 write("d_user", UCOLS, [
-    user("01", "100", "田中 一郎", "ﾀﾅｶ ｲﾁﾛｳ", "0565-00-0001", "001", "1"),
-    user("01", "101", "鈴木 幸子", "ｽｽﾞｷ ｻﾁｺ", "0565-00-0002", "002", "2"),
-    user("02", "100", "佐藤 三郎", "ｻﾄｳ ｻﾌﾞﾛｳ", "0565-00-0003", "050", "1"),
+    user("01", "100", "田中 一郎", "ﾀﾅｶ ｲﾁﾛｳ", "0565-00-0001", "001", "2"),
+    user("01", "101", "鈴木 幸子", "ｽｽﾞｷ ｻﾁｺ", "0565-00-0002", "002", "1"),
+    user("02", "100", "佐藤 三郎", "ｻﾄｳ ｻﾌﾞﾛｳ", "0565-00-0003", "050", "2"),
 ])
 
 write("d_user_memo", ["strkotencode", "lngkokey", "strmemo01", "strmemo02", "datinpdate"],
@@ -63,10 +64,11 @@ write("d_user_memo", ["strkotencode", "lngkokey", "strmemo01", "strmemo02", "dat
 
 write("d_famiry", ["strkotencode", "lngkokey", "strfamiryname", "strzokukbn", "strsexkbn", "datbirthday"],
       [{"strkotencode": "01", "lngkokey": "100", "strfamiryname": "田中 花", "strzokukbn": "妻",
-        "strsexkbn": "2", "datbirthday": "1978/8/8"}])
+        "strsexkbn": "1", "datbirthday": "1978/8/8"}])
 
 # ── 商品(店01に5000/5001、店02に5000=衝突) ──
-def item(tc, sk, no, name, dbun, oro, kou, ishi="I1", state="在庫"):
+# 状態区分コードは実データ準拠: 0=受託, 1=在庫, 3=売上, 5=返品
+def item(tc, sk, no, name, dbun, oro, kou, ishi="I1", state="1"):
     return {"strsytencode": tc, "lngsykey": sk, "strsyno": no, "strsyname": name, "strsyinfo": "自社",
             "strdbuncode": dbun, "strsirsakicode": "S1", "curorokin": oro, "curkoukin": kou,
             "strjotaikbn": state, "strhotencode": tc, "striscode": ishi, "curmainjuryo": "0.3",
@@ -85,8 +87,9 @@ write("d_item", ICOLS, [
 
 # ── 販売(伝票T1: 顧客01-100 が商品2点、伝票T2: 顧客02-100) ──
 def hanbai(dp, tc, kk, stc, sk, teika, kaikin, tan, name):
+    # 掛売区分コードは実データ準拠: 1=現金, 2=掛売, 3=クレジット…
     return {"strkotencode": tc, "lngkokey": kk, "curdenpyono": dp, "datkaidate": "2023/11/3",
-            "datcredate": "2023/11/3", "strhantancode": tan, "strkakekbn": "現金", "strcrekbn": "",
+            "datcredate": "2023/11/3", "strhantancode": tan, "strkakekbn": "1", "strcrekbn": "",
             "strdocode": "D1", "strbacode": "P1", "curusepoint": "0", "curkasanpoint": "300",
             "strsytencode": stc, "lngsykey": sk, "curwariritu": "0", "strkokname": name,
             "strsyinfo": "自社", "curteika": teika, "curkaikin": kaikin, "curkaizeikin": "0"}

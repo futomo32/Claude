@@ -109,9 +109,16 @@ def pk_of(r, tc="strsytencode", kc="lngsykey"):
     return f"{t}-{k}" if t and k else None
 
 
-SEX = {"1": "男", "2": "女"}
-YESNO = {"1": "有", "0": "無"}
-DM = {"1": "送る", "0": "送らない", "2": "送らない"}
+# 区分コード→名前(実データのxlsxから diag_kubun.py で抽出した正解対応表 2026-07-15)
+SEX = {"1": "女", "2": "男"}
+PIERCE = {"1": "有", "2": "無"}
+DM = {"1": "送る", "2": "送らない"}
+STATE = {"0": "受託", "1": "在庫", "3": "売上", "5": "返品"}
+KAKE = {"1": "現金", "2": "掛売", "3": "クレジット", "4": "分割",
+        "5": "クレジットローン", "6": "トレジャリーカード"}  # 0=未指定(None)
+CREDIT = {"1": "JCB", "2": "VISA", "3": "UFJミリオン", "7": "TS3",
+          "8": "セディナ", "9": "オリエント", "A": "山陰信販", "B": "オリコ"}
+YOTO = {"1": "常用", "2": "遠用", "3": "近用"}  # 処方箋の用途区分
 
 JEWELRY_PAT = re.compile(
     r"ﾘﾝｸﾞ|リング|ﾈｯｸﾚｽ|ネックレス|ﾀﾞｲﾔ|ダイヤ|ﾋﾟｱｽ|ﾌﾞﾚｽ|ﾍﾟﾝﾀﾞ|ﾙﾋﾞｰ|ｴﾒﾗﾙﾄﾞ|ﾊﾟｰﾙ|真珠|指輪|K1[048]|PT|SV")
@@ -183,7 +190,7 @@ def main():
             dt(r.get("datbirthday")), dt(r.get("datwedddate")),
             s(r.get("strrank")), DM.get(s(r.get("strdmkbn")), s(r.get("strdmkbn"))),
             s(r.get("strpcmail")) or s(r.get("strkeitaimail")),
-            s(r.get("lngfinsize1")), YESNO.get(s(r.get("strpiasukbn")), s(r.get("strpiasukbn"))),
+            s(r.get("lngfinsize1")), PIERCE.get(s(r.get("strpiasukbn")), s(r.get("strpiasukbn"))),
             tan, m_tan.get(tan), s(r.get("strkanritenpo")) or s(r.get("strkotencode")),
             dt(r.get("dattoudate")),
         ))
@@ -237,7 +244,7 @@ def main():
         buf.append((
             pk, s(r.get("strsyno")), name, s(r.get("strsyinfo")), cat,
             m_sir.get(s(r.get("strsirsakicode"))), n(r.get("curorokin")), n(r.get("curkoukin")),
-            s(r.get("strjotaikbn")), s(r.get("strhotencode")),
+            STATE.get(s(r.get("strjotaikbn")), s(r.get("strjotaikbn"))), s(r.get("strhotencode")),
             m_ishi.get(s(r.get("striscode"))), s(r.get("curmainjuryo")),
             s(r.get("strcolcode")), s(r.get("strclacode")), s(r.get("strcutcode")),
             s(r.get("strkanbno")), is_glass, dt(r.get("dattoudate")),
@@ -274,7 +281,7 @@ def main():
               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
               (dp, cid if cid in seen else None, s(r.get("strhantancode")),
                m_tan.get(s(r.get("strhantancode"))), s(r.get("strkotencode")), sold,
-               s(r.get("strkakekbn")), s(r.get("strcrekbn")),
+               KAKE.get(s(r.get("strkakekbn"))), CREDIT.get(s(r.get("strcrekbn")), s(r.get("strcrekbn"))),
                m_douki.get(s(r.get("strdocode"))), m_basyo.get(s(r.get("strbacode"))),
                n(r.get("curusepoint")) or 0, n(r.get("curkasanpoint")) or 0))
             slip_id_of[gkey] = cur.lastrowid
@@ -362,7 +369,7 @@ def main():
         misassign = 1 if JEWELRY_PAT.search(
             " ".join(x for x in (lens_name, frame_name, s(r.get("strbiko2"))) if x)) else 0
         rx.append((
-            cid, s(r.get("lngshohosenno")), s(r.get("stryotokbn")),
+            cid, s(r.get("lngshohosenno")), YOTO.get(s(r.get("stryotokbn")), s(r.get("stryotokbn"))),
             lens_name, frame_name, lens_key, frame_key,
             s(r.get("strsph_r")), s(r.get("strsph_l")), s(r.get("strcyl_r")), s(r.get("strcyl_l")),
             s(r.get("strax_r")), s(r.get("strax_l")), s(r.get("stradd_r")), s(r.get("stradd_l")),
