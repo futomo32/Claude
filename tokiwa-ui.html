@@ -609,6 +609,8 @@
     width: 210mm; min-height: 297mm; box-sizing: border-box; padding: 18mm 16mm;
     font-family: "游ゴシック", "Yu Gothic", sans-serif; font-size: 10.5pt; line-height: 1.7; color: #000;
   }
+  /* 印刷時は最小高さを外す: ちょうど297mmだと丸め誤差で白紙の2ページ目が出るため */
+  @media print { .doc-sheet { min-height: 0; } }
   .doc-sheet + .doc-sheet { break-before: page; page-break-before: always; }
   .doc-sheet .doc-title { font-size: 20pt; font-weight: 700; letter-spacing: 0.3em; text-align: center; margin-bottom: 1.2em; }
   .doc-sheet .doc-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.4em; }
