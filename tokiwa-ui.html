@@ -876,6 +876,7 @@
       </div>
 
       <div class="tabpane active" id="p-stock">
+        <div class="tiles" id="stock-tiles"></div>
         <div class="card">
           <div class="search-row">
             <div class="field"><label>商品番号・品名</label><input id="q-prod" placeholder="番号または品名の一部"></div>
@@ -2274,9 +2275,25 @@
     return parts.length ? parts.join(" / ") : "—";
   }
 
+  /* ── 在庫サマリ タイル ── */
+  function renderStockTiles() {
+    var box = document.getElementById("stock-tiles");
+    if (!box) return;
+    var s = D.stockStats;
+    if (!s) { box.innerHTML = ""; return; }
+    // ※下代・粗利率は原価情報。将来ログイン権限(パート等)では非表示にする(access-control参照)
+    box.innerHTML =
+      '<div class="tile"><div class="t-label">在庫数</div><div class="t-value num">' + num(s.count) + '<small>点</small></div></div>' +
+      '<div class="tile"><div class="t-label">在庫合計(上代・税込)</div><div class="t-value num">¥' + num(s.listTotal) + '</div></div>' +
+      '<div class="tile"><div class="t-label">在庫合計(下代・税別)</div><div class="t-value num">¥' + num(s.costTotal) + '</div></div>' +
+      '<div class="tile"><div class="t-label">粗利率</div><div class="t-value num">' + s.marginRate + '<small>%</small></div>' +
+      '<div class="t-sub num">下代を税込換算し上代と比較(税率' + Math.round(s.taxRate * 100) + '%)</div></div>';
+  }
+
   /* ── 在庫一覧 ── */
   var prodFiltered = [], prodShown = 0;
   function renderProducts() {
+    renderStockTiles();
     var q = (document.getElementById("q-prod").value || "").trim();
     var cat = document.getElementById("q-cat").value;
     var state = document.getElementById("q-state").value;
