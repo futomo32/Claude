@@ -2052,8 +2052,9 @@
     var html = toggle + '<div class="kv">' +
       kvField("顧客名", c[1]) + kvField("フリガナ", c[2]) + kvField("性別", c[7]) +
       kvField("生年月日", dispDate(c[6])) + kvField("結婚記念日", dispDate(c[10])) +
-      kvField("電話", c[3]) + kvField("携帯電話", c[16]) + kvField("eメール", c[17]) +
-      kvField("郵便番号", c[14]) + kvField("住所1", c[5]) + kvField("住所2(建物名など)", c[15]) + '</div>';
+      kvField("電話", c[3]) + kvField("携帯電話", c[16]) + kvField("郵便番号", c[14]) + '</div>' +
+      '<div class="kv" style="grid-template-columns:2fr 1fr;margin-top:0.8rem">' +
+      kvField("住所1", c[5]) + kvField("住所2(建物名など)", c[15]) + '</div>';
     if (c[12]) {
       html += '<div class="section-title">メモ</div><p style="white-space:pre-wrap;margin:0;line-height:1.7">' + esc(c[12]) + '</p>';
     }
