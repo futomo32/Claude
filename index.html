@@ -93,6 +93,8 @@
   .chip.pin{background:#e8eaed; box-shadow:inset 0 0 0 1.5px var(--black)}
   .chip.empty{background:#fff; border:1.5px dashed #cfd4da; color:var(--sub); font-weight:500}
   .chip.warn{background:#fdeceb; color:var(--red)}
+  .chip.ghost{background:#eceef0; color:#9aa0a6; font-weight:500; border:1px dashed #cbd0d6}
+  .chip.ghost s{color:#9aa0a6}
   .cnt-tbl{width:100%; border-collapse:collapse; font-size:13.5px}
   .cnt-tbl td{padding:8px 4px; border-bottom:1px solid var(--line)}
   .cnt-tbl td.n{font-weight:600}
@@ -344,24 +346,34 @@ function autoGenerate(){
   const lastDay = {}; // memberId -> index of last assigned date (連日回避用)
   const next = {};
 
-  // 1) 既存の「暫定確定(pin)」と「確定メンバー」の割当を維持
+  const activeCnt = dt => next[dt].filter(x=>!x.dropped).length;
+
+  // 1) 既存の「暫定確定(⚫️)」と「確定メンバー」を処理
+  //    ⚫️でも本人が🔴なら、暫定を解除してグレーで残す（差し替え対象にする）
   dates.forEach((dt,i)=>{
     next[dt]=[];
     const cur = S.assign[dt]||[];
     cur.forEach(a=>{
       const m = member(a.m); if(!m) return;
-      const keep = a.pin || m.locked;
-      if(keep && next[dt].length<per && !next[dt].some(x=>x.m===a.m)){
-        next[dt].push({m:a.m, pin:a.pin});
-        counts[a.m]++; lastDay[a.m]=i;
+      if(next[dt].some(x=>x.m===a.m)) return;      // 重複防止
+      const ng = av(m.id,dt)==="ng";
+      if(m.locked){                                 // 確定：触らない（🔴でもそのまま）
+        if(activeCnt(dt)<per){ next[dt].push({m:a.m, pin:a.pin}); counts[a.m]++; lastDay[a.m]=i; }
+      } else if(a.pin){                             // 暫定⚫️
+        if(ng){
+          next[dt].push({m:a.m, pin:true, dropped:true});   // 🔴 → グレーで残して外す
+        } else if(activeCnt(dt)<per){
+          next[dt].push({m:a.m, pin:true}); counts[a.m]++; lastDay[a.m]=i;
+        }
       }
+      // それ以外（前回の自動割当）は捨てて組み直す
     });
   });
 
   // 2) 残りの枠を埋める
   const shortage = [];
   dates.forEach((dt,i)=>{
-    while(next[dt].length < per){
+    while(activeCnt(dt) < per){
       const taken = new Set(next[dt].map(x=>x.m));
       const pick = (level)=>{
         const cands = S.members.filter(m=>
@@ -424,6 +436,8 @@ $("#gridWrap").addEventListener("click", e=>{
 });
 
 /* ---------- render: auto ---------- */
+function activeSlots(dt){ return (S.assign[dt]||[]).filter(a=>!a.dropped); }
+function ghostSlots(dt){ return (S.assign[dt]||[]).filter(a=>a.dropped); }
 function renderAuto(){
   const dates=[...S.dates].sort();
   const per = Math.max(1, parseInt(S.per)||2);
@@ -432,10 +446,10 @@ function renderAuto(){
   if(!dates.length){ dl=`<div class="muted">日付がありません（設定タブで追加）</div>`; }
   dates.forEach(dt=>{
     const o=d2(dt);
-    const cur = S.assign[dt]||[];
+    const act = activeSlots(dt), gh = ghostSlots(dt);
     let chips="";
     for(let i=0;i<per;i++){
-      const a=cur[i];
+      const a=act[i];
       if(a){
         const m=member(a.m);
         const v = m?av(m.id,dt):"";
@@ -445,18 +459,22 @@ function renderAuto(){
         chips+=`<span class="chip empty" data-dt="${dt}" data-slot="${i}">＋ 未定</span>`;
       }
     }
+    // 🔴で外れた暫定（⚫️）をグレーで残す
+    gh.forEach(a=>{ const m=member(a.m);
+      chips+=`<span class="chip ghost" data-dt="${dt}" data-gm="${a.m}" title="本人が🔴のため外れた暫定当番"><span class="cd" style="background:var(--red)"></span>🔴<s>${m?esc(m.name):"?"}</s></span>`;
+    });
     dl+=`<div class="day"><div class="date ${wdClass(o.wd)}">${o.m}/${o.d}<small>(${WD[o.wd]})</small></div><div class="slots">${chips}</div></div>`;
   });
   $("#dayList").innerHTML = dl;
 
   // warnings
-  const short = dates.filter(dt=>(S.assign[dt]||[]).length<per);
+  const short = dates.filter(dt=>activeSlots(dt).length<per);
   $("#genWarn").innerHTML = short.length
     ? `<div class="banner">⚠️ ${short.length}日ぶん 当番が埋まっていません（${short.map(fmtShort).join("、")}）。🟡や出欠を見直すか、手動で追加してください。</div>` : "";
 
-  // counts
+  // counts（グレー＝外れた暫定は数えない）
   const cnt={}; S.members.forEach(m=>cnt[m.id]=0);
-  dates.forEach(dt=>(S.assign[dt]||[]).forEach(a=>{ if(cnt[a.m]!=null)cnt[a.m]++; }));
+  dates.forEach(dt=>activeSlots(dt).forEach(a=>{ if(cnt[a.m]!=null)cnt[a.m]++; }));
   let ct="";
   S.members.forEach(m=>{
     ct+=`<tr><td class="n">${esc(m.name)} <span class="muted">${esc(m.grade||"")}</span></td>`
@@ -473,14 +491,23 @@ $("#cntTbl").addEventListener("click", e=>{
 
 /* slot tap -> choose member */
 $("#dayList").addEventListener("click", e=>{
+  const g=e.target.closest(".chip.ghost");
+  if(g){ openGhost(g.dataset.dt, g.dataset.gm); return; }
   const chip=e.target.closest(".chip"); if(!chip) return;
   openSlotSheet(chip.dataset.dt, +chip.dataset.slot);
 });
+function openGhost(dt, mid){
+  const m=member(mid), o=d2(dt);
+  if(confirm(`${o.m}/${o.d}(${WD[o.wd]}) の暫定当番「${m?m.name:""}」は本人が🔴のため外れています。\nこの暫定（⚫️）を消しますか？`)){
+    S.assign[dt]=(S.assign[dt]||[]).filter(a=>!(a.dropped && a.m===mid));
+    save(); renderAuto(); toast("暫定を消しました");
+  }
+}
 function openSlotSheet(dt, slot){
   const o=d2(dt);
-  const cur=S.assign[dt]||[];
-  const occupied=new Set(cur.map(a=>a.m));
-  const here = cur[slot];
+  const act=activeSlots(dt);
+  const occupied=new Set(act.map(a=>a.m));   // 現役の枠のみ占有扱い（グレーの人は選び直せる）
+  const here = act[slot];
   let opts = `<h3>${o.m}/${o.d}(${WD[o.wd]}) の当番を選ぶ</h3>`;
   if(here){
     opts += `<div class="opt" data-act="pin"><span class="dot k"></span><b>${here.pin?"暫定確定を外す":"暫定確定にする（⚫️ 動かさない）"}</b></div>`;
@@ -500,15 +527,17 @@ function openSlotSheet(dt, slot){
   $("#ov").classList.add("show");
   $("#sheet").onclick = ev=>{
     const el=ev.target.closest(".opt"); if(!el) return;
-    const cur=S.assign[dt]=S.assign[dt]||[];
-    if(el.dataset.act==="pin" && here){ here.pin=!here.pin; }
-    else if(el.dataset.act==="clear"){ cur.splice(slot,1); }
+    let A = activeSlots(dt);              // 現役の枠
+    let G = ghostSlots(dt);              // グレー（外れた暫定）
+    const h = A[slot];
+    if(el.dataset.act==="pin" && h){ h.pin=!h.pin; }
+    else if(el.dataset.act==="clear"){ A.splice(slot,1); }
     else if(el.dataset.set){
       const id=el.dataset.set;
-      cur[slot]={m:id, pin:true};   // 手動で入れたら暫定確定
+      A[slot]={m:id, pin:true};          // 手動で入れたら暫定確定
+      G = G.filter(x=>x.m!==id);         // その人がグレーで残っていたら解消
     }
-    // compact (remove holes)
-    S.assign[dt]=cur.filter(Boolean);
+    S.assign[dt]=A.filter(Boolean).concat(G);
     save(); closeOv(); renderAuto();
   };
 }
@@ -646,7 +675,7 @@ $("#btnCopy").addEventListener("click", ()=>{
   const dates=[...S.dates].sort();
   let t=`◆当番表  ${S.time||""}\n${S.place?"（"+S.place+"）\n":""}\n`;
   dates.forEach(dt=>{ const o=d2(dt);
-    const names=(S.assign[dt]||[]).map(a=>{const m=member(a.m);return m?m.name+(a.pin?"⚫️":""):"";}).filter(Boolean);
+    const names=activeSlots(dt).map(a=>{const m=member(a.m);return m?m.name+(a.pin?"⚫️":""):"";}).filter(Boolean);
     t+=`${o.m}/${o.d}(${WD[o.wd]})  ${names.join("・")||"未定"}\n`;
   });
   navigator.clipboard.writeText(t).then(()=>toast("コピーしました")).catch(()=>{ prompt("コピーしてください", t); });
