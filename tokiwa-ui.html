@@ -821,7 +821,8 @@
         </div>
         <div class="table-scroll">
           <table class="data">
-            <thead><tr><th style="width:2.2em"></th><th>住所</th><th>顧客名</th><th>カナ</th><th>電話</th>
+            <thead><tr><th style="width:2.2em"></th><th>顧客名</th><th>カナ</th><th>電話</th>
+              <th class="sortable" data-sort-key="5">住所<span class="sort-arrow"></span></th>
               <th class="r sortable" data-sort-key="8">累計購入額<span class="sort-arrow"></span></th>
               <th class="r sortable" data-sort-key="9" id="cust-th-year">当年度<span class="sort-arrow"></span></th>
               <th class="sortable" data-sort-key="4">担当<span class="sort-arrow"></span></th></tr></thead>
@@ -1647,12 +1648,24 @@
     var p = D.products.filter(function (x) { return String(x[0]) === b.getAttribute("data-pm"); })[0];
     if (p) { addStockLine(p); closeProductPicker(); }
   });
-  document.getElementById("prod-modal").addEventListener("click", function (e) { if (e.target === this) closeProductPicker(); });
-  document.getElementById("alert-modal").addEventListener("click", function (e) { if (e.target === this) alertCancel(); });
-  document.getElementById("free-modal").addEventListener("click", function (e) { if (e.target === this) closeFreePicker(); });
-  document.getElementById("rx-modal").addEventListener("click", function (e) { if (e.target === this) closeRxModal(); });
-  document.getElementById("label-modal").addEventListener("click", function (e) { if (e.target === this) closeLabelPrint(); });
-  document.getElementById("repair-modal").addEventListener("click", function (e) { if (e.target === this) closeRepairModal(); });
+  // 背景クリックで閉じる際、「押した位置も背景」の時だけ閉じる。
+  // (入力欄でドラッグして枠外で離した時に誤って閉じ、入力が消えるのを防ぐ)
+  function bindBackdropClose(modalId, closeFn) {
+    var el = document.getElementById(modalId);
+    if (!el) return;
+    var downOnBackdrop = false;
+    el.addEventListener("mousedown", function (e) { downOnBackdrop = (e.target === el); });
+    el.addEventListener("click", function (e) {
+      if (e.target === el && downOnBackdrop) closeFn();
+      downOnBackdrop = false;
+    });
+  }
+  bindBackdropClose("prod-modal", closeProductPicker);
+  bindBackdropClose("alert-modal", alertCancel);
+  bindBackdropClose("free-modal", closeFreePicker);
+  bindBackdropClose("rx-modal", closeRxModal);
+  bindBackdropClose("label-modal", closeLabelPrint);
+  bindBackdropClose("repair-modal", closeRepairModal);
   renderPosLines();
 
   /* サーバー接続時は注意書きを「DB接続版」に切り替える */
@@ -1936,7 +1949,7 @@
       var nameCell = esc(c[1]) + (c[11] && c[12] ? ' <span class="chip chip-green">' + esc(c[12]) + '</span>' : "");
       var checked = custSelected.has(String(c[0])) ? " checked" : "";
       var addr = (c[5] || "") + (c[15] ? " " + c[15] : "");
-      return '<tr data-cust="' + esc(c[0]) + '"><td style="cursor:default"><input type="checkbox" class="cust-check" data-cust-check="' + esc(c[0]) + '"' + checked + '></td><td style="cursor:pointer">' + esc(dash(addr)) + '</td><td style="cursor:pointer">' + nameCell + '</td><td style="cursor:pointer">' + esc(c[2]) + '</td><td class="num" style="cursor:pointer">' + esc(dash(c[3])) + '</td><td class="r num" style="cursor:pointer">¥' + num(c[8]) + '</td><td class="r num" style="cursor:pointer">¥' + num(c[9]) + '</td><td style="cursor:pointer">' + esc(shortName(c[4])) + '</td></tr>';
+      return '<tr data-cust="' + esc(c[0]) + '"><td style="cursor:default"><input type="checkbox" class="cust-check" data-cust-check="' + esc(c[0]) + '"' + checked + '></td><td style="cursor:pointer">' + nameCell + '</td><td style="cursor:pointer">' + esc(c[2]) + '</td><td class="num" style="cursor:pointer">' + esc(dash(c[3])) + '</td><td style="cursor:pointer">' + esc(dash(addr)) + '</td><td class="r num" style="cursor:pointer">¥' + num(c[8]) + '</td><td class="r num" style="cursor:pointer">¥' + num(c[9]) + '</td><td style="cursor:pointer">' + esc(shortName(c[4])) + '</td></tr>';
     }).join("") || '<tr><td colspan="8" style="color:var(--muted)">該当する顧客が見つかりません</td></tr>';
     document.getElementById("cust-count").textContent =
       "該当 " + custFiltered.length.toLocaleString() + "件(表示 " + Math.min(custShown, custFiltered.length).toLocaleString() + "件) — 行をダブルクリックで詳細";
@@ -2030,7 +2043,8 @@
       (warekiOn ? "西暦で表示" : "和暦で表示") + '</button></div>';
     var html = toggle + '<div class="kv">' +
       kvField("顧客名", c[1]) + kvField("フリガナ", c[2]) + kvField("性別", c[7]) +
-      kvField("生年月日", dispDate(c[6])) + kvField("結婚記念日", dispDate(c[10])) + kvField("電話", c[3]) +
+      kvField("生年月日", dispDate(c[6])) + kvField("結婚記念日", dispDate(c[10])) +
+      kvField("電話", c[3]) + kvField("携帯電話", c[16]) + kvField("eメール", c[17]) +
       kvField("郵便番号", c[14]) + kvField("住所1", c[5]) + kvField("住所2(建物名など)", c[15]) + '</div>';
     html += '<div class="section-title">家族情報</div>';
     if (fam.length) {
@@ -2699,10 +2713,8 @@
     // 修理の新規預かりモーダルの顧客検索
     setupCustSearch("rep-cust-input", "rep-cust-drop", function (c) { repairSelectedCust = c; });
     renderRepairs();
-    // モーダルの背景クリックで閉じる
-    document.getElementById("cust-modal").addEventListener("click", function (e) {
-      if (e.target === this) closeCustModal();
-    });
+    // モーダルの背景クリックで閉じる(押した位置も背景の時だけ=入力中の誤クローズ防止)
+    bindBackdropClose("cust-modal", closeCustModal);
     if (D.customers.some(function (c) { return c[11]; })) {
       document.getElementById("test-cust-btn").style.display = "";
     }

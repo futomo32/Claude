@@ -40,7 +40,7 @@ def build_blob(con):
 
     customers = []
     for r in cur.execute("""SELECT customer_id,name,kana,tel,staff_name,address,birthday,gender,wedding_day,
-                                   is_test,note,postal,address2
+                                   is_test,note,postal,address2,tel2,email
                             FROM customers ORDER BY is_test DESC, CAST(customer_id AS INTEGER)"""):
         cid = r["customer_id"]
         customers.append([
@@ -48,6 +48,7 @@ def build_blob(con):
             r["birthday"], r["gender"], totals.get(cid, 0), y2026.get(cid, 0), r["wedding_day"],
             r["is_test"], r["note"], last_buy.get(cid),   # 11=テスト印 12=用途 13=最終購入日
             r["postal"], r["address2"],                    # 14=郵便番号 15=建物名等
+            r["tel2"], r["email"],                         # 16=携帯電話(TEL2) 17=eメール
         ])
 
     def group(sql, key_idx=0):
