@@ -8,6 +8,7 @@
   GET  /api/data        → 画面用データ(JSON)
   POST /api/checkout    → 会計を実DBに書き込む(永続化)
   POST /api/receivable_payment → 売掛入金を記録(残高を減らし入金履歴に1行追加)
+  POST /api/family      → 家族を追加(A自由入力 / B登録済み顧客と双方向リンク)
   GET  /api/health      → 稼働確認
 
 正式運用(Windows単機)ではこのサーバーをローカルで起動し、ブラウザで開く構成。
@@ -147,6 +148,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/customer":
                 con = connect()
                 result = db_query.upsert_customer(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/family":
+                con = connect()
+                result = db_query.add_family(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/prescription":

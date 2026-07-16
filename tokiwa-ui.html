@@ -1179,6 +1179,47 @@
   </div>
 </div>
 
+<!-- 家族を追加 モーダル(A: 自由入力 / B: 登録済み顧客とリンク) -->
+<div class="modal-back" id="family-modal">
+  <div class="modal" style="width:min(520px,100%)" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h3>家族を追加</h3>
+      <button class="close" aria-label="閉じる" onclick="closeFamilyModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="era-row" style="margin-bottom:0.8rem">
+        <label><input type="radio" name="fm-mode" value="A" checked onchange="switchFamilyMode()"> 新規に入力</label>
+        <label><input type="radio" name="fm-mode" value="B" onchange="switchFamilyMode()"> 登録済みの顧客とリンク</label>
+      </div>
+      <!-- A: 自由入力 -->
+      <div id="fm-a">
+        <div class="kv">
+          <div class="field"><label>氏名</label><input id="fm-name" placeholder="山田 花子"></div>
+          <div class="field"><label>続柄</label><select id="fm-relation"><option value="">—</option><option>夫</option><option>妻</option><option>父</option><option>母</option><option>長男</option><option>次男</option><option>長女</option><option>次女</option><option>本人</option><option>他</option></select></div>
+          <div class="field"><label>性別</label><select id="fm-gender"><option value="">—</option><option>女</option><option>男</option></select></div>
+          <div class="field"><label>生年月日</label><input id="fm-birth" class="han-num" placeholder="1980-05-04"></div>
+        </div>
+      </div>
+      <!-- B: 登録済み顧客とリンク -->
+      <div id="fm-b" style="display:none">
+        <div class="field search-wrap"><label>顧客を検索(カナ・電話)</label>
+          <input id="fm-cust-input" placeholder="カタカナ・電話番号で検索" autocomplete="off">
+          <div class="search-drop" id="fm-cust-drop"></div>
+        </div>
+        <p id="fm-linked" style="margin:0.4rem 0 0;font-size:0.9em;color:var(--accent)"></p>
+        <div class="field" style="margin-top:0.6rem"><label>続柄(この顧客から見た相手)</label>
+          <select id="fm-relation-b"><option value="">—</option><option>夫</option><option>妻</option><option>父</option><option>母</option><option>長男</option><option>次男</option><option>長女</option><option>次女</option><option>他</option></select>
+        </div>
+      </div>
+      <p id="fm-error" style="display:none;color:var(--danger);font-size:0.85em;margin:0.6em 0 0"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeFamilyModal()">キャンセル</button>
+      <button class="btn btn-primary" id="fm-save" onclick="saveFamily()">追加する</button>
+    </div>
+  </div>
+</div>
+
 <!-- 印刷プレビュー オーバーレイ(印刷前に必ず内容を確認) -->
 <div class="modal-back" id="print-preview">
   <div class="print-preview-box">
@@ -2058,11 +2099,13 @@
     if (c[12]) {
       html += '<div class="section-title">メモ</div><p style="white-space:pre-wrap;margin:0;line-height:1.7">' + esc(c[12]) + '</p>';
     }
-    html += '<div class="section-title">家族情報</div>';
+    html += '<div class="section-title" style="display:flex;justify-content:space-between;align-items:center">' +
+      '<span>家族情報</span><button class="btn" onclick="openFamilyModal(\'' + esc(id) + '\')">＋ 家族を追加</button></div>';
     if (fam.length) {
       html += '<div class="table-scroll"><table class="data"><thead><tr><th>氏名</th><th>続柄</th><th>性別</th><th>生年月日</th></tr></thead><tbody>' +
         fam.map(function (f) {
-          var linkId = findCustByExactName(f[0]);
+          // f: [氏名, 続柄, 性別, 生年月日, linked_customer_id, id]
+          var linkId = f[4] || findCustByExactName(f[0]);  // Bのリンク先を優先、無ければ同名一致
           var nameCell = linkId != null
             ? '<button class="link-btn" onclick="openCustomer(\'' + esc(linkId) + '\')">' + esc(f[0]) + ' →</button>'
             : esc(f[0]);
@@ -2073,6 +2116,71 @@
       html += '<p style="margin:0;color:var(--muted);font-size:0.9em">家族情報の登録はありません。</p>';
     }
     document.getElementById("c-basic").innerHTML = html;
+  }
+  /* ── 家族の追加(A:自由入力 / B:登録済み顧客とリンク) ── */
+  var familyCid = null, familyLinked = null;
+  function openFamilyModal(cid) {
+    familyCid = cid; familyLinked = null;
+    document.querySelector('input[name="fm-mode"][value="A"]').checked = true;
+    switchFamilyMode();
+    ["fm-name", "fm-relation", "fm-gender", "fm-birth", "fm-cust-input", "fm-relation-b"].forEach(function (k) {
+      document.getElementById(k).value = "";
+    });
+    document.getElementById("fm-linked").textContent = "";
+    document.getElementById("fm-error").style.display = "none";
+    document.getElementById("family-modal").classList.add("show");
+  }
+  function closeFamilyModal() { document.getElementById("family-modal").classList.remove("show"); }
+  function switchFamilyMode() {
+    var mode = document.querySelector('input[name="fm-mode"]:checked').value;
+    document.getElementById("fm-a").style.display = mode === "A" ? "" : "none";
+    document.getElementById("fm-b").style.display = mode === "B" ? "" : "none";
+  }
+  function saveFamily() {
+    var mode = document.querySelector('input[name="fm-mode"]:checked').value;
+    var err = document.getElementById("fm-error");
+    var payload = { customer_id: familyCid };
+    if (mode === "A") {
+      var name = document.getElementById("fm-name").value.trim();
+      if (!name) { err.textContent = "氏名を入力してください。"; err.style.display = "block"; return; }
+      payload.name = name;
+      payload.relation = document.getElementById("fm-relation").value || null;
+      payload.gender = document.getElementById("fm-gender").value || null;
+      payload.birthday = document.getElementById("fm-birth").value.trim() || null;
+    } else {
+      if (!familyLinked) { err.textContent = "リンクする顧客を検索して選んでください。"; err.style.display = "block"; return; }
+      if (String(familyLinked[0]) === String(familyCid)) { err.textContent = "自分自身は家族に登録できません。"; err.style.display = "block"; return; }
+      payload.linked_customer_id = String(familyLinked[0]);
+      payload.relation = document.getElementById("fm-relation-b").value || null;
+    }
+    err.style.display = "none";
+    var btn = document.getElementById("fm-save");
+    btn.disabled = true; btn.textContent = "追加中…";
+    var applyLocal = function () {
+      var f = D.families[familyCid] = D.families[familyCid] || [];
+      if (mode === "A") {
+        f.push([payload.name, payload.relation, payload.gender, payload.birthday, null, null]);
+      } else {
+        var lc = findCust(payload.linked_customer_id);
+        f.push([lc ? lc[1] : payload.linked_customer_id, payload.relation, lc ? lc[7] : null, lc ? lc[6] : null, payload.linked_customer_id, null]);
+        var me = findCust(familyCid);
+        var g2 = D.families[payload.linked_customer_id] = D.families[payload.linked_customer_id] || [];
+        g2.push([me ? me[1] : familyCid, null, me ? me[7] : null, me ? me[6] : null, familyCid, null]);
+      }
+      btn.disabled = false; btn.textContent = "追加する";
+      closeFamilyModal();
+      var c = findCust(familyCid);
+      if (c) renderBasic(c);
+      showToast("家族を追加しました。");
+    };
+    if (window.TOKIWA_API) {
+      fetch(window.TOKIWA_API + "/family", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+        .then(function (r) { if (!r.ok) return r.json().then(function (e) { throw new Error(e.error || "保存に失敗しました"); }); return r.json(); })
+        .then(function () { applyLocal(); })
+        .catch(function (e) { btn.disabled = false; btn.textContent = "追加する"; err.textContent = "保存に失敗しました: " + fetchErrMsg(e); err.style.display = "block"; });
+    } else {
+      applyLocal();
+    }
   }
   function renderHistory(c) {
     var id = String(c[0]);
@@ -2740,6 +2848,12 @@
     setupCustSearch("pos-cust-input", "pos-cust-drop", function (c) { posCustomer = c; if (typeof clearPosError === "function") clearPosError(); renderPosReceivable(); });
     // 修理の新規預かりモーダルの顧客検索
     setupCustSearch("rep-cust-input", "rep-cust-drop", function (c) { repairSelectedCust = c; });
+    // 家族リンク(B)の顧客検索
+    setupCustSearch("fm-cust-input", "fm-cust-drop", function (c) {
+      familyLinked = c;
+      document.getElementById("fm-linked").textContent = "リンク先: " + c[1] + "(" + c[0] + ")";
+    });
+    bindBackdropClose("family-modal", closeFamilyModal);
     renderRepairs();
     // モーダルの背景クリックで閉じる(押した位置も背景の時だけ=入力中の誤クローズ防止)
     bindBackdropClose("cust-modal", closeCustModal);

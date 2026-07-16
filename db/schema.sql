@@ -55,12 +55,13 @@ CREATE INDEX idx_customers_tel  ON customers(tel);
 CREATE INDEX idx_customers_name ON customers(name);
 
 CREATE TABLE customer_families (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  customer_id  TEXT NOT NULL REFERENCES customers(customer_id),
-  name         TEXT,
-  relation     TEXT,
-  gender       TEXT,
-  birthday     TEXT
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id        TEXT NOT NULL REFERENCES customers(customer_id),
+  name               TEXT,
+  relation           TEXT,
+  gender             TEXT,
+  birthday           TEXT,
+  linked_customer_id TEXT REFERENCES customers(customer_id)  -- 登録済み顧客と相互リンクする場合(B)。自由入力(A)はNULL
 );
 CREATE INDEX idx_families_cust ON customer_families(customer_id);
 

@@ -65,8 +65,8 @@ def build_blob(con):
                      WHERE s.customer_id IS NOT NULL
                      ORDER BY s.sold_at DESC""")
 
-    families = group("""SELECT customer_id, name, relation, gender, birthday
-                        FROM customer_families""")
+    families = group("""SELECT customer_id, name, relation, gender, birthday, linked_customer_id, id
+                        FROM customer_families ORDER BY id""")
 
     urikake = group("""SELECT customer_id, id, product_name, bought_at, down_payment, balance, last_paid_at
                        FROM receivables""")
@@ -197,6 +197,49 @@ def upsert_customer(con, payload):
                     [vals[k] for k in CUSTOMER_FIELDS] + [cid])
     con.commit()
     return {"customer_id": cid, "new": is_new}
+
+
+def add_family(con, p):
+    """家族を追加する。
+    A(自由入力): {customer_id, name, relation, gender, birthday}
+    B(登録済み顧客とリンク): {customer_id, linked_customer_id, relation} を渡すと、
+      相手顧客の氏名等をコピーして双方向に登録(相手側にも本人を家族として追加)。
+    """
+    cid = str(p.get("customer_id") or "").strip()
+    if not cid:
+        raise ValueError("顧客が指定されていません")
+    cur = con.cursor()
+    linked = str(p.get("linked_customer_id") or "").strip() or None
+    if linked:
+        # B: 相手顧客の情報を取得
+        row = con.execute("SELECT name,gender,birthday FROM customers WHERE customer_id=?", (linked,)).fetchone()
+        if not row:
+            raise ValueError("リンク先の顧客が見つかりません")
+        if linked == cid:
+            raise ValueError("自分自身は家族に登録できません")
+        # 既に同じリンクがあれば重複させない
+        dup = con.execute("SELECT 1 FROM customer_families WHERE customer_id=? AND linked_customer_id=?",
+                          (cid, linked)).fetchone()
+        if not dup:
+            cur.execute("""INSERT INTO customer_families(customer_id,name,relation,gender,birthday,linked_customer_id)
+                           VALUES (?,?,?,?,?,?)""",
+                        (cid, row[0], p.get("relation"), row[1], row[2], linked))
+            # 双方向: 相手側にも本人を家族として登録(続柄は空。あとで相手側で編集可)
+            me = con.execute("SELECT name,gender,birthday FROM customers WHERE customer_id=?", (cid,)).fetchone()
+            rev = con.execute("SELECT 1 FROM customer_families WHERE customer_id=? AND linked_customer_id=?",
+                              (linked, cid)).fetchone()
+            if me and not rev:
+                cur.execute("""INSERT INTO customer_families(customer_id,name,relation,gender,birthday,linked_customer_id)
+                               VALUES (?,?,?,?,?,?)""", (linked, me[0], None, me[1], me[2], cid))
+    else:
+        # A: 自由入力
+        if not p.get("name"):
+            raise ValueError("家族の氏名を入力してください")
+        cur.execute("""INSERT INTO customer_families(customer_id,name,relation,gender,birthday,linked_customer_id)
+                       VALUES (?,?,?,?,?,?)""",
+                    (cid, p.get("name"), p.get("relation"), p.get("gender"), p.get("birthday"), None))
+    con.commit()
+    return {"customer_id": cid, "ok": True}
 
 
 PRODUCT_FIELDS = ("product_no", "name", "category", "supplier", "cost_price",
