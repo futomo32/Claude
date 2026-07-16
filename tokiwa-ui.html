@@ -459,6 +459,12 @@
   .pos-recv { background: #fff7e6; border: 1px solid #e0b34d; border-radius: 8px; padding: 0.6em 0.85em; margin: 0.7rem 0 0; }
   .pos-recv-head { font-size: 0.85em; color: #7a5a00; margin-bottom: 0.4em; }
   .pos-recv-row { display: flex; justify-content: space-between; align-items: center; gap: 0.6em; padding: 0.25em 0; font-size: 0.9em; }
+  /* 印刷プレビュー */
+  .print-preview-box { background: #fff; width: min(920px, 96vw); height: 92vh; display: flex; flex-direction: column; border-radius: 10px; overflow: hidden; }
+  .print-preview-bar { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; padding: 0.7rem 1rem; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .print-preview-scroll { flex: 1; overflow: auto; background: #e6e6e6; padding: 1rem; }
+  #print-preview-content { display: flex; flex-direction: column; align-items: center; gap: 1rem; }
+  #print-preview-content .doc-sheet, #print-preview-content .label-sheet { background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,0.25); }
   .toast {
     position: fixed; left: 50%; bottom: 24px;
     transform: translate(-50%, 16px);
@@ -815,7 +821,7 @@
         </div>
         <div class="table-scroll">
           <table class="data">
-            <thead><tr><th style="width:2.2em"></th><th>顧客ID</th><th>顧客名</th><th>カナ</th><th>電話</th>
+            <thead><tr><th style="width:2.2em"></th><th>住所</th><th>顧客名</th><th>カナ</th><th>電話</th>
               <th class="r sortable" data-sort-key="8">累計購入額<span class="sort-arrow"></span></th>
               <th class="r sortable" data-sort-key="9" id="cust-th-year">当年度<span class="sort-arrow"></span></th>
               <th class="sortable" data-sort-key="4">担当<span class="sort-arrow"></span></th></tr></thead>
@@ -1165,6 +1171,20 @@
       <button class="btn" onclick="closePayModal()">キャンセル</button>
       <button class="btn btn-primary" id="pay-submit-btn" onclick="submitReceivablePayment()">入金する</button>
     </div>
+  </div>
+</div>
+
+<!-- 印刷プレビュー オーバーレイ(印刷前に必ず内容を確認) -->
+<div class="modal-back" id="print-preview">
+  <div class="print-preview-box">
+    <div class="print-preview-bar">
+      <span>🖨 印刷プレビュー — 内容を確認してください</span>
+      <div style="display:flex;gap:0.6rem">
+        <button class="btn" onclick="cancelPrint()">キャンセル</button>
+        <button class="btn btn-primary" onclick="confirmPrint()">この内容で印刷する</button>
+      </div>
+    </div>
+    <div class="print-preview-scroll"><div id="print-preview-content"></div></div>
   </div>
 </div>
 
@@ -1915,7 +1935,8 @@
     tb.innerHTML = custFiltered.slice(0, custShown).map(function (c) {
       var nameCell = esc(c[1]) + (c[11] && c[12] ? ' <span class="chip chip-green">' + esc(c[12]) + '</span>' : "");
       var checked = custSelected.has(String(c[0])) ? " checked" : "";
-      return '<tr data-cust="' + esc(c[0]) + '"><td style="cursor:default"><input type="checkbox" class="cust-check" data-cust-check="' + esc(c[0]) + '"' + checked + '></td><td class="num" style="cursor:pointer">' + esc(c[0]) + '</td><td style="cursor:pointer">' + nameCell + '</td><td style="cursor:pointer">' + esc(c[2]) + '</td><td class="num" style="cursor:pointer">' + esc(dash(c[3])) + '</td><td class="r num" style="cursor:pointer">¥' + num(c[8]) + '</td><td class="r num" style="cursor:pointer">¥' + num(c[9]) + '</td><td style="cursor:pointer">' + esc(shortName(c[4])) + '</td></tr>';
+      var addr = (c[5] || "") + (c[15] ? " " + c[15] : "");
+      return '<tr data-cust="' + esc(c[0]) + '"><td style="cursor:default"><input type="checkbox" class="cust-check" data-cust-check="' + esc(c[0]) + '"' + checked + '></td><td style="cursor:pointer">' + esc(dash(addr)) + '</td><td style="cursor:pointer">' + nameCell + '</td><td style="cursor:pointer">' + esc(c[2]) + '</td><td class="num" style="cursor:pointer">' + esc(dash(c[3])) + '</td><td class="r num" style="cursor:pointer">¥' + num(c[8]) + '</td><td class="r num" style="cursor:pointer">¥' + num(c[9]) + '</td><td style="cursor:pointer">' + esc(shortName(c[4])) + '</td></tr>';
     }).join("") || '<tr><td colspan="8" style="color:var(--muted)">該当する顧客が見つかりません</td></tr>';
     document.getElementById("cust-count").textContent =
       "該当 " + custFiltered.length.toLocaleString() + "件(表示 " + Math.min(custShown, custFiltered.length).toLocaleString() + "件) — 行をダブルクリックで詳細";
@@ -1975,12 +1996,41 @@
   function kvField(label, value) {
     return '<div class="field"><label>' + esc(label) + '</label><input value="' + esc(dash(value)) + '" readonly></div>';
   }
+  // 西暦(YYYY-MM-DD) → 和暦(令和/平成/昭和/大正/明治)。境界日まで考慮。変換不可はnull。
+  function toWareki(iso) {
+    var m = String(iso == null ? "" : iso).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (!m) return null;
+    var y = +m[1], mo = +m[2], d = +m[3];
+    var val = y * 10000 + mo * 100 + d;
+    var eras = [["令和", 20190501, 2018], ["平成", 19890108, 1988], ["昭和", 19261225, 1925],
+      ["大正", 19120730, 1911], ["明治", 18680125, 1867]];
+    for (var i = 0; i < eras.length; i++) {
+      if (val >= eras[i][1]) {
+        var yr = y - eras[i][2];
+        return eras[i][0] + (yr === 1 ? "元" : yr) + "年" + mo + "月" + d + "日";
+      }
+    }
+    return null;
+  }
+  var warekiOn = false;
+  function toggleWareki() {
+    warekiOn = !warekiOn;
+    var c = findCust(window.__curCust);
+    if (c) renderBasic(c);
+  }
   function renderBasic(c) {
     var id = String(c[0]);
     var fam = D.families[id] || [];
-    var html = '<div class="kv">' +
+    var dispDate = function (iso) {
+      if (!iso || !warekiOn) return iso;
+      var w = toWareki(iso);
+      return w ? w : iso; // 変換できない(明治より前・不正)ものは西暦のまま
+    };
+    var toggle = '<div style="text-align:right;margin-bottom:0.4rem"><button class="link-btn" onclick="toggleWareki()">' +
+      (warekiOn ? "西暦で表示" : "和暦で表示") + '</button></div>';
+    var html = toggle + '<div class="kv">' +
       kvField("顧客名", c[1]) + kvField("フリガナ", c[2]) + kvField("性別", c[7]) +
-      kvField("生年月日", c[6]) + kvField("結婚記念日", c[10]) + kvField("電話", c[3]) +
+      kvField("生年月日", dispDate(c[6])) + kvField("結婚記念日", dispDate(c[10])) + kvField("電話", c[3]) +
       kvField("郵便番号", c[14]) + kvField("住所1", c[5]) + kvField("住所2(建物名など)", c[15]) + '</div>';
     html += '<div class="section-title">家族情報</div>';
     if (fam.length) {
@@ -1990,7 +2040,7 @@
           var nameCell = linkId != null
             ? '<button class="link-btn" onclick="openCustomer(\'' + esc(linkId) + '\')">' + esc(f[0]) + ' →</button>'
             : esc(f[0]);
-          return '<tr><td>' + nameCell + '</td><td>' + esc(dash(f[1])) + '</td><td>' + esc(dash(f[2])) + '</td><td class="num">' + esc(dash(f[3])) + '</td></tr>';
+          return '<tr><td>' + nameCell + '</td><td>' + esc(dash(f[1])) + '</td><td>' + esc(dash(f[2])) + '</td><td class="num">' + esc(dash(dispDate(f[3]))) + '</td></tr>';
         }).join("") +
         '</tbody></table></div>';
     } else {
@@ -3033,16 +3083,8 @@
       while (chunk.length < LABEL_PER_SHEET) chunk.push(null);
       sheetsHtml += '<div class="label-sheet">' + chunk.map(labelCellHtml).join("") + "</div>";
     }
-    document.getElementById("label-print-root").innerHTML = sheetsHtml;
     closeLabelPrint();
-    document.body.classList.add("printing-labels");
-    var cleanup = function () {
-      document.body.classList.remove("printing-labels");
-      document.getElementById("label-print-root").innerHTML = "";
-      window.removeEventListener("afterprint", cleanup);
-    };
-    window.addEventListener("afterprint", cleanup);
-    setTimeout(function () { window.print(); }, 50);
+    showPrintPreview("labels", sheetsHtml);
   }
 
   /* ── 汎用帳票印刷(見積書・請求書・修理伝票): 保存はせずその場で印刷するだけ ── */
@@ -3060,16 +3102,38 @@
       innerHtml +
       '</div>';
   }
-  function printDocument(html) {
-    document.getElementById("doc-print-root").innerHTML = html;
-    document.body.classList.add("printing-doc");
+  function printDocument(html) { showPrintPreview("doc", html); }
+
+  // 印刷前に必ずプレビューを挟む(内容確認 → 印刷 or キャンセル)。
+  // doc(見積書・請求書・修理伝票)と labels(住所ラベル)で共通。
+  var pendingPrint = null;
+  function showPrintPreview(kind, html) {
+    pendingPrint = { kind: kind, html: html };
+    document.getElementById("print-preview-content").innerHTML = html;
+    document.getElementById("print-preview").classList.add("show");
+  }
+  function cancelPrint() {
+    pendingPrint = null;
+    document.getElementById("print-preview-content").innerHTML = "";
+    document.getElementById("print-preview").classList.remove("show");
+  }
+  function confirmPrint() {
+    if (!pendingPrint) return;
+    var kind = pendingPrint.kind, html = pendingPrint.html;
+    var rootId = kind === "labels" ? "label-print-root" : "doc-print-root";
+    var cls = kind === "labels" ? "printing-labels" : "printing-doc";
+    document.getElementById("print-preview").classList.remove("show");
+    document.getElementById("print-preview-content").innerHTML = "";
+    document.getElementById(rootId).innerHTML = html;
+    document.body.classList.add(cls);
     var cleanup = function () {
-      document.body.classList.remove("printing-doc");
-      document.getElementById("doc-print-root").innerHTML = "";
+      document.body.classList.remove(cls);
+      document.getElementById(rootId).innerHTML = "";
       window.removeEventListener("afterprint", cleanup);
     };
     window.addEventListener("afterprint", cleanup);
     setTimeout(function () { window.print(); }, 50);
+    pendingPrint = null;
   }
   function docNoStamp(prefix) {
     var t = new Date();
