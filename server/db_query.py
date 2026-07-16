@@ -67,7 +67,7 @@ def build_blob(con):
     families = group("""SELECT customer_id, name, relation, gender, birthday
                         FROM customer_families""")
 
-    urikake = group("""SELECT customer_id, product_name, bought_at, down_payment, balance, last_paid_at
+    urikake = group("""SELECT customer_id, id, product_name, bought_at, down_payment, balance, last_paid_at
                        FROM receivables""")
     urikake_hist = group("""SELECT customer_id, entry_date, entry_type, product_name, amount, paid
                             FROM receivable_entries ORDER BY entry_date DESC""")
@@ -312,6 +312,28 @@ def update_repair_status(con, p):
                 (status, completed_at, repair_id))
     con.commit()
     return {"id": repair_id, "status": status, "completed_at": completed_at}
+
+
+def add_receivable_payment(con, p):
+    """売掛の入金を記録する(特定の売掛行の残高を減らし、入金履歴に1行追加)。"""
+    receivable_id = p.get("receivable_id")
+    amount = p.get("amount")
+    if not receivable_id or not amount or int(amount) <= 0:
+        raise ValueError("入金額を正しく入力してください")
+    amount = int(amount)
+    paid_at = p.get("paid_at") or datetime.date.today().isoformat()
+    row = con.execute("SELECT customer_id, balance FROM receivables WHERE id=?", (receivable_id,)).fetchone()
+    if not row:
+        raise ValueError("対象の売掛が見つかりません")
+    cid, balance = row[0], row[1] or 0
+    new_balance = balance - amount
+    cur = con.cursor()
+    cur.execute("UPDATE receivables SET balance=?, last_paid_at=? WHERE id=?", (new_balance, paid_at, receivable_id))
+    cur.execute("""INSERT INTO receivable_entries(customer_id,entry_type,entry_date,product_name,amount,paid,note)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (cid, "入金", paid_at, None, None, amount, p.get("note")))
+    con.commit()
+    return {"receivable_id": receivable_id, "new_balance": new_balance, "paid_at": paid_at, "amount": amount}
 
 
 def checkout(con, payload):
