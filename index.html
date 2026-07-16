@@ -125,6 +125,20 @@
   .wd input{display:none}
   .wd input:checked+span{color:var(--accent); font-weight:700}
   .wd label:has(input:checked){border-color:var(--accent); background:#eef7ef}
+
+  /* calendar picker */
+  .calhead{display:flex; align-items:center; gap:8px; margin:12px 0 6px}
+  .caltitle{flex:1; text-align:center; font-weight:700; font-size:16px}
+  .wdbulk{display:flex; gap:5px; margin:0 0 8px}
+  .wdbulk button{flex:1; background:#eef1f4; color:var(--ink); font-weight:600; padding:6px 0; font-size:13px}
+  .wdbulk button.sun{color:var(--red)} .wdbulk button.sat{color:#2563eb}
+  .cal{display:grid; grid-template-columns:repeat(7,1fr); gap:4px}
+  .cal .cwd{text-align:center; font-size:12px; color:var(--sub); padding:2px 0}
+  .cal .cwd.sun{color:var(--red)} .cal .cwd.sat{color:#2563eb}
+  .cal .cday{aspect-ratio:1/1; display:flex; align-items:center; justify-content:center; border-radius:9px; border:1px solid var(--line); font-size:14px; cursor:pointer; user-select:none; background:#fff}
+  .cal .cday.out{visibility:hidden; pointer-events:none}
+  .cal .cday.sun{color:var(--red)} .cal .cday.sat{color:#2563eb}
+  .cal .cday.sel{background:var(--green); color:#fff; border-color:var(--green); font-weight:700}
 </style>
 </head>
 <body>
@@ -196,24 +210,22 @@
     </div>
 
     <div class="card">
-      <h2>📅 対象の日を作る</h2>
-      <div class="muted">曜日と期間を選んで「日付を作成」。個別の追加・削除もできます。</div>
-      <div class="wd" style="margin:10px 0">
-        <label><input type="checkbox" data-wd="0"><span>日</span></label>
-        <label><input type="checkbox" data-wd="1"><span>月</span></label>
-        <label><input type="checkbox" data-wd="2"><span>火</span></label>
-        <label><input type="checkbox" data-wd="3"><span>水</span></label>
-        <label><input type="checkbox" data-wd="4"><span>木</span></label>
-        <label><input type="checkbox" data-wd="5"><span>金</span></label>
-        <label><input type="checkbox" data-wd="6"><span>土</span></label>
+      <h2>📅 対象の日を選ぶ</h2>
+      <div class="muted">カレンダーの日をタップで選択／解除。曜日ボタンを押すと、その月のその曜日をまとめて選べます。</div>
+      <div class="calhead">
+        <button class="btn ghost sm" id="calPrev">‹ 前月</button>
+        <div class="caltitle" id="calTitle"></div>
+        <button class="btn ghost sm" id="calNext">翌月 ›</button>
       </div>
-      <div class="row" style="margin-bottom:8px">
-        <div style="flex:1"><label class="muted">開始</label><input type="date" id="dFrom"></div>
-        <div style="flex:1"><label class="muted">終了</label><input type="date" id="dTo"></div>
+      <div class="wdbulk" id="wdBulk">
+        <button data-wd="0" class="sun">日</button><button data-wd="1">月</button><button data-wd="2">火</button><button data-wd="3">水</button><button data-wd="4">木</button><button data-wd="5">金</button><button data-wd="6" class="sat">土</button>
       </div>
-      <button class="btn block sm" id="dGen" style="margin-bottom:12px">この条件で日付を作成（既存に追加）</button>
-      <div class="row"><input type="date" id="dOne"><button class="btn ghost sm" id="dAdd">1日追加</button></div>
-      <ul class="mlist" id="dList" style="margin-top:10px"></ul>
+      <div class="cal" id="calGrid"></div>
+      <div class="row" style="justify-content:space-between; margin-top:12px">
+        <span class="muted">選択中：<b id="selCount">0</b>日</span>
+        <button class="btn danger sm" id="calClear">全部クリア</button>
+      </div>
+      <ul class="mlist" id="dList" style="margin-top:8px"></ul>
     </div>
 
     <div class="card">
@@ -461,6 +473,10 @@ function renderSettings(){
   $("#mList").innerHTML = S.members.map(m=>
     `<li><span class="mn">${esc(m.name)}<small>${esc(m.grade||"")}</small></span>`
     +`<button class="btn danger sm" data-del="${m.id}">削除</button></li>`).join("") || `<li class="muted">メンバーがいません</li>`;
+  renderDateList();
+  renderCalendar();
+}
+function renderDateList(){
   const dates=[...S.dates].sort();
   $("#dList").innerHTML = dates.map(dt=>{ const o=d2(dt);
     return `<li><span class="mn ${wdClass(o.wd)}">${o.y}/${o.m}/${o.d} (${WD[o.wd]})</span><button class="btn danger sm" data-deld="${dt}">削除</button></li>`;
@@ -485,26 +501,58 @@ $("#mList").addEventListener("click", e=>{
   save(); renderSettings(); renderGrid(); renderAuto();
 });
 
-$("#dGen").addEventListener("click", ()=>{
-  const wds=[...document.querySelectorAll('.wd input:checked')].map(c=>+c.dataset.wd);
-  const from=$("#dFrom").value, to=$("#dTo").value;
-  if(!wds.length){toast("曜日を選んでください");return;}
-  if(!from||!to){toast("期間を選んでください");return;}
-  const set=new Set(S.dates);
-  let cur=new Date(from+"T00:00:00"), end=new Date(to+"T00:00:00"), n=0;
-  while(cur<=end && n<400){
-    if(wds.includes(cur.getDay())){
-      set.add(`${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,"0")}-${String(cur.getDate()).padStart(2,"0")}`);
-    }
-    cur.setDate(cur.getDate()+1); n++;
+/* calendar date picker */
+let calYM = null;
+function iso(y,m,d){ return `${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
+function initCalYM(){
+  if(calYM) return;
+  const ds=[...S.dates].sort();
+  if(ds.length){ const o=d2(ds[0]); calYM={y:o.y,m:o.m}; }
+  else { const t=new Date(); calYM={y:t.getFullYear(), m:t.getMonth()+1}; }
+}
+function daysInMonth(y,m){ return new Date(y,m,0).getDate(); }
+function renderCalendar(){
+  initCalYM();
+  const {y,m}=calYM;
+  $("#calTitle").textContent=`${y}年 ${m}月`;
+  const sel=new Set(S.dates);
+  const startWd=new Date(y,m-1,1).getDay();
+  const dim=daysInMonth(y,m);
+  let h="";
+  ["日","月","火","水","木","金","土"].forEach((w,i)=>{ h+=`<div class="cwd ${i===0?"sun":i===6?"sat":""}">${w}</div>`; });
+  for(let i=0;i<startWd;i++) h+=`<div class="cday out"></div>`;
+  for(let d=1;d<=dim;d++){
+    const dt=iso(y,m,d), wd=new Date(y,m-1,d).getDay();
+    const c=["cday", wd===0?"sun":wd===6?"sat":"", sel.has(dt)?"sel":""].filter(Boolean).join(" ");
+    h+=`<div class="${c}" data-iso="${dt}">${d}</div>`;
   }
-  S.dates=[...set]; save(); renderSettings(); renderGrid(); renderAuto();
-  toast(`日付を作成しました（計${S.dates.length}日）`);
+  $("#calGrid").innerHTML=h;
+  $("#selCount").textContent=S.dates.length;
+}
+function afterDateChange(){ save(); renderCalendar(); renderDateList(); renderGrid(); renderAuto(); }
+$("#calGrid").addEventListener("click", e=>{
+  const c=e.target.closest(".cday"); if(!c||c.classList.contains("out")) return;
+  const dt=c.dataset.iso;
+  if(S.dates.includes(dt)) S.dates=S.dates.filter(x=>x!==dt);
+  else S.dates.push(dt);
+  afterDateChange();
 });
-$("#dAdd").addEventListener("click", ()=>{
-  const v=$("#dOne").value; if(!v){toast("日付を選んでください");return;}
-  if(!S.dates.includes(v)) S.dates.push(v);
-  save(); renderSettings(); renderGrid(); renderAuto();
+$("#calPrev").addEventListener("click", ()=>{ initCalYM(); calYM.m--; if(calYM.m<1){calYM.m=12; calYM.y--;} renderCalendar(); });
+$("#calNext").addEventListener("click", ()=>{ initCalYM(); calYM.m++; if(calYM.m>12){calYM.m=1; calYM.y++;} renderCalendar(); });
+$("#wdBulk").addEventListener("click", e=>{
+  const b=e.target.closest("button[data-wd]"); if(!b) return;
+  initCalYM(); const {y,m}=calYM, wd=+b.dataset.wd;
+  const inMonth=[]; for(let d=1;d<=daysInMonth(y,m);d++){ if(new Date(y,m-1,d).getDay()===wd) inMonth.push(iso(y,m,d)); }
+  const allSel=inMonth.every(x=>S.dates.includes(x));
+  const set=new Set(S.dates);
+  inMonth.forEach(x=> allSel ? set.delete(x) : set.add(x));
+  S.dates=[...set]; afterDateChange();
+  toast(`${["日","月","火","水","木","金","土"][wd]}曜を${allSel?"外しました":"選びました"}`);
+});
+$("#calClear").addEventListener("click", ()=>{
+  if(!S.dates.length) return;
+  if(!confirm("選んだ日付を全部消しますか？（出欠・割り当ても消えます）")) return;
+  S.dates=[]; S.assign={}; afterDateChange(); toast("日付をクリアしました");
 });
 $("#dList").addEventListener("click", e=>{
   const b=e.target.closest("[data-deld]"); if(!b) return;
