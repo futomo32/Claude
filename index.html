@@ -471,8 +471,8 @@ function renderSettings(){
   $("#setTime").value=S.time||""; $("#setPlace").value=S.place||""; $("#setPer").value=S.per||2;
   $("#mCount").textContent=S.members.length;
   $("#mList").innerHTML = S.members.map(m=>
-    `<li><span class="mn">${esc(m.name)}<small>${esc(m.grade||"")}</small></span>`
-    +`<button class="btn danger sm" data-del="${m.id}">削除</button></li>`).join("") || `<li class="muted">メンバーがいません</li>`;
+    `<li data-edit="${m.id}" style="cursor:pointer"><span class="mn">${esc(m.name)}<small>${esc(m.grade||"")}</small></span>`
+    +`<span class="muted" style="font-size:13px">編集 ›</span></li>`).join("") || `<li class="muted">メンバーがいません</li>`;
   renderDateList();
   renderCalendar();
 }
@@ -491,14 +491,39 @@ $("#mAdd").addEventListener("click", ()=>{
   S.members.push({id:uid(), name:n, grade:$("#mGrade").value.trim(), locked:false});
   $("#mName").value=""; $("#mGrade").value=""; save(); renderSettings(); renderGrid();
 });
-$("#mList").addEventListener("click", e=>{
-  const b=e.target.closest("[data-del]"); if(!b) return;
-  const m=member(b.dataset.del);
-  if(!confirm(`${m.name} を削除しますか？`)) return;
-  S.members=S.members.filter(x=>x.id!==b.dataset.del);
-  delete S.avail[b.dataset.del];
-  Object.keys(S.assign).forEach(dt=>S.assign[dt]=S.assign[dt].filter(a=>a.m!==b.dataset.del));
+function deleteMember(id){
+  S.members=S.members.filter(x=>x.id!==id);
+  delete S.avail[id];
+  Object.keys(S.assign).forEach(dt=>S.assign[dt]=S.assign[dt].filter(a=>a.m!==id));
   save(); renderSettings(); renderGrid(); renderAuto();
+}
+function openMemberSheet(id){
+  const m=member(id); if(!m) return;
+  $("#sheet").onclick=null;
+  $("#sheet").innerHTML =
+     `<h3>メンバーを編集</h3>`
+    +`<label class="muted">名前</label>`
+    +`<input type="text" id="emName" style="margin:4px 0 10px">`
+    +`<label class="muted">学年（任意）</label>`
+    +`<input type="text" id="emGrade" style="margin:4px 0 14px">`
+    +`<div class="row"><button class="btn" style="flex:1" id="emSave">保存</button>`
+    +`<button class="btn danger" id="emDel">削除</button></div>`;
+  $("#ov").classList.add("show");
+  $("#emName").value=m.name; $("#emGrade").value=m.grade||"";
+  $("#emName").focus();
+  $("#emSave").onclick=()=>{
+    const n=$("#emName").value.trim(); if(!n){toast("名前を入れてください");return;}
+    m.name=n; m.grade=$("#emGrade").value.trim();
+    save(); closeOv(); renderSettings(); renderGrid(); renderAuto(); toast("保存しました");
+  };
+  $("#emDel").onclick=()=>{
+    if(!confirm(`${m.name} を削除しますか？（この人の出欠・割り当ても消えます）`)) return;
+    closeOv(); deleteMember(id); toast("削除しました");
+  };
+}
+$("#mList").addEventListener("click", e=>{
+  const li=e.target.closest("[data-edit]"); if(!li) return;
+  openMemberSheet(li.dataset.edit);
 });
 
 /* calendar date picker */
