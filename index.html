@@ -232,6 +232,7 @@
       <h2>💾 データ</h2>
       <div class="row wrap">
         <button class="btn ghost sm" id="btnCopy">📋 結果をコピー</button>
+        <button class="btn ghost sm" id="btnSeed">📷 画像の初期データを読み込む</button>
         <button class="btn ghost sm" id="btnExport">書き出し(JSON)</button>
         <button class="btn ghost sm" id="btnImport">読み込み(JSON)</button>
         <button class="btn danger sm" id="btnReset">全消去</button>
@@ -257,9 +258,13 @@ const KEY = "toban-shift-v1";
 const uid = () => Math.random().toString(36).slice(2,9);
 
 /* ---------- state ---------- */
-let S = load() || seed();
+function hasAny(o){ if(!o) return false; for(const k in o){ const v=o[k]; if(v&&typeof v==="object"){ if(Object.keys(v).length) return true; } else if(v) return true; } return false; }
+let S = load();
+if(!S){ S = seed(); }                                   // まっさらな初回：画像データを反映
+else if(!(S.dates&&S.dates.length) && !hasAny(S.avail) && !hasAny(S.assign)){ S = seed(); } // 空っぽのまま＝実質未使用なら反映
+save();
 
-function seed(){
+function emptySeed(){
   const names = [
     ["平岩","小5"],["伊藤","小4"],["太田","中1"],["家田","小4"],["内山","小4"],
     ["近藤","中2"],["田中","中2"],["萱島","小3"],["大羅","小1"],["佐野","小1"],
@@ -272,6 +277,50 @@ function seed(){
     avail: {},          // avail[memberId][date] = 'ok'|'maybe'|'ng'
     assign: {}          // assign[date] = [{m:id, pin:bool}]
   };
+}
+// 初回データ：いただいた画像（LINEの回答＋カレンダーの暫定当番）を反映
+function seed(){
+  const M=[
+    ["平岩","小5"],["伊藤","小4"],["太田","中1"],["家田","小4"],["内山","小4"],
+    ["近藤","中2"],["田中","中2"],["萱島","小3"],["大羅","小1"],["佐野","小1"],
+    ["中島","小1"],["池野","中3"],["鈴木","小2"],["渡邉","小3"],["Jeniffer","—"]
+  ];
+  const members=M.map(([n,g])=>({id:uid(), name:n, grade:g, locked:false}));
+  const id={}; members.forEach(m=>id[m.name]=m.id);
+  const dates=[
+    "2026-07-29","2026-07-30","2026-07-31","2026-08-01","2026-08-02",
+    "2026-08-04","2026-08-05","2026-08-06","2026-08-07",
+    "2026-08-17","2026-08-18","2026-08-19","2026-08-20","2026-08-21"
+  ];
+  const OK="ok", NG="ng", avail={};
+  const setA=(name,map)=>{ avail[id[name]]=Object.assign({},map); };
+  // 平岩：水曜×、他は○
+  setA("平岩",{"2026-07-29":NG,"2026-07-30":OK,"2026-07-31":OK,"2026-08-01":OK,"2026-08-02":OK,
+    "2026-08-04":OK,"2026-08-05":NG,"2026-08-06":OK,"2026-08-07":OK,
+    "2026-08-17":OK,"2026-08-18":OK,"2026-08-19":NG,"2026-08-20":OK,"2026-08-21":OK});
+  // 伊藤：可能日○=7/29,31,8/2,5,17,19、当番8/18×
+  setA("伊藤",{"2026-07-29":OK,"2026-07-31":OK,"2026-08-02":OK,"2026-08-05":OK,"2026-08-17":OK,
+    "2026-08-19":OK,"2026-08-18":NG});
+  // 太田：火・木・土・日×、他は○
+  setA("太田",{"2026-07-29":OK,"2026-07-30":NG,"2026-07-31":OK,"2026-08-01":NG,"2026-08-02":NG,
+    "2026-08-04":NG,"2026-08-05":OK,"2026-08-06":NG,"2026-08-07":OK,
+    "2026-08-17":OK,"2026-08-18":NG,"2026-08-19":OK,"2026-08-20":NG,"2026-08-21":OK});
+  // 家田：可能日○=8/2,4〜7、8/17×
+  setA("家田",{"2026-08-02":OK,"2026-08-04":OK,"2026-08-05":OK,"2026-08-06":OK,"2026-08-07":OK,
+    "2026-08-17":NG});
+  // Jeniffer：木曜・土曜×、16〜20×
+  setA("Jeniffer",{"2026-07-30":NG,"2026-08-01":NG,"2026-08-06":NG,
+    "2026-08-17":NG,"2026-08-18":NG,"2026-08-19":NG,"2026-08-20":NG});
+  // カレンダーの暫定当番（⚫️＝固定）
+  const P=(a,b)=>[{m:id[a],pin:true},{m:id[b],pin:true}];
+  const assign={
+    "2026-07-29":P("太田","平岩"), "2026-07-30":P("伊藤","萱島"), "2026-07-31":P("渡邉","鈴木"),
+    "2026-08-01":P("池野","田中"), "2026-08-02":P("家田","内山"), "2026-08-04":P("太田","渡邉"),
+    "2026-08-05":P("近藤","田中"), "2026-08-06":P("萱島","大羅"), "2026-08-07":P("佐野","中島"),
+    "2026-08-17":P("家田","内山"), "2026-08-18":P("平岩","伊藤"), "2026-08-19":P("佐野","中島"),
+    "2026-08-20":P("近藤","大羅"), "2026-08-21":P("池野","鈴木")
+  };
+  return { time:"午後7時30分〜8時30分", place:"一区区民会館 2階 集会室", per:2, members, dates, avail, assign };
 }
 function load(){ try{return JSON.parse(localStorage.getItem(KEY))}catch(e){return null} }
 function save(){ localStorage.setItem(KEY, JSON.stringify(S)); }
@@ -607,9 +656,13 @@ $("#btnImport").addEventListener("click", ()=>{
   const t=prompt("書き出したテキストを貼り付けてください"); if(!t)return;
   try{ const o=JSON.parse(t); S=o; save(); renderAll(); toast("読み込みました"); }catch(e){ toast("読み込めませんでした"); }
 });
+$("#btnSeed").addEventListener("click", ()=>{
+  if(!confirm("画像の初期データ（メンバー・日付・出欠・暫定当番）を読み込みますか？\n今の内容は上書きされます。"))return;
+  S=seed(); calYM=null; save(); renderAll(); toast("画像のデータを読み込みました");
+});
 $("#btnReset").addEventListener("click", ()=>{
-  if(!confirm("すべてのデータを消して初期状態に戻しますか？"))return;
-  S=seed(); save(); renderAll(); toast("初期化しました");
+  if(!confirm("すべてのデータを消して空の状態に戻しますか？"))return;
+  S=emptySeed(); calYM=null; save(); renderAll(); toast("空にしました");
 });
 
 /* ---------- tabs / header ---------- */
