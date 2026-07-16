@@ -162,9 +162,9 @@ def sample_in_stock_key(con):
     return row[0] if row else None
 
 
-CUSTOMER_FIELDS = ("name", "kana", "gender", "birthday", "wedding_day", "tel",
+CUSTOMER_FIELDS = ("name", "kana", "gender", "birthday", "wedding_day", "tel", "tel2",
                    "email", "postal", "address", "address2", "rank", "dm_ok",
-                   "staff_name", "ring_size", "pierce")
+                   "staff_name", "ring_size", "pierce", "note")
 
 
 def upsert_customer(con, payload):

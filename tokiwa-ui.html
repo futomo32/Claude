@@ -1043,6 +1043,7 @@
         <div class="field"><label>顧客名<span class="req">必須</span></label><input id="cm-name" placeholder="山田 花子"></div>
         <div class="field"><label>フリガナ</label><input id="cm-kana" placeholder="ヤマダ ハナコ(全角カナ)"></div>
         <div class="field"><label>電話<span class="req">必須</span></label><input id="cm-tel" class="han-num" inputmode="tel" placeholder="090-1234-5678"></div>
+        <div class="field"><label>携帯電話</label><input id="cm-tel2" class="han-num" inputmode="tel" placeholder="090-1234-5678"></div>
         <div class="field"><label>担当者<span class="req">必須</span></label><select id="cm-staff"><option value="">選択…</option></select></div>
         <div class="field"><label>性別</label><select id="cm-gender"><option value="">—</option><option>女</option><option>男</option></select></div>
         <div class="field"><label>Eメール</label><input id="cm-email" inputmode="email"></div>
@@ -1084,6 +1085,8 @@
         <div class="field"><label>リングサイズ</label><input id="cm-ring" placeholder="9号"></div>
         <div class="field"><label>ピアス穴</label><select id="cm-pierce"><option value="">—</option><option>あり</option><option>なし</option></select></div>
       </div>
+      <div class="section-title">メモ(自由記入)</div>
+      <textarea id="cm-note" rows="3" placeholder="何でも書いておけます(接客メモ・好み・注意事項など)" style="width:100%;box-sizing:border-box;font:inherit;padding:0.5em;border:1px solid var(--line);border-radius:6px"></textarea>
       <p id="cm-error" style="color:var(--danger);font-size:0.85em;margin:0.8rem 0 0;display:none"></p>
     </div>
     <div class="modal-foot">
@@ -1758,7 +1761,7 @@
     var m = String(s).match(/(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
     return m ? m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2) : "";
   }
-  var CM_FIELDS = ["cm-name", "cm-kana", "cm-gender", "cm-tel", "cm-email", "cm-postal", "cm-address", "cm-address2", "cm-rank", "cm-dm", "cm-staff", "cm-ring", "cm-pierce"];
+  var CM_FIELDS = ["cm-name", "cm-kana", "cm-gender", "cm-tel", "cm-tel2", "cm-email", "cm-postal", "cm-address", "cm-address2", "cm-rank", "cm-dm", "cm-staff", "cm-ring", "cm-pierce", "cm-note"];
   var custModalContext = null;   // 'pos' のときは保存後にレジへ戻して選択
   function openCustModalForPos() { custModalContext = "pos"; openCustModal(); }
   function openCustModal(id) {
@@ -1777,6 +1780,9 @@
         eraSet("cm-birth", f[6]);
         eraSet("cm-wed", f[10]);
         document.getElementById("cm-tel").value = f[3] || "";
+        document.getElementById("cm-tel2").value = f[16] || "";
+        document.getElementById("cm-email").value = f[17] || "";
+        document.getElementById("cm-note").value = f[12] || "";
         document.getElementById("cm-postal").value = f[14] || "";
         document.getElementById("cm-address").value = f[5] || "";
         document.getElementById("cm-address2").value = f[15] || "";
@@ -1834,20 +1840,21 @@
     var err = document.getElementById("cm-error");
     var payload = {
       customer_id: g("cm-id"), name: g("cm-name"), kana: kana, gender: g("cm-gender"),
-      birthday: birth.iso, wedding_day: wed.iso, tel: tel, email: g("cm-email"),
+      birthday: birth.iso, wedding_day: wed.iso, tel: tel, tel2: zen2han(g("cm-tel2")), email: g("cm-email"),
       postal: zen2han(g("cm-postal")), address: g("cm-address"), address2: g("cm-address2"),
       rank: g("cm-rank"), dm_ok: g("cm-dm"), staff_name: g("cm-staff"),
-      ring_size: g("cm-ring"), pierce: g("cm-pierce")
+      ring_size: g("cm-ring"), pierce: g("cm-pierce"), note: g("cm-note")
     };
     var btn = document.getElementById("cm-save");
     btn.disabled = true; btn.textContent = "保存中…";
     function done(cid) {
       var row = [cid, payload.name, payload.kana, payload.tel, payload.staff_name, payload.address,
                  payload.birthday, payload.gender, 0, 0, payload.wedding_day,
-                 0, null, null, payload.postal, payload.address2];
+                 0, payload.note || null, null, payload.postal, payload.address2,
+                 payload.tel2 || null, payload.email || null];
       var idx = -1, i;
       for (i = 0; i < D.customers.length; i++) if (String(D.customers[i][0]) === String(cid)) { idx = i; break; }
-      if (idx >= 0) { row[8] = D.customers[idx][8]; row[9] = D.customers[idx][9]; D.customers[idx] = row; }
+      if (idx >= 0) { row[8] = D.customers[idx][8]; row[9] = D.customers[idx][9]; row[13] = D.customers[idx][13]; D.customers[idx] = row; }
       else { D.customers.push(row); }
       btn.disabled = false; btn.textContent = "保存";
       closeCustModal();
@@ -2046,6 +2053,9 @@
       kvField("生年月日", dispDate(c[6])) + kvField("結婚記念日", dispDate(c[10])) +
       kvField("電話", c[3]) + kvField("携帯電話", c[16]) + kvField("eメール", c[17]) +
       kvField("郵便番号", c[14]) + kvField("住所1", c[5]) + kvField("住所2(建物名など)", c[15]) + '</div>';
+    if (c[12]) {
+      html += '<div class="section-title">メモ</div><p style="white-space:pre-wrap;margin:0;line-height:1.7">' + esc(c[12]) + '</p>';
+    }
     html += '<div class="section-title">家族情報</div>';
     if (fam.length) {
       html += '<div class="table-scroll"><table class="data"><thead><tr><th>氏名</th><th>続柄</th><th>性別</th><th>生年月日</th></tr></thead><tbody>' +
