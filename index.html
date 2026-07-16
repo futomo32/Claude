@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#2e7d32">
+<title>当番シフト自動作成</title>
+<style>
+  :root{
+    --green:#3cb44b; --yellow:#ffd93b; --red:#c0392b; --black:#222;
+    --bg:#f5f6f8; --card:#fff; --line:#e3e6ea; --ink:#1c1f24; --sub:#6b7280;
+    --accent:#2e7d32; --accent-d:#1b5e20;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
+    background:var(--bg); color:var(--ink); font-size:15px; line-height:1.5;
+    padding-bottom:76px;
+  }
+  header{
+    position:sticky; top:0; z-index:50; background:var(--accent); color:#fff;
+    padding:10px 14px; box-shadow:0 2px 6px rgba(0,0,0,.15);
+  }
+  header h1{margin:0; font-size:17px; font-weight:700; letter-spacing:.02em}
+  header .meta{font-size:12px; opacity:.9; margin-top:2px}
+  .wrap{padding:12px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px}
+  .card h2{margin:0 0 10px; font-size:15px; font-weight:700; display:flex; align-items:center; gap:6px}
+  .muted{color:var(--sub); font-size:13px}
+  button{font-family:inherit; cursor:pointer; border:none; border-radius:10px; font-size:14px}
+  .btn{background:var(--accent); color:#fff; padding:11px 16px; font-weight:700}
+  .btn:active{background:var(--accent-d)}
+  .btn.block{display:block; width:100%}
+  .btn.ghost{background:#eef1f4; color:var(--ink); font-weight:600}
+  .btn.sm{padding:7px 11px; font-size:13px}
+  .btn.danger{background:#fdeceb; color:var(--red); font-weight:600}
+  input[type=text],input[type=date],select{
+    font-family:inherit; font-size:15px; padding:9px 10px; border:1px solid var(--line);
+    border-radius:9px; background:#fff; color:var(--ink); width:100%;
+  }
+  .row{display:flex; gap:8px; align-items:center}
+  .row.wrap{flex-wrap:wrap}
+
+  /* tabs */
+  nav.tabs{
+    position:fixed; bottom:0; left:0; right:0; z-index:60; display:flex;
+    background:#fff; border-top:1px solid var(--line); box-shadow:0 -2px 8px rgba(0,0,0,.06);
+  }
+  nav.tabs button{
+    flex:1; background:none; padding:9px 4px 8px; color:var(--sub); font-size:11px; font-weight:600;
+    display:flex; flex-direction:column; align-items:center; gap:3px; border-radius:0;
+  }
+  nav.tabs button .ic{font-size:20px; line-height:1}
+  nav.tabs button.active{color:var(--accent)}
+
+  /* legend */
+  .legend{display:flex; gap:12px; flex-wrap:wrap; font-size:12.5px; color:var(--sub)}
+  .legend span{display:inline-flex; align-items:center; gap:4px}
+  .dot{width:15px; height:15px; border-radius:50%; display:inline-block; flex:none; border:1px solid rgba(0,0,0,.15)}
+  .dot.g{background:var(--green)} .dot.y{background:var(--yellow)} .dot.r{background:var(--red)} .dot.k{background:var(--black)}
+
+  /* matrix */
+  .scroller{overflow:auto; -webkit-overflow-scrolling:touch; border:1px solid var(--line); border-radius:10px}
+  table.grid{border-collapse:separate; border-spacing:0; font-size:13px}
+  table.grid th,table.grid td{border-right:1px solid var(--line); border-bottom:1px solid var(--line); text-align:center}
+  table.grid thead th{
+    position:sticky; top:0; z-index:20; background:#fafbfc; font-weight:600; padding:5px 3px; min-width:46px; height:42px;
+  }
+  table.grid thead th.corner{left:0; z-index:30; min-width:96px; text-align:left; padding-left:10px}
+  table.grid tbody th.name{
+    position:sticky; left:0; z-index:10; background:#fafbfc; text-align:left; padding:4px 8px; min-width:96px;
+    font-weight:600; white-space:nowrap;
+  }
+  table.grid tbody th.name .gr{color:var(--sub); font-weight:400; font-size:11px}
+  table.grid td.cell{width:46px; height:40px; padding:0; cursor:pointer; user-select:none}
+  .cell .mk{width:26px; height:26px; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:13px}
+  .cell.ok .mk{background:var(--green)}
+  .cell.maybe .mk{background:var(--yellow); color:#7a5c00}
+  .cell.ng .mk{background:var(--red)}
+  .cell.on{box-shadow:inset 0 0 0 3px var(--black)}
+  .wknd{color:var(--red)}
+  .sat{color:#2563eb}
+
+  /* result */
+  .day{display:flex; align-items:center; gap:10px; padding:9px 4px; border-bottom:1px solid var(--line)}
+  .day:last-child{border-bottom:none}
+  .day .date{width:78px; flex:none; font-weight:700; font-size:14px}
+  .day .date small{display:block; font-weight:400; color:var(--sub); font-size:11px}
+  .slots{display:flex; gap:6px; flex:1; flex-wrap:wrap}
+  .chip{display:inline-flex; align-items:center; gap:5px; padding:6px 9px; border-radius:20px; background:#eef1f4; font-size:13px; font-weight:600; cursor:pointer}
+  .chip .cd{width:11px; height:11px; border-radius:50%}
+  .chip.pin{background:#e8eaed; box-shadow:inset 0 0 0 1.5px var(--black)}
+  .chip.empty{background:#fff; border:1.5px dashed #cfd4da; color:var(--sub); font-weight:500}
+  .chip.warn{background:#fdeceb; color:var(--red)}
+  .cnt-tbl{width:100%; border-collapse:collapse; font-size:13.5px}
+  .cnt-tbl td{padding:8px 4px; border-bottom:1px solid var(--line)}
+  .cnt-tbl td.n{font-weight:600}
+  .cnt-tbl td.c{text-align:right; width:52px; color:var(--sub)}
+  .cnt-tbl td.lk{width:92px; text-align:right}
+  .pill{display:inline-block; padding:3px 9px; border-radius:20px; font-size:12px; font-weight:700}
+  .pill.done{background:#e7f5e9; color:var(--accent-d)}
+  .pill.open{background:#eef1f4; color:var(--sub)}
+
+  .mlist{list-style:none; margin:0; padding:0}
+  .mlist li{display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--line)}
+  .mlist li:last-child{border-bottom:none}
+  .mlist .mn{flex:1; font-weight:600}
+  .mlist .mn small{color:var(--sub); font-weight:400; margin-left:4px}
+
+  .banner{background:#fff8e1; border:1px solid #ffe082; color:#8a6d00; border-radius:10px; padding:9px 12px; font-size:13px; margin-bottom:10px}
+  .toast{position:fixed; left:50%; bottom:88px; transform:translateX(-50%); background:#333; color:#fff; padding:9px 16px; border-radius:22px; font-size:13.5px; opacity:0; transition:opacity .25s; z-index:100; pointer-events:none}
+  .toast.show{opacity:.95}
+
+  /* modal */
+  .ov{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:90; display:none; align-items:flex-end}
+  .ov.show{display:flex}
+  .sheet{background:#fff; width:100%; max-height:76vh; overflow:auto; border-radius:16px 16px 0 0; padding:16px}
+  .sheet h3{margin:0 0 10px; font-size:15px}
+  .opt{display:flex; align-items:center; gap:10px; padding:11px 8px; border-bottom:1px solid var(--line); cursor:pointer}
+  .opt:last-child{border-bottom:none}
+  .hidden{display:none!important}
+  .wd{display:flex; gap:5px; flex-wrap:wrap}
+  .wd label{flex:1; min-width:38px; text-align:center; border:1px solid var(--line); border-radius:8px; padding:7px 0; font-size:13px}
+  .wd input{display:none}
+  .wd input:checked+span{color:var(--accent); font-weight:700}
+  .wd label:has(input:checked){border-color:var(--accent); background:#eef7ef}
+</style>
+</head>
+<body>
+<header>
+  <h1>🗓️ 当番シフト自動作成</h1>
+  <div class="meta" id="hdrMeta"></div>
+</header>
+
+<main class="wrap">
+  <!-- ===== 入力タブ ===== -->
+  <section id="tab-input">
+    <div class="card">
+      <h2>出欠を入力</h2>
+      <div class="muted" style="margin-bottom:8px">セルをタップするたびに 空 → 🟢 → 🟡 → 🔴 と切り替わります。</div>
+      <div class="legend">
+        <span><i class="dot g"></i>出られる（優先）</span>
+        <span><i class="dot y"></i>要確認（○が足りない時）</span>
+        <span><i class="dot r"></i>出られない</span>
+      </div>
+    </div>
+    <div class="card" style="padding:8px">
+      <div class="scroller" id="gridWrap"></div>
+    </div>
+  </section>
+
+  <!-- ===== 自動作成タブ ===== -->
+  <section id="tab-auto" class="hidden">
+    <div class="card">
+      <div class="row" style="gap:10px">
+        <button class="btn" style="flex:1" id="btnGen">⚡ 自動で組む</button>
+        <button class="btn ghost sm" id="btnClearAssign">クリア</button>
+      </div>
+      <div class="muted" style="margin-top:8px">
+        🟢を優先し、足りない日だけ🟡を使います。<span class="dot k" style="width:11px;height:11px;vertical-align:-1px"></span> 印は「暫定確定」で自動作成でも動きません。
+      </div>
+    </div>
+    <div id="genWarn"></div>
+    <div class="card">
+      <h2>📅 日ごとの当番</h2>
+      <div id="dayList"></div>
+    </div>
+    <div class="card">
+      <h2>👥 回数と確定状況</h2>
+      <div class="muted" style="margin-bottom:6px">「確定」にした人は自動作成で触りません。変更したい時は確定を外すと <span class="dot k" style="width:11px;height:11px;vertical-align:-1px"></span> も動かせます。</div>
+      <table class="cnt-tbl" id="cntTbl"></table>
+    </div>
+  </section>
+
+  <!-- ===== 設定タブ ===== -->
+  <section id="tab-set" class="hidden">
+    <div class="card">
+      <h2>⏰ 練習・当番の設定</h2>
+      <label class="muted">時間</label>
+      <input type="text" id="setTime" placeholder="午後7時30分〜8時30分" style="margin:4px 0 10px">
+      <label class="muted">場所</label>
+      <input type="text" id="setPlace" placeholder="一区区民会館 2階 集会室" style="margin:4px 0 10px">
+      <label class="muted">1日の当番人数</label>
+      <input type="text" id="setPer" inputmode="numeric" style="margin:4px 0 0; width:90px">
+    </div>
+
+    <div class="card">
+      <h2>👥 メンバー（<span id="mCount">0</span>人）</h2>
+      <ul class="mlist" id="mList"></ul>
+      <div class="row" style="margin-top:10px">
+        <input type="text" id="mName" placeholder="名前">
+        <input type="text" id="mGrade" placeholder="学年" style="width:80px">
+        <button class="btn sm" id="mAdd">追加</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>📅 対象の日を作る</h2>
+      <div class="muted">曜日と期間を選んで「日付を作成」。個別の追加・削除もできます。</div>
+      <div class="wd" style="margin:10px 0">
+        <label><input type="checkbox" data-wd="0"><span>日</span></label>
+        <label><input type="checkbox" data-wd="1"><span>月</span></label>
+        <label><input type="checkbox" data-wd="2"><span>火</span></label>
+        <label><input type="checkbox" data-wd="3"><span>水</span></label>
+        <label><input type="checkbox" data-wd="4"><span>木</span></label>
+        <label><input type="checkbox" data-wd="5"><span>金</span></label>
+        <label><input type="checkbox" data-wd="6"><span>土</span></label>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <div style="flex:1"><label class="muted">開始</label><input type="date" id="dFrom"></div>
+        <div style="flex:1"><label class="muted">終了</label><input type="date" id="dTo"></div>
+      </div>
+      <button class="btn block sm" id="dGen" style="margin-bottom:12px">この条件で日付を作成（既存に追加）</button>
+      <div class="row"><input type="date" id="dOne"><button class="btn ghost sm" id="dAdd">1日追加</button></div>
+      <ul class="mlist" id="dList" style="margin-top:10px"></ul>
+    </div>
+
+    <div class="card">
+      <h2>💾 データ</h2>
+      <div class="row wrap">
+        <button class="btn ghost sm" id="btnCopy">📋 結果をコピー</button>
+        <button class="btn ghost sm" id="btnExport">書き出し(JSON)</button>
+        <button class="btn ghost sm" id="btnImport">読み込み(JSON)</button>
+        <button class="btn danger sm" id="btnReset">全消去</button>
+      </div>
+    </div>
+    <div class="muted" style="text-align:center; margin:6px 0 20px">データはこの端末に自動保存されます。</div>
+  </section>
+</main>
+
+<nav class="tabs">
+  <button data-tab="input" class="active"><span class="ic">✍️</span>出欠入力</button>
+  <button data-tab="auto"><span class="ic">⚡</span>自動作成</button>
+  <button data-tab="set"><span class="ic">⚙️</span>設定</button>
+</nav>
+
+<div class="toast" id="toast"></div>
+<div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const KEY = "toban-shift-v1";
+const uid = () => Math.random().toString(36).slice(2,9);
+
+/* ---------- state ---------- */
+let S = load() || seed();
+
+function seed(){
+  const names = [
+    ["平岩","小5"],["伊藤","小4"],["太田","中1"],["家田","小4"],["内山","小4"],
+    ["近藤","中2"],["田中","中2"],["萱島","小3"],["大羅","小1"],["佐野","小1"],
+    ["中島","小1"],["池野","中3"],["鈴木","小2"],["渡邉","小3"],["Jeniffer","—"]
+  ];
+  return {
+    time:"午後7時30分〜8時30分", place:"一区区民会館 2階 集会室", per:2,
+    members: names.map(([n,g])=>({id:uid(), name:n, grade:g, locked:false})),
+    dates: [],
+    avail: {},          // avail[memberId][date] = 'ok'|'maybe'|'ng'
+    assign: {}          // assign[date] = [{m:id, pin:bool}]
+  };
+}
+function load(){ try{return JSON.parse(localStorage.getItem(KEY))}catch(e){return null} }
+function save(){ localStorage.setItem(KEY, JSON.stringify(S)); }
+
+/* ---------- helpers ---------- */
+const WD = ["日","月","火","水","木","金","土"];
+function d2(iso){ const [y,m,d]=iso.split("-").map(Number); return {y,m,d, wd:new Date(y,m-1,d).getDay()}; }
+function fmtShort(iso){ const o=d2(iso); return `${o.m}/${o.d}`; }
+function wdClass(wd){ return wd===0?"wknd":wd===6?"sat":""; }
+function av(m,dt){ return (S.avail[m]&&S.avail[m][dt])||""; }
+function setAv(m,dt,v){ (S.avail[m]=S.avail[m]||{}); if(v) S.avail[m][dt]=v; else delete S.avail[m][dt]; }
+function member(id){ return S.members.find(m=>m.id===id); }
+
+function toast(t){ const el=$("#toast"); el.textContent=t; el.classList.add("show"); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove("show"),1600); }
+
+/* ---------- scheduling ---------- */
+function autoGenerate(){
+  const per = Math.max(1, parseInt(S.per)||2);
+  const dates = [...S.dates].sort();
+  const counts = {}; S.members.forEach(m=>counts[m.id]=0);
+  const lastDay = {}; // memberId -> index of last assigned date (連日回避用)
+  const next = {};
+
+  // 1) 既存の「暫定確定(pin)」と「確定メンバー」の割当を維持
+  dates.forEach((dt,i)=>{
+    next[dt]=[];
+    const cur = S.assign[dt]||[];
+    cur.forEach(a=>{
+      const m = member(a.m); if(!m) return;
+      const keep = a.pin || m.locked;
+      if(keep && next[dt].length<per && !next[dt].some(x=>x.m===a.m)){
+        next[dt].push({m:a.m, pin:a.pin});
+        counts[a.m]++; lastDay[a.m]=i;
+      }
+    });
+  });
+
+  // 2) 残りの枠を埋める
+  const shortage = [];
+  dates.forEach((dt,i)=>{
+    while(next[dt].length < per){
+      const taken = new Set(next[dt].map(x=>x.m));
+      const pick = (level)=>{
+        const cands = S.members.filter(m=>
+          !m.locked && !taken.has(m.id) && av(m.id,dt)===level
+        );
+        if(!cands.length) return null;
+        cands.sort((a,b)=>{
+          if(counts[a.id]!==counts[b.id]) return counts[a.id]-counts[b.id];        // 回数が少ない人優先
+          const pa=(lastDay[a.id]===i-1)?1:0, pb=(lastDay[b.id]===i-1)?1:0;         // 連日を避ける
+          if(pa!==pb) return pa-pb;
+          return Math.random()-0.5;
+        });
+        return cands[0];
+      };
+      const chosen = pick("ok") || pick("maybe");
+      if(!chosen){ shortage.push({dt, need: per-next[dt].length}); break; }
+      next[dt].push({m:chosen.id, pin:false});
+      counts[chosen.id]++; lastDay[chosen.id]=i;
+    }
+  });
+
+  S.assign = next;
+  save(); renderAuto();
+  const uniqShort = [...new Map(shortage.map(s=>[s.dt,s])).values()];
+  toast(uniqShort.length ? `${uniqShort.length}日ぶん 人が足りません` : "自動作成しました");
+}
+
+/* ---------- render: input grid ---------- */
+function renderGrid(){
+  const dates=[...S.dates].sort();
+  if(!S.members.length || !dates.length){
+    $("#gridWrap").innerHTML = `<div class="muted" style="padding:20px;text-align:center">設定タブでメンバーと日付を追加してください。</div>`;
+    return;
+  }
+  let h = '<table class="grid"><thead><tr><th class="corner">名前 \\ 日</th>';
+  dates.forEach(dt=>{ const o=d2(dt); h+=`<th class="${wdClass(o.wd)}">${o.m}/${o.d}<br><small>${WD[o.wd]}</small></th>`; });
+  h += '</tr></thead><tbody>';
+  S.members.forEach(m=>{
+    h += `<tr><th class="name">${esc(m.name)}<span class="gr">${esc(m.grade||"")}</span></th>`;
+    dates.forEach(dt=>{
+      const v=av(m.id,dt);
+      const cls = v==="ok"?"ok":v==="maybe"?"maybe":v==="ng"?"ng":"";
+      const mk = v==="ok"?"○":v==="maybe"?"△":v==="ng"?"×":"";
+      h += `<td class="cell ${cls}" data-m="${m.id}" data-dt="${dt}"><div class="mk">${mk}</div></td>`;
+    });
+    h += '</tr>';
+  });
+  h += '</tbody></table>';
+  $("#gridWrap").innerHTML = h;
+}
+const CYCLE = ["", "ok", "maybe", "ng"];
+$("#gridWrap").addEventListener("click", e=>{
+  const td = e.target.closest("td.cell"); if(!td) return;
+  const m=td.dataset.m, dt=td.dataset.dt;
+  const cur = av(m,dt);
+  const nv = CYCLE[(CYCLE.indexOf(cur)+1)%CYCLE.length];
+  setAv(m,dt,nv); save();
+  td.className = "cell "+(nv==="ok"?"ok":nv==="maybe"?"maybe":nv==="ng"?"ng":"");
+  td.querySelector(".mk").textContent = nv==="ok"?"○":nv==="maybe"?"△":nv==="ng"?"×":"";
+});
+
+/* ---------- render: auto ---------- */
+function renderAuto(){
+  const dates=[...S.dates].sort();
+  const per = Math.max(1, parseInt(S.per)||2);
+  // day list
+  let dl="";
+  if(!dates.length){ dl=`<div class="muted">日付がありません（設定タブで追加）</div>`; }
+  dates.forEach(dt=>{
+    const o=d2(dt);
+    const cur = S.assign[dt]||[];
+    let chips="";
+    for(let i=0;i<per;i++){
+      const a=cur[i];
+      if(a){
+        const m=member(a.m);
+        const v = m?av(m.id,dt):"";
+        const cd = v==="ok"?"var(--green)":v==="maybe"?"var(--yellow)":v==="ng"?"var(--red)":"#bbb";
+        chips+=`<span class="chip ${a.pin?"pin":""}" data-dt="${dt}" data-slot="${i}"><span class="cd" style="background:${cd}"></span>${m?esc(m.name):"?"}${a.pin?" ⚫️":""}</span>`;
+      }else{
+        chips+=`<span class="chip empty" data-dt="${dt}" data-slot="${i}">＋ 未定</span>`;
+      }
+    }
+    dl+=`<div class="day"><div class="date ${wdClass(o.wd)}">${o.m}/${o.d}<small>(${WD[o.wd]})</small></div><div class="slots">${chips}</div></div>`;
+  });
+  $("#dayList").innerHTML = dl;
+
+  // warnings
+  const short = dates.filter(dt=>(S.assign[dt]||[]).length<per);
+  $("#genWarn").innerHTML = short.length
+    ? `<div class="banner">⚠️ ${short.length}日ぶん 当番が埋まっていません（${short.map(fmtShort).join("、")}）。🟡や出欠を見直すか、手動で追加してください。</div>` : "";
+
+  // counts
+  const cnt={}; S.members.forEach(m=>cnt[m.id]=0);
+  dates.forEach(dt=>(S.assign[dt]||[]).forEach(a=>{ if(cnt[a.m]!=null)cnt[a.m]++; }));
+  let ct="";
+  S.members.forEach(m=>{
+    ct+=`<tr><td class="n">${esc(m.name)} <span class="muted">${esc(m.grade||"")}</span></td>`
+      + `<td class="c">${cnt[m.id]}回</td>`
+      + `<td class="lk"><span class="pill ${m.locked?"done":"open"}" data-lock="${m.id}">${m.locked?"確定 ✓":"未確定"}</span></td></tr>`;
+  });
+  $("#cntTbl").innerHTML = ct;
+}
+$("#cntTbl").addEventListener("click", e=>{
+  const p=e.target.closest("[data-lock]"); if(!p) return;
+  const m=member(p.dataset.lock); m.locked=!m.locked; save(); renderAuto();
+  toast(m.locked?`${m.name} を確定（触りません）`:`${m.name} の確定を解除`);
+});
+
+/* slot tap -> choose member */
+$("#dayList").addEventListener("click", e=>{
+  const chip=e.target.closest(".chip"); if(!chip) return;
+  openSlotSheet(chip.dataset.dt, +chip.dataset.slot);
+});
+function openSlotSheet(dt, slot){
+  const o=d2(dt);
+  const cur=S.assign[dt]||[];
+  const occupied=new Set(cur.map(a=>a.m));
+  const here = cur[slot];
+  let opts = `<h3>${o.m}/${o.d}(${WD[o.wd]}) の当番を選ぶ</h3>`;
+  if(here){
+    opts += `<div class="opt" data-act="pin"><span class="dot k"></span><b>${here.pin?"暫定確定を外す":"暫定確定にする（⚫️ 動かさない）"}</b></div>`;
+    opts += `<div class="opt" data-act="clear"><span style="width:15px">🗑️</span>この枠を空にする</div>`;
+  }
+  const list = S.members
+    .filter(m=>!occupied.has(m.id) || (here&&m.id===here.m))
+    .map(m=>{
+      const v=av(m.id,dt);
+      const cd = v==="ok"?"var(--green)":v==="maybe"?"var(--yellow)":v==="ng"?"var(--red)":"#ccc";
+      const tag = v==="ok"?"○":v==="maybe"?"△":v==="ng"?"× 出られない":"—";
+      const sel = here&&m.id===here.m ? " ✓" : "";
+      return `<div class="opt" data-set="${m.id}"><span class="cd dot" style="background:${cd};width:14px;height:14px"></span><span style="flex:1">${esc(m.name)} <small class="muted">${esc(m.grade||"")}</small></span><small class="muted">${tag}${sel}</small></div>`;
+    }).join("");
+  opts += `<div class="muted" style="margin:10px 0 4px">この枠に入れる人</div>` + list;
+  $("#sheet").innerHTML = opts;
+  $("#ov").classList.add("show");
+  $("#sheet").onclick = ev=>{
+    const el=ev.target.closest(".opt"); if(!el) return;
+    const cur=S.assign[dt]=S.assign[dt]||[];
+    if(el.dataset.act==="pin" && here){ here.pin=!here.pin; }
+    else if(el.dataset.act==="clear"){ cur.splice(slot,1); }
+    else if(el.dataset.set){
+      const id=el.dataset.set;
+      cur[slot]={m:id, pin:true};   // 手動で入れたら暫定確定
+    }
+    // compact (remove holes)
+    S.assign[dt]=cur.filter(Boolean);
+    save(); closeOv(); renderAuto();
+  };
+}
+function closeOv(){ $("#ov").classList.remove("show"); }
+$("#ov").addEventListener("click", e=>{ if(e.target.id==="ov") closeOv(); });
+
+/* ---------- render: settings ---------- */
+function renderSettings(){
+  $("#setTime").value=S.time||""; $("#setPlace").value=S.place||""; $("#setPer").value=S.per||2;
+  $("#mCount").textContent=S.members.length;
+  $("#mList").innerHTML = S.members.map(m=>
+    `<li><span class="mn">${esc(m.name)}<small>${esc(m.grade||"")}</small></span>`
+    +`<button class="btn danger sm" data-del="${m.id}">削除</button></li>`).join("") || `<li class="muted">メンバーがいません</li>`;
+  const dates=[...S.dates].sort();
+  $("#dList").innerHTML = dates.map(dt=>{ const o=d2(dt);
+    return `<li><span class="mn ${wdClass(o.wd)}">${o.y}/${o.m}/${o.d} (${WD[o.wd]})</span><button class="btn danger sm" data-deld="${dt}">削除</button></li>`;
+  }).join("") || `<li class="muted">日付がありません</li>`;
+}
+$("#setTime").addEventListener("input", e=>{ S.time=e.target.value; save(); renderHeader(); });
+$("#setPlace").addEventListener("input", e=>{ S.place=e.target.value; save(); renderHeader(); });
+$("#setPer").addEventListener("input", e=>{ S.per=Math.max(1,parseInt(e.target.value)||2); save(); });
+
+$("#mAdd").addEventListener("click", ()=>{
+  const n=$("#mName").value.trim(); if(!n){toast("名前を入れてください");return;}
+  S.members.push({id:uid(), name:n, grade:$("#mGrade").value.trim(), locked:false});
+  $("#mName").value=""; $("#mGrade").value=""; save(); renderSettings(); renderGrid();
+});
+$("#mList").addEventListener("click", e=>{
+  const b=e.target.closest("[data-del]"); if(!b) return;
+  const m=member(b.dataset.del);
+  if(!confirm(`${m.name} を削除しますか？`)) return;
+  S.members=S.members.filter(x=>x.id!==b.dataset.del);
+  delete S.avail[b.dataset.del];
+  Object.keys(S.assign).forEach(dt=>S.assign[dt]=S.assign[dt].filter(a=>a.m!==b.dataset.del));
+  save(); renderSettings(); renderGrid(); renderAuto();
+});
+
+$("#dGen").addEventListener("click", ()=>{
+  const wds=[...document.querySelectorAll('.wd input:checked')].map(c=>+c.dataset.wd);
+  const from=$("#dFrom").value, to=$("#dTo").value;
+  if(!wds.length){toast("曜日を選んでください");return;}
+  if(!from||!to){toast("期間を選んでください");return;}
+  const set=new Set(S.dates);
+  let cur=new Date(from+"T00:00:00"), end=new Date(to+"T00:00:00"), n=0;
+  while(cur<=end && n<400){
+    if(wds.includes(cur.getDay())){
+      set.add(`${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,"0")}-${String(cur.getDate()).padStart(2,"0")}`);
+    }
+    cur.setDate(cur.getDate()+1); n++;
+  }
+  S.dates=[...set]; save(); renderSettings(); renderGrid(); renderAuto();
+  toast(`日付を作成しました（計${S.dates.length}日）`);
+});
+$("#dAdd").addEventListener("click", ()=>{
+  const v=$("#dOne").value; if(!v){toast("日付を選んでください");return;}
+  if(!S.dates.includes(v)) S.dates.push(v);
+  save(); renderSettings(); renderGrid(); renderAuto();
+});
+$("#dList").addEventListener("click", e=>{
+  const b=e.target.closest("[data-deld]"); if(!b) return;
+  const dt=b.dataset.deld;
+  S.dates=S.dates.filter(x=>x!==dt); delete S.assign[dt];
+  S.members.forEach(m=>{ if(S.avail[m.id]) delete S.avail[m.id][dt]; });
+  save(); renderSettings(); renderGrid(); renderAuto();
+});
+
+/* ---------- data ---------- */
+$("#btnGen").addEventListener("click", autoGenerate);
+$("#btnClearAssign").addEventListener("click", ()=>{
+  if(!confirm("当番の割り当てを全部消しますか？（出欠は残ります）"))return;
+  S.assign={}; save(); renderAuto(); toast("割り当てを消しました");
+});
+$("#btnCopy").addEventListener("click", ()=>{
+  const dates=[...S.dates].sort();
+  let t=`◆当番表  ${S.time||""}\n${S.place?"（"+S.place+"）\n":""}\n`;
+  dates.forEach(dt=>{ const o=d2(dt);
+    const names=(S.assign[dt]||[]).map(a=>{const m=member(a.m);return m?m.name+(a.pin?"⚫️":""):"";}).filter(Boolean);
+    t+=`${o.m}/${o.d}(${WD[o.wd]})  ${names.join("・")||"未定"}\n`;
+  });
+  navigator.clipboard.writeText(t).then(()=>toast("コピーしました")).catch(()=>{ prompt("コピーしてください", t); });
+});
+$("#btnExport").addEventListener("click", ()=>{ prompt("このテキストを保存してください（読み込みに使えます）", JSON.stringify(S)); });
+$("#btnImport").addEventListener("click", ()=>{
+  const t=prompt("書き出したテキストを貼り付けてください"); if(!t)return;
+  try{ const o=JSON.parse(t); S=o; save(); renderAll(); toast("読み込みました"); }catch(e){ toast("読み込めませんでした"); }
+});
+$("#btnReset").addEventListener("click", ()=>{
+  if(!confirm("すべてのデータを消して初期状態に戻しますか？"))return;
+  S=seed(); save(); renderAll(); toast("初期化しました");
+});
+
+/* ---------- tabs / header ---------- */
+document.querySelectorAll("nav.tabs button").forEach(b=>{
+  b.addEventListener("click", ()=>{
+    document.querySelectorAll("nav.tabs button").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+    ["input","auto","set"].forEach(t=>$("#tab-"+t).classList.toggle("hidden", t!==b.dataset.tab));
+    if(b.dataset.tab==="auto") renderAuto();
+    if(b.dataset.tab==="set") renderSettings();
+    if(b.dataset.tab==="input") renderGrid();
+    window.scrollTo(0,0);
+  });
+});
+function renderHeader(){ $("#hdrMeta").textContent = [S.time,S.place].filter(Boolean).join("　／　"); }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+function renderAll(){ renderHeader(); renderGrid(); renderAuto(); renderSettings(); }
+renderAll();
+</script>
+</body>
+</html>
