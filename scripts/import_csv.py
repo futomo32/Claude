@@ -228,6 +228,17 @@ def main():
     prod_names = {}     # 商品キー→商品名(処方箋のレンズ/フレーム名解決に使う)
     prod_is_glass = {}  # 商品キー→メガネ商品か(処方箋の宝飾誤登録判定に使う)
     buf, cnt = [], 0
+    # 不明在庫などの削除リスト(商品番号を1行ずつ書いたテキスト)。あれば該当商品を取り込まない。
+    # 置き場所: data/real/削除商品番号.txt (SRC=data/real/csv の一つ上)。#で始まる行はコメント。
+    del_nos = set()
+    del_path = os.path.join(SRC, "..", "削除商品番号.txt")
+    if os.path.exists(del_path):
+        with open(del_path, encoding="utf-8") as f:
+            for line in f:
+                v = line.strip()
+                if v and not v.startswith("#"):
+                    del_nos.add(v)
+    skipped_del = 0
     ins_prod = """INSERT INTO products
       (product_key,product_no,name,info,category,supplier,cost_price,list_price,state,
        location,center_stone,center_carat,color,clarity,cut,cert_no,is_glasses,registered_at)
@@ -235,6 +246,9 @@ def main():
     for r in rows("d_item"):
         pk = pk_of(r)
         if not pk or pk in pseen:
+            continue
+        if del_nos and s(r.get("strsyno")) in del_nos:
+            skipped_del += 1  # 削除リストの商品番号 → 取り込まない
             continue
         pseen.add(pk)
         cat = m_dbun.get(s(r.get("strdbuncode")))
@@ -259,6 +273,8 @@ def main():
         cur.executemany(ins_prod, buf)
         cnt += len(buf)
     log["products"] = cnt
+    if del_nos:
+        log["products_skipped(削除リスト)"] = skipped_del
 
     # ── 売上: d_hanbai を伝票(curdenpyono)でヘッダ+明細に分割 ──
     # 伝票番号→slip_id を確保しつつ、明細をバッチ投入
