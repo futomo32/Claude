@@ -501,8 +501,9 @@ function autoGenerate(){
       const m = member(a.m); if(!m) return;
       if(next[dt].some(x=>x.m===a.m)) return;      // 重複防止
       const ng = av(m.id,dt)==="ng";
-      if(isLocked(m)){                              // 確定：触らない（🔴でもそのまま）
-        if(activeCnt(dt)<per){ next[dt].push({m:a.m, pin:a.pin}); counts[a.m]++; lastDay[a.m]=i; }
+      if(isLocked(m)){                              // 確定：触らない。ただし本人が🔴の日は外す（×が最優先）
+        if(ng){ next[dt].push({m:a.m, pin:a.pin, dropped:true}); }
+        else if(activeCnt(dt)<per){ next[dt].push({m:a.m, pin:a.pin}); counts[a.m]++; lastDay[a.m]=i; }
       } else if(a.pin && S.keepPins){               // 暫定⚫️を残すモードの時だけ固定を維持
         if(ng){
           next[dt].push({m:a.m, pin:true, dropped:true});   // 🔴 → グレーで残して外す
