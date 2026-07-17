@@ -103,6 +103,7 @@
   .pill{display:inline-block; padding:3px 9px; border-radius:20px; font-size:12px; font-weight:700}
   .pill.done{background:#e7f5e9; color:var(--accent-d)}
   .pill.open{background:#eef1f4; color:var(--sub)}
+  .pill.flex{background:#fff3e0; color:#b26a00}
 
   .mlist{list-style:none; margin:0; padding:0}
   .mlist li{display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--line)}
@@ -174,7 +175,7 @@
         <button class="btn ghost sm" id="btnClearAssign">クリア</button>
       </div>
       <div class="muted" style="margin-top:8px">
-        🟢を優先し、足りない日だけ🟡を使います。<span class="dot k" style="width:11px;height:11px;vertical-align:-1px"></span> 印は「暫定確定」で自動作成でも動きません。
+        🟢を優先し、足りない日だけ🟡を使います。<span class="dot k" style="width:11px;height:11px;vertical-align:-1px"></span>（暫定確定）は基本動きませんが、本人が🔴の日、または<b style="color:#b26a00">変更希望</b>の人の⚫️は差し替え対象になります。
       </div>
     </div>
     <div id="genWarn"></div>
@@ -183,8 +184,8 @@
       <div id="dayList"></div>
     </div>
     <div class="card">
-      <h2>👥 回数と確定状況</h2>
-      <div class="muted" style="margin-bottom:6px">「確定」にした人は自動作成で触りません。変更したい時は確定を外すと <span class="dot k" style="width:11px;height:11px;vertical-align:-1px"></span> も動かせます。</div>
+      <h2>👥 回数と状態</h2>
+      <div class="muted" style="margin-bottom:6px">名前の右をタップで状態が切替：<b>通常</b>→<b style="color:#b26a00">変更希望</b>→<b style="color:var(--accent-d)">確定</b>。<br><b>確定</b>＝触らない／<b style="color:#b26a00">変更希望</b>＝⚫️も融通OK（🔴解消の差し替えに優先的に使う）。</div>
       <table class="cnt-tbl" id="cntTbl"></table>
     </div>
   </section>
@@ -264,6 +265,7 @@ function hasAny(o){ if(!o) return false; for(const k in o){ const v=o[k]; if(v&&
 let S = load();
 if(!S){ S = seed(); }                                   // まっさらな初回：画像データを反映
 else if(!(S.dates&&S.dates.length) && !hasAny(S.avail) && !hasAny(S.assign)){ S = seed(); } // 空っぽのまま＝実質未使用なら反映
+S.members.forEach(m=>{ if(!m.status) m.status = m.locked ? 'locked' : 'normal'; });  // 旧データ移行
 save();
 
 function emptySeed(){
@@ -274,7 +276,7 @@ function emptySeed(){
   ];
   return {
     time:"午後7時30分〜8時30分", place:"一区区民会館 2階 集会室", per:2,
-    members: names.map(([n,g])=>({id:uid(), name:n, grade:g, locked:false})),
+    members: names.map(([n,g])=>({id:uid(), name:n, grade:g, locked:false, status:'normal'})),
     dates: [],
     avail: {},          // avail[memberId][date] = 'ok'|'maybe'|'ng'
     assign: {}          // assign[date] = [{m:id, pin:bool}]
@@ -287,7 +289,7 @@ function seed(){
     ["近藤","中2"],["田中","中2"],["萱島","小3"],["大羅","小1"],["佐野","小1"],
     ["中島","小1"],["池野","中3"],["鈴木","小2"],["渡邉","小3"],["Jeniffer","—"]
   ];
-  const members=M.map(([n,g])=>({id:uid(), name:n, grade:g, locked:false}));
+  const members=M.map(([n,g])=>({id:uid(), name:n, grade:g, locked:false, status:'normal'}));
   const id={}; members.forEach(m=>id[m.name]=m.id);
   const dates=[
     "2026-07-29","2026-07-30","2026-07-31","2026-08-01","2026-08-02",
@@ -335,6 +337,8 @@ function wdClass(wd){ return wd===0?"wknd":wd===6?"sat":""; }
 function av(m,dt){ return (S.avail[m]&&S.avail[m][dt])||""; }
 function setAv(m,dt,v){ (S.avail[m]=S.avail[m]||{}); if(v) S.avail[m][dt]=v; else delete S.avail[m][dt]; }
 function member(id){ return S.members.find(m=>m.id===id); }
+function isLocked(m){ return (m.status||'normal')==='locked'; }   // 確定：触らない
+function isFlex(m){ return (m.status||'normal')==='flex'; }       // 変更希望：⚫️も融通OK
 
 function toast(t){ const el=$("#toast"); el.textContent=t; el.classList.add("show"); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove("show"),1600); }
 
@@ -357,13 +361,15 @@ function autoGenerate(){
       const m = member(a.m); if(!m) return;
       if(next[dt].some(x=>x.m===a.m)) return;      // 重複防止
       const ng = av(m.id,dt)==="ng";
-      if(m.locked){                                 // 確定：触らない（🔴でもそのまま）
+      if(isLocked(m)){                              // 確定：触らない（🔴でもそのまま）
         if(activeCnt(dt)<per){ next[dt].push({m:a.m, pin:a.pin}); counts[a.m]++; lastDay[a.m]=i; }
       } else if(a.pin){                             // 暫定⚫️
         if(ng){
           next[dt].push({m:a.m, pin:true, dropped:true});   // 🔴 → グレーで残して外す
+        } else if(isFlex(m)){
+          // 変更希望：⚫️を固定せずプールに戻す（融通OK＝差し替え候補になる）
         } else if(activeCnt(dt)<per){
-          next[dt].push({m:a.m, pin:true}); counts[a.m]++; lastDay[a.m]=i;
+          next[dt].push({m:a.m, pin:true}); counts[a.m]++; lastDay[a.m]=i;   // 通常：⚫️は固定
         }
       }
       // それ以外（前回の自動割当）は捨てて組み直す
@@ -377,10 +383,12 @@ function autoGenerate(){
       const taken = new Set(next[dt].map(x=>x.m));
       const pick = (level)=>{
         const cands = S.members.filter(m=>
-          !m.locked && !taken.has(m.id) && av(m.id,dt)===level
+          !isLocked(m) && !taken.has(m.id) && av(m.id,dt)===level
         );
         if(!cands.length) return null;
         cands.sort((a,b)=>{
+          const fa=isFlex(a)?0:1, fb=isFlex(b)?0:1;                                 // ①変更希望者を優先して融通に使う
+          if(fa!==fb) return fa-fb;
           if(counts[a.id]!==counts[b.id]) return counts[a.id]-counts[b.id];        // 回数が少ない人優先
           const pa=(lastDay[a.id]===i-1)?1:0, pb=(lastDay[b.id]===i-1)?1:0;         // 連日を避ける
           if(pa!==pb) return pa-pb;
@@ -477,16 +485,25 @@ function renderAuto(){
   dates.forEach(dt=>activeSlots(dt).forEach(a=>{ if(cnt[a.m]!=null)cnt[a.m]++; }));
   let ct="";
   S.members.forEach(m=>{
+    const st=m.status||'normal';
+    const lbl = st==='locked'?'確定 ✓' : st==='flex'?'変更希望' : '通常';
+    const pc  = st==='locked'?'done'   : st==='flex'?'flex'     : 'open';
     ct+=`<tr><td class="n">${esc(m.name)} <span class="muted">${esc(m.grade||"")}</span></td>`
       + `<td class="c">${cnt[m.id]}回</td>`
-      + `<td class="lk"><span class="pill ${m.locked?"done":"open"}" data-lock="${m.id}">${m.locked?"確定 ✓":"未確定"}</span></td></tr>`;
+      + `<td class="lk"><span class="pill ${pc}" data-cyc="${m.id}">${lbl}</span></td></tr>`;
   });
   $("#cntTbl").innerHTML = ct;
 }
 $("#cntTbl").addEventListener("click", e=>{
-  const p=e.target.closest("[data-lock]"); if(!p) return;
-  const m=member(p.dataset.lock); m.locked=!m.locked; save(); renderAuto();
-  toast(m.locked?`${m.name} を確定（触りません）`:`${m.name} の確定を解除`);
+  const p=e.target.closest("[data-cyc]"); if(!p) return;
+  const m=member(p.dataset.cyc);
+  const order=['normal','flex','locked'];
+  m.status = order[(order.indexOf(m.status||'normal')+1)%3];
+  m.locked = (m.status==='locked');
+  save(); renderAuto();
+  toast(m.status==='locked'?`${m.name}：確定（触りません）`
+       :m.status==='flex'  ?`${m.name}：変更希望（⚫️も融通OK）`
+                            :`${m.name}：通常`);
 });
 
 /* slot tap -> choose member */
