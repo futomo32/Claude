@@ -106,6 +106,7 @@
   .chip.locked{background:#e5e7eb; color:#5f6368; cursor:pointer; box-shadow:none}
   .chip.res{background:#eef2f7; color:#33415c; border:1px solid #cfd8e6; font-weight:600}
   .chip.res.full{opacity:.55}
+  .chip.res.more{background:#dbe3f0; color:#2b3a55; font-weight:700}
   .chip.res small{color:var(--sub); font-weight:400; margin-left:2px}
   .reslabel{align-self:center; font-size:11px; color:var(--sub); margin-left:6px; margin-right:1px; white-space:nowrap}
   .histlist{list-style:none; margin:0; padding:0}
@@ -712,6 +713,24 @@ function logHistory(text){
   S.history.unshift({text, before:JSON.stringify(S.assign)});
   if(S.history.length>30) S.history.length=30;
 }
+// 控え一覧（多い時のポップアップ）
+function openReserveList(dt){
+  const o=d2(dt); const cnt=countAssign();
+  const onDuty=new Set(activeSlots(dt).map(a=>a.m));
+  const reserves=S.members.filter(m=> !onDuty.has(m.id) && slotAv(m.id,dt)==="ok" && (S.incLockedRes||!isLocked(m)))
+    .sort((a,b)=>(cnt[a.id]||0)-(cnt[b.id]||0) || prioRank(a)-prioRank(b));
+  let h=`<h3>${o.m}/${o.d}（${WD[o.wd]}） 控えから採用</h3><div class="muted" style="margin-bottom:6px">回数が少ない順。タップで採用へ。</div>`;
+  reserves.forEach(m=>{ const c=capOf(m); const full=isFinite(c)&&(cnt[m.id]||0)>=c;
+    h+=`<div class="opt" data-res="${m.id}"><span style="flex:1">${prioBadge(m)}${esc(m.name)} <small class="muted">${esc(m.grade||"")}</small></span><small class="muted">${cnt[m.id]||0}${isFinite(c)?"/"+c:""}回${full?" ⚠️上限":""}${isLocked(m)?" 🔒":""}</small></div>`;
+  });
+  h+=`<button class="btn ghost block" id="resCancel" style="margin-top:10px">とじる</button>`;
+  $("#sheet").innerHTML=h; $("#ov").classList.add("show");
+  $("#sheet").onclick=ev=>{
+    if(ev.target.closest("#resCancel")){ closeOv(); return; }
+    const r=ev.target.closest("[data-res]"); if(!r) return;
+    closeOv(); openAdopt(dt, r.dataset.res);
+  };
+}
 // 控えを採用（当番2人のうち1人を控えに落とす）
 function openAdopt(dt, resId){
   const R=member(resId); if(!R) return;
@@ -801,12 +820,13 @@ function renderAuto(){
     // 控え（採用可）：その日に出られる（🟢）で当番でない人。確定は既定で除外
     const onDuty=new Set(act.map(a=>a.m));
     let reserves=S.members.filter(m=> !onDuty.has(m.id) && slotAv(m.id,dt)==="ok" && (S.incLockedRes || !isLocked(m)));
-    reserves.sort((a,b)=>(cnt[a.id]||0)-(cnt[b.id]||0) || prioRank(a)-prioRank(b));
+    reserves.sort((a,b)=>(cnt[a.id]||0)-(cnt[b.id]||0) || prioRank(a)-prioRank(b));   // 回数が少ない順
     if(reserves.length) chips+=`<span class="reslabel">｜控え▶</span>`;
-    reserves.forEach(m=>{
+    reserves.slice(0,3).forEach(m=>{
       const c=capOf(m); const full=isFinite(c)&&(cnt[m.id]||0)>=c;
       chips+=`<span class="chip res ${full?"full":""}" data-dt="${dt}" data-res="${m.id}" title="控え：タップで採用">⚫️${esc(m.name)}<small>${cnt[m.id]||0}${isFinite(c)?"/"+c:""}${full?" ⚠️":""}${isLocked(m)?" 🔒":""}</small></span>`;
     });
+    if(reserves.length>3) chips+=`<span class="chip res more" data-dt="${dt}" data-more="1" title="他の控えを見る">＋他${reserves.length-3}名</span>`;
     dl+=`<div class="day"><div class="date ${wdClass(o.wd)}">${o.m}/${o.d}<small>(${WD[o.wd]})</small></div><div class="slots">${chips}</div></div>`;
   });
   $("#dayList").innerHTML = dl;
@@ -897,8 +917,10 @@ $("#cntTbl").addEventListener("click", e=>{
 
 /* slot tap -> choose member */
 $("#dayList").addEventListener("click", e=>{
+  const more=e.target.closest("[data-more]");
+  if(more){ openReserveList(more.dataset.dt); return; }
   const res=e.target.closest(".chip.res");
-  if(res){ openAdopt(res.dataset.dt, res.dataset.res); return; }
+  if(res && res.dataset.res){ openAdopt(res.dataset.dt, res.dataset.res); return; }
   const g=e.target.closest(".chip.ghost");
   if(g){ openGhost(g.dataset.dt, g.dataset.gm); return; }
   const chip=e.target.closest(".chip"); if(!chip) return;
