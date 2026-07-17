@@ -220,6 +220,7 @@
       <div class="row wrap" style="margin-top:10px; gap:6px; align-items:center">
         <span class="muted" style="font-size:12px">名前の下の状態タップで 通常→変更希望→確定。一括：</span>
         <button class="btn ghost sm" id="allLocked">全員 確定</button>
+        <button class="btn ghost sm" id="allFlex">全員 変更希望</button>
         <button class="btn ghost sm" id="allNormal">全員 通常</button>
       </div>
       <div class="muted" style="font-size:12px; margin-top:6px">「確定」の人は自動作成で動きません。変更希望の人だけ通常/変更希望にすると、他の人に迷惑がかかりません。</div>
@@ -600,9 +601,10 @@ $("#gridWrap").addEventListener("click", e=>{
 function setAllStatus(s){
   S.members.forEach(m=>{ m.status=s; m.locked=(s==='locked'); });
   save(); renderGrid(); renderAuto(); renderView();
-  toast(s==='locked'?"全員を確定にしました":"全員を通常にしました");
+  toast(s==='locked'?"全員を確定にしました":s==='flex'?"全員を変更希望にしました":"全員を通常にしました");
 }
 $("#allLocked").addEventListener("click", ()=>setAllStatus('locked'));
+$("#allFlex").addEventListener("click", ()=>setAllStatus('flex'));
 $("#allNormal").addEventListener("click", ()=>setAllStatus('normal'));
 
 /* 名前タップ → その人の出欠をカレンダーで入力（練習じゃない日は斜線） */
@@ -615,7 +617,12 @@ function renderPersonSheet(mid){
     +`<div class="seg" id="pStatus"><button data-v="normal">通常</button><button data-v="flex">変更希望</button><button data-v="locked">確定</button></div>`
     +`<div class="muted" style="margin:4px 0 10px">確定＝自動で触らない（編集不可扱い）／変更希望＝⚫️も融通OK。</div>`
     +`<div class="legend" style="margin-bottom:8px"><span><i class="dot g"></i>出られる</span><span><i class="dot y"></i>要確認</span><span><i class="dot r"></i>出られない</span><span>斜線＝練習なし</span></div>`
-    +`<div class="muted" style="margin-bottom:8px">日をタップするたび 空→🟢→🟡→🔴 と変わります。</div>`;
+    +`<div class="row wrap" style="gap:6px; margin-bottom:6px"><span class="muted" style="font-size:12px">一括：</span>`
+    +`<button class="btn ghost sm" data-fill="ok">全部◯</button>`
+    +`<button class="btn ghost sm" data-fill="maybe">全部△</button>`
+    +`<button class="btn ghost sm" data-fill="ng">全部✕</button>`
+    +`<button class="btn ghost sm" data-fill="clr">クリア</button></div>`
+    +`<div class="muted" style="margin-bottom:8px">例：「全部✕」→ 出られる少数の日だけ◯に。日をタップで 空→🟢→🟡→🔴。</div>`;
   if(!dates.length) h+=`<div class="muted">日付がありません（設定タブで追加）</div>`;
   const months=[],seen={};
   dates.forEach(dt=>{const o=d2(dt);const k=o.y+'-'+o.m;if(!seen[k]){seen[k]={y:o.y,m:o.m};months.push(seen[k]);}});
@@ -648,6 +655,9 @@ function renderPersonSheet(mid){
     const sb=ev.target.closest("#pStatus button");
     if(sb){ m.status=sb.dataset.v; m.locked=(m.status==='locked'); save(); paintStatus();
       toast(m.status==='locked'?`${m.name}：確定（触りません）`:m.status==='flex'?`${m.name}：変更希望`:`${m.name}：通常`); return; }
+    const fb=ev.target.closest("[data-fill]");
+    if(fb){ const v=fb.dataset.fill==="clr"?"":fb.dataset.fill; [...S.dates].forEach(dt=>setAv(mid,dt,v)); save(); renderPersonSheet(mid);
+      toast(v?"一括で入れました":"クリアしました"); return; }
     if(ev.target.closest("#pDone")){ closeOv(); renderGrid(); renderAuto(); renderView(); return; }
     const td=ev.target.closest("td.pd"); if(!td) return;
     const dt=td.dataset.dt, cur=av(mid,dt);
