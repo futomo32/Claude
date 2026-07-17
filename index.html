@@ -270,9 +270,9 @@
       <input type="text" id="setPlace" placeholder="一区区民会館 2階 集会室" style="margin:4px 0 10px">
       <label class="muted">1日の当番人数</label>
       <input type="text" id="setPer" inputmode="numeric" style="margin:4px 0 10px; width:90px">
-      <label class="muted" style="display:block">1人の上限回数（空欄＝無制限）</label>
-      <input type="text" id="setMax" inputmode="numeric" placeholder="3" style="margin:4px 0 0; width:90px">
-      <div class="muted" style="margin-top:6px">できるだけ均等に割り振ったうえで、この回数を超えないようにします。</div>
+      <label class="muted" style="display:block">全体の上限回数（空欄＝無制限）</label>
+      <input type="text" id="setMax" inputmode="numeric" placeholder="2" style="margin:4px 0 0; width:90px">
+      <div class="muted" style="margin-top:6px">できるだけ均等に割り振り、この回数を超えないようにします。人ごとの上限は「メンバー」から個別に設定できます。</div>
     </div>
 
     <div class="card">
@@ -340,7 +340,7 @@ let S = load();
 if(!S){ S = seed(); }                                   // まっさらな初回：画像データを反映
 else if(!(S.dates&&S.dates.length) && !hasAny(S.avail) && !hasAny(S.assign)){ S = seed(); } // 空っぽのまま＝実質未使用なら反映
 S.members.forEach(m=>{ if(!m.status) m.status = m.locked ? 'locked' : 'normal'; m.prio = (m.prio===true?1:(m.prio===false||m.prio==null?0:(parseInt(m.prio)||0))); });  // 旧データ移行（真偽値→数値の優先度）
-if(S.maxPer===undefined) S.maxPer=3;
+if(S.maxPer===undefined) S.maxPer=2;
 save();
 
 function emptySeed(){
@@ -350,7 +350,7 @@ function emptySeed(){
     ["中島","小1"],["池野","中3"],["鈴木","小2"],["渡邉","小3"],["Jeniffer","—"]
   ];
   return {
-    time:"午後7時30分〜8時30分", place:"一区区民会館 2階 集会室", per:2, maxPer:3,
+    time:"午後7時30分〜8時30分", place:"一区区民会館 2階 集会室", per:2, maxPer:2,
     members: names.map(([n,g])=>({id:uid(), name:n, grade:g, locked:false, status:'normal', prio:0})),
     dates: [],
     avail: {},          // avail[memberId][date] = 'ok'|'maybe'|'ng'
@@ -367,7 +367,7 @@ function seed(){
   const members=M.map(([n,g])=>({id:uid(), name:n, grade:g, locked:false, status:'normal', prio:0}));
   const id={}; members.forEach(m=>id[m.name]=m.id);
   const dates=[
-    "2026-07-29","2026-07-30","2026-07-31","2026-08-01","2026-08-02",
+    "2026-07-29","2026-07-30","2026-07-31","2026-08-02",
     "2026-08-04","2026-08-05","2026-08-06","2026-08-07",
     "2026-08-17","2026-08-18","2026-08-19","2026-08-20","2026-08-21"
   ];
@@ -381,25 +381,25 @@ function seed(){
   setA("伊藤",{"2026-07-29":OK,"2026-07-31":OK,"2026-08-02":OK,"2026-08-05":OK,"2026-08-17":OK,
     "2026-08-19":OK,"2026-08-18":NG});
   // 太田：火・木・土・日×、他は○
-  setA("太田",{"2026-07-29":OK,"2026-07-30":NG,"2026-07-31":OK,"2026-08-01":NG,"2026-08-02":NG,
+  setA("太田",{"2026-07-29":OK,"2026-07-30":NG,"2026-07-31":OK,"2026-08-02":NG,
     "2026-08-04":NG,"2026-08-05":OK,"2026-08-06":NG,"2026-08-07":OK,
     "2026-08-17":OK,"2026-08-18":NG,"2026-08-19":OK,"2026-08-20":NG,"2026-08-21":OK});
   // 家田：可能日○=8/2,4〜7、8/17×
   setA("家田",{"2026-08-02":OK,"2026-08-04":OK,"2026-08-05":OK,"2026-08-06":OK,"2026-08-07":OK,
     "2026-08-17":NG});
   // Jeniffer：木曜・土曜×、16〜20×
-  setA("Jeniffer",{"2026-07-30":NG,"2026-08-01":NG,"2026-08-06":NG,
+  setA("Jeniffer",{"2026-07-30":NG,"2026-08-06":NG,
     "2026-08-17":NG,"2026-08-18":NG,"2026-08-19":NG,"2026-08-20":NG});
   // カレンダーの暫定当番（⚫️＝固定）
   const P=(a,b)=>[{m:id[a],pin:true},{m:id[b],pin:true}];
   const assign={
     "2026-07-29":P("太田","平岩"), "2026-07-30":P("伊藤","萱島"), "2026-07-31":P("渡邉","鈴木"),
-    "2026-08-01":P("池野","田中"), "2026-08-02":P("家田","内山"), "2026-08-04":P("太田","渡邉"),
+    "2026-08-02":P("家田","内山"), "2026-08-04":P("太田","渡邉"),
     "2026-08-05":P("近藤","田中"), "2026-08-06":P("萱島","大羅"), "2026-08-07":P("佐野","中島"),
     "2026-08-17":P("家田","内山"), "2026-08-18":P("平岩","伊藤"), "2026-08-19":P("佐野","中島"),
     "2026-08-20":P("近藤","大羅"), "2026-08-21":P("池野","鈴木")
   };
-  return { time:"午後7時30分〜8時30分", place:"一区区民会館 2階 集会室", per:2, maxPer:3, members, dates, avail, assign };
+  return { time:"午後7時30分〜8時30分", place:"一区区民会館 2階 集会室", per:2, maxPer:2, members, dates, avail, assign };
 }
 function load(){ try{return JSON.parse(localStorage.getItem(KEY))}catch(e){return null} }
 function save(){ localStorage.setItem(KEY, JSON.stringify(S)); }
@@ -433,6 +433,13 @@ function isLocked(m){ return (m.status||'normal')==='locked'; }   // 確定：�
 function isFlex(m){ return (m.status||'normal')==='flex'; }       // 変更希望：⚫️も融通OK
 function prioBadge(m){ return m&&m.prio ? `<span class="star">⭐${m.prio}</span>` : ''; }  // 優先度1〜3
 function prioRank(m){ return m&&m.prio ? m.prio : 99; }           // 小さいほど優先（1が最優先）
+// この人の上限回数：個人設定があればそれ、無ければ全体設定。0/未設定は無制限
+function capOf(m){
+  const own=(m && m.maxOwn!=null && m.maxOwn!=="") ? parseInt(m.maxOwn) : NaN;
+  if(!isNaN(own)) return own>0 ? own : Infinity;
+  const g=parseInt(S.maxPer)||0;
+  return g>0 ? g : Infinity;
+}
 
 function toast(t){ const el=$("#toast"); el.textContent=t; el.classList.add("show"); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove("show"),1600); }
 
@@ -477,10 +484,9 @@ function autoGenerate(){
     while(activeCnt(dt) < per){
       const taken = new Set(next[dt].map(x=>x.m));
       const pick = (level)=>{
-        const cap = parseInt(S.maxPer)||0;   // 0＝無制限
         const cands = S.members.filter(m=>
           !isLocked(m) && !taken.has(m.id) && av(m.id,dt)===level
-          && (!cap || counts[m.id] < cap)     // 上限に達した人は選ばない
+          && counts[m.id] < capOf(m)          // 上限（個人設定 or 全体）に達した人は選ばない
         );
         if(!cands.length) return null;
         cands.sort((a,b)=>{
@@ -661,9 +667,10 @@ function renderAuto(){
     const st=m.status||'normal';
     const lbl = st==='locked'?'確定 ✓' : st==='flex'?'変更希望' : '通常';
     const pc  = st==='locked'?'done'   : st==='flex'?'flex'     : 'open';
-    const cap0=parseInt(S.maxPer)||0; const atCap=cap0 && cnt[m.id]>=cap0;
+    const c0=capOf(m); const atCap=isFinite(c0) && cnt[m.id]>=c0;
+    const own=(m.maxOwn!=null&&m.maxOwn!=="");
     ct+=`<tr><td class="n">${prioBadge(m)}${esc(m.name)} <span class="muted">${esc(m.grade||"")}</span></td>`
-      + `<td class="c">${cnt[m.id]}回${atCap?' <span style="color:#c0392b;font-size:11px">上限</span>':''}</td>`
+      + `<td class="c">${cnt[m.id]}回${own?` <span class="muted" style="font-size:10px">/上限${m.maxOwn}</span>`:''}${atCap?' <span style="color:#c0392b;font-size:11px">上限</span>':''}</td>`
       + `<td class="lk"><span class="pill ${pc}" data-cyc="${m.id}">${lbl}</span></td></tr>`;
   });
   $("#cntTbl").innerHTML = ct;
@@ -675,11 +682,10 @@ function renderAdvice(dates, per, cnt){
   if(!dates.length){ $("#advice").innerHTML=`<li><span class="ic">📌</span>設定タブで日付を追加してください。</li>`; return; }
 
   // 未定の日
-  const cap=parseInt(S.maxPer)||0;
   const short=dates.filter(dt=>activeSlots(dt).length<per);
   if(short.length) tips.push(["⚠️", `未定の日が${short.length}日（${short.map(fmtShort).join("、")}）。その日を🟢にできる人がいないか確認、または誰かを「変更希望」にすると埋めやすくなります。`]);
-  if(short.length && cap && S.members.some(m=>!isLocked(m) && (cnt[m.id]||0)>=cap)){
-    tips.push(["🔢", `上限${cap}回に達した人がいます。未定が埋まらない時は設定で上限を上げてみてください。`]);
+  if(short.length && S.members.some(m=>!isLocked(m) && isFinite(capOf(m)) && (cnt[m.id]||0)>=capOf(m))){
+    tips.push(["🔢", `上限に達した人がいます。未定が埋まらない時は、全体または個人の上限を上げてみてください。`]);
   }
 
   // 🔴で外れた暫定（グレー）
@@ -829,6 +835,8 @@ function openMemberSheet(id){
     +`<input type="text" id="emName" style="margin:4px 0 10px">`
     +`<label class="muted">学年（任意）</label>`
     +`<input type="text" id="emGrade" style="margin:4px 0 12px">`
+    +`<label class="muted">この人の上限回数（空欄＝全体設定：${S.maxPer||"無制限"}）</label>`
+    +`<input type="text" id="emMax" inputmode="numeric" placeholder="全体：${S.maxPer||"無制限"}" style="margin:4px 0 12px; width:120px">`
     +`<label class="muted">優先度（1が最優先 → 2 → 3 → なし）</label>`
     +`<div class="seg" id="emPrio"><button data-v="0">なし</button><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button></div>`
     +`<div class="muted" style="margin:6px 0 14px">1の人は、出られる日で必ず先に当番へ入れます。</div>`
@@ -836,6 +844,7 @@ function openMemberSheet(id){
     +`<button class="btn danger" id="emDel">削除</button></div>`;
   $("#ov").classList.add("show");
   $("#emName").value=m.name; $("#emGrade").value=m.grade||"";
+  $("#emMax").value=(m.maxOwn!=null&&m.maxOwn!=="")?m.maxOwn:"";
   let prio = m.prio||0;
   const paint=()=>{ document.querySelectorAll("#emPrio button").forEach(x=>x.classList.toggle("on", +x.dataset.v===prio)); };
   paint();
@@ -844,7 +853,8 @@ function openMemberSheet(id){
   $("#emSave").onclick=()=>{
     const n=$("#emName").value.trim(); if(!n){toast("名前を入れてください");return;}
     m.name=n; m.grade=$("#emGrade").value.trim(); m.prio=prio;
-    save(); closeOv(); renderSettings(); renderGrid(); renderAuto(); toast("保存しました");
+    const mv=$("#emMax").value.trim(); m.maxOwn = mv==="" ? null : Math.max(1,parseInt(mv)||1);
+    save(); closeOv(); renderSettings(); renderGrid(); renderAuto(); renderView(); toast("保存しました");
   };
   $("#emDel").onclick=()=>{
     if(!confirm(`${m.name} を削除しますか？（この人の出欠・割り当ても消えます）`)) return;
