@@ -227,8 +227,12 @@
         <button class="btn ghost sm" id="btnClearAssign">クリア</button>
       </div>
       <div class="muted" style="margin-top:8px">
-        🟢を優先し、足りない日だけ🟡を使います。<span class="dot k" style="width:11px;height:11px;vertical-align:-1px"></span>（暫定確定）は基本動きませんが、本人が🔴の日、または<b style="color:#b26a00">変更希望</b>の人の⚫️は差し替え対象になります。
+        🟢を優先し、足りない日だけ🟡を使います。ふだんは毎回、<b>確定の人以外を均等に組み直します</b>（優先度・上限を反映）。出欠を1つも入力していない人は「いつでもOK」として均等に入れます。
       </div>
+      <label class="row" style="margin-top:8px; gap:8px; align-items:center; cursor:pointer">
+        <input type="checkbox" id="chkKeep" style="width:auto; transform:scale(1.2)">
+        <span class="muted"><span class="dot k" style="width:11px;height:11px;vertical-align:-1px"></span>暫定⚫️を固定して残す（オフ＝均等に組み直す）</span>
+      </label>
     </div>
     <div id="genWarn"></div>
     <div class="card">
@@ -341,6 +345,7 @@ if(!S){ S = seed(); }                                   // まっさらな初回
 else if(!(S.dates&&S.dates.length) && !hasAny(S.avail) && !hasAny(S.assign)){ S = seed(); } // 空っぽのまま＝実質未使用なら反映
 S.members.forEach(m=>{ if(!m.status) m.status = m.locked ? 'locked' : 'normal'; m.prio = (m.prio===true?1:(m.prio===false||m.prio==null?0:(parseInt(m.prio)||0))); });  // 旧データ移行（真偽値→数値の優先度）
 if(S.maxPer===undefined) S.maxPer=2;
+if(S.keepPins===undefined) S.keepPins=false;
 save();
 
 function emptySeed(){
@@ -350,7 +355,7 @@ function emptySeed(){
     ["中島","小1"],["池野","中3"],["鈴木","小2"],["渡邉","小3"],["Jeniffer","—"]
   ];
   return {
-    time:"午後7時30分〜8時30分", place:"一区区民会館 2階 集会室", per:2, maxPer:2,
+    time:"午後7時30分〜8時30分", place:"一区区民会館 2階 集会室", per:2, maxPer:2, keepPins:false,
     members: names.map(([n,g])=>({id:uid(), name:n, grade:g, locked:false, status:'normal', prio:0})),
     dates: [],
     avail: {},          // avail[memberId][date] = 'ok'|'maybe'|'ng'
@@ -399,7 +404,7 @@ function seed(){
     "2026-08-17":P("家田","内山"), "2026-08-18":P("平岩","伊藤"), "2026-08-19":P("佐野","中島"),
     "2026-08-20":P("近藤","大羅"), "2026-08-21":P("池野","鈴木")
   };
-  return { time:"午後7時30分〜8時30分", place:"一区区民会館 2階 集会室", per:2, maxPer:2, members, dates, avail, assign };
+  return { time:"午後7時30分〜8時30分", place:"一区区民会館 2階 集会室", per:2, maxPer:2, keepPins:false, members, dates, avail, assign };
 }
 function load(){ try{return JSON.parse(localStorage.getItem(KEY))}catch(e){return null} }
 function save(){ localStorage.setItem(KEY, JSON.stringify(S)); }
@@ -428,6 +433,10 @@ function fmtShort(iso){ const o=d2(iso); return `${o.m}/${o.d}`; }
 function wdClass(wd){ return wd===0?"wknd":wd===6?"sat":""; }
 function av(m,dt){ return (S.avail[m]&&S.avail[m][dt])||""; }
 function setAv(m,dt,v){ (S.avail[m]=S.avail[m]||{}); if(v) S.avail[m][dt]=v; else delete S.avail[m][dt]; }
+// 出欠を1つも入力していない人がいるか
+function hasAvail(mid){ const a=S.avail[mid]; if(!a) return false; for(const k in a){ if(a[k]) return true; } return false; }
+// 自動作成で使う実効の出欠：未入力なら「いつでもOK(ok)」扱い、1つでも入力があれば空欄は候補外
+function slotAv(mid,dt){ const v=av(mid,dt); if(v) return v; return hasAvail(mid)?"":"ok"; }
 function member(id){ return S.members.find(m=>m.id===id); }
 function isLocked(m){ return (m.status||'normal')==='locked'; }   // 確定：触らない
 function isFlex(m){ return (m.status||'normal')==='flex'; }       // 変更希望：⚫️も融通OK
@@ -465,7 +474,7 @@ function autoGenerate(){
       const ng = av(m.id,dt)==="ng";
       if(isLocked(m)){                              // 確定：触らない（🔴でもそのまま）
         if(activeCnt(dt)<per){ next[dt].push({m:a.m, pin:a.pin}); counts[a.m]++; lastDay[a.m]=i; }
-      } else if(a.pin){                             // 暫定⚫️
+      } else if(a.pin && S.keepPins){               // 暫定⚫️を残すモードの時だけ固定を維持
         if(ng){
           next[dt].push({m:a.m, pin:true, dropped:true});   // 🔴 → グレーで残して外す
         } else if(isFlex(m)){
@@ -474,7 +483,7 @@ function autoGenerate(){
           next[dt].push({m:a.m, pin:true}); counts[a.m]++; lastDay[a.m]=i;   // 通常：⚫️は固定
         }
       }
-      // それ以外（前回の自動割当）は捨てて組み直す
+      // それ以外は捨てて、優先度・上限・均等で組み直す
     });
   });
 
@@ -485,7 +494,7 @@ function autoGenerate(){
       const taken = new Set(next[dt].map(x=>x.m));
       const pick = (level)=>{
         const cands = S.members.filter(m=>
-          !isLocked(m) && !taken.has(m.id) && av(m.id,dt)===level
+          !isLocked(m) && !taken.has(m.id) && slotAv(m.id,dt)===level
           && counts[m.id] < capOf(m)          // 上限（個人設定 or 全体）に達した人は選ばない
         );
         if(!cands.length) return null;
@@ -604,7 +613,7 @@ function countAssign(){ const c={}; S.members.forEach(m=>c[m.id]=0); [...S.dates
 // その日 🟢 で今どの枠にも入っていない人。かつ「回数も同じ」＝完全に同条件の交代候補だけ返す
 function greenAlts(dt, act, exceptId, cnt, curCount){
   const on=new Set(act.map(a=>a.m));
-  return S.members.filter(m=>!isLocked(m) && m.id!==exceptId && !on.has(m.id) && av(m.id,dt)==="ok"
+  return S.members.filter(m=>!isLocked(m) && m.id!==exceptId && !on.has(m.id) && slotAv(m.id,dt)==="ok"
     && (cnt ? (cnt[m.id]||0)===curCount : true));
 }
 function rotateSlot(dt, slot){
@@ -624,6 +633,7 @@ function renderAuto(){
   const per = Math.max(1, parseInt(S.per)||2);
   const cnt = countAssign();                 // 交代候補の判定・回数表・提案で共用
   updateUndoBtn();
+  { const ck=$("#chkKeep"); if(ck) ck.checked=!!S.keepPins; }
   // day list
   let dl="";
   if(!dates.length){ dl=`<div class="muted">日付がありません（設定タブで追加）</div>`; }
@@ -639,10 +649,10 @@ function renderAuto(){
         const cd = v==="ok"?"var(--green)":v==="maybe"?"var(--yellow)":v==="ng"?"var(--red)":"#bbb";
         const star = prioBadge(m);
         chips+=`<span class="chip ${a.pin?"pin":""}" data-dt="${dt}" data-slot="${i}"><span class="cd" style="background:${cd}"></span>${star}${m?esc(m.name):"?"}${a.pin?" ⚫️":""}</span>`;
-        // 完全に同条件（🟢かつ回数も同じ）の交代候補がいる時だけ ⇄ を出す
-        if(v==="ok"){
+        // 完全に同条件（出られる＆回数も同じ）の交代候補がいる時だけ ⇄ を出す
+        if(m && slotAv(m.id,dt)==="ok"){
           const alt=greenAlts(dt, act, a.m, cnt, cnt[a.m]||0).length;
-          if(alt>0) chips+=`<button class="swap" data-dt="${dt}" data-slot="${i}" title="他に${alt}人 同条件（🟢・回数も同じ）。押すと交代">⇄${alt}</button>`;
+          if(alt>0) chips+=`<button class="swap" data-dt="${dt}" data-slot="${i}" title="他に${alt}人 同条件（出られる・回数も同じ）。押すと交代">⇄${alt}</button>`;
         }
       }else{
         chips+=`<span class="chip empty" data-dt="${dt}" data-slot="${i}">＋ 未定</span>`;
@@ -693,7 +703,7 @@ function renderAdvice(dates, per, cnt){
   if(ghosts) tips.push(["🔴", `本人が🔴で外れた暫定当番が${ghosts}件（グレー表示）。差し替え済みか確認してください。`]);
 
   // 出番0回だが出られる日がある人
-  const zero=S.members.filter(m=>!isLocked(m) && (cnt[m.id]||0)===0 && dates.some(dt=>av(m.id,dt)==="ok"));
+  const zero=S.members.filter(m=>!isLocked(m) && (cnt[m.id]||0)===0 && dates.some(dt=>slotAv(m.id,dt)==="ok"));
   if(zero.length) tips.push(["🙋", `まだ0回だけど出られる日がある人：${zero.map(m=>m.name).join("、")}。⭐優先や手動で入れられます。`]);
 
   // 回数の偏り
@@ -714,7 +724,7 @@ function renderAdvice(dates, per, cnt){
 
   // 交代候補（⇄）がある日＝完全に同条件（🟢・回数も同じ）
   let swapDays=0; dates.forEach(dt=>{ const act=activeSlots(dt);
-    if(act.some(a=>av(a.m,dt)==="ok" && greenAlts(dt,act,a.m,cnt,cnt[a.m]||0).length>0)) swapDays++;
+    if(act.some(a=>slotAv(a.m,dt)==="ok" && greenAlts(dt,act,a.m,cnt,cnt[a.m]||0).length>0)) swapDays++;
   });
   if(swapDays) tips.push(["⇄", `どちらでもOKな交代候補（同条件）がある日が${swapDays}日。⇄ボタンで好みの人に変えられます。`]);
 
@@ -930,6 +940,7 @@ $("#dList").addEventListener("click", e=>{
 /* ---------- data ---------- */
 $("#btnGen").addEventListener("click", autoGenerate);
 $("#btnUndo").addEventListener("click", undo);
+$("#chkKeep").addEventListener("change", e=>{ S.keepPins=e.target.checked; save(); });
 $("#btnClearAssign").addEventListener("click", ()=>{
   if(!confirm("当番の割り当てを全部消しますか？（出欠は残ります）"))return;
   pushUndo();
