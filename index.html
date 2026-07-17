@@ -74,8 +74,13 @@
     font-weight:600; white-space:nowrap;
   }
   table.grid tbody th.name .gr{color:var(--sub); font-weight:400; font-size:11px}
-  table.grid tbody th.name{cursor:pointer}
+  table.grid tbody th.name{cursor:pointer; min-width:112px}
+  table.grid tbody th.name .nm-open{white-space:nowrap}
   table.grid tbody th.name .go{color:var(--accent); font-weight:700; margin-left:4px; font-size:12px}
+  th.name .rowstat{display:inline-block; margin-top:4px; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700; cursor:pointer}
+  .rowstat.open{background:#eef1f4; color:var(--sub)}
+  .rowstat.flex{background:#fff3e0; color:#b26a00}
+  .rowstat.done{background:#e7f5e9; color:var(--accent-d)}
   table.grid td.cell{width:46px; height:40px; padding:0; cursor:pointer; user-select:none}
   .cell .mk{width:26px; height:26px; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:13px}
   .cell.ok .mk{background:var(--green)}
@@ -212,6 +217,12 @@
         <span><i class="dot y"></i>要確認（○が足りない時）</span>
         <span><i class="dot r"></i>出られない</span>
       </div>
+      <div class="row wrap" style="margin-top:10px; gap:6px; align-items:center">
+        <span class="muted" style="font-size:12px">名前の下の状態タップで 通常→変更希望→確定。一括：</span>
+        <button class="btn ghost sm" id="allLocked">全員 確定</button>
+        <button class="btn ghost sm" id="allNormal">全員 通常</button>
+      </div>
+      <div class="muted" style="font-size:12px; margin-top:6px">「確定」の人は自動作成で動きません。変更希望の人だけ通常/変更希望にすると、他の人に迷惑がかかりません。</div>
     </div>
     <div class="card" style="padding:8px">
       <div class="scroller" id="gridWrap"></div>
@@ -453,6 +464,7 @@ function slotAv(mid,dt){ return av(mid,dt); }
 function member(id){ return S.members.find(m=>m.id===id); }
 function isLocked(m){ return (m.status||'normal')==='locked'; }   // 確定：触らない
 function isFlex(m){ return (m.status||'normal')==='flex'; }       // 変更希望：⚫️も融通OK
+function statusMeta(m){ const s=m.status||'normal'; return s==='locked'?{l:'確定',c:'done'}:s==='flex'?{l:'変更希望',c:'flex'}:{l:'通常',c:'open'}; }
 function prioBadge(m){ return m&&m.prio ? `<span class="star">⭐${m.prio}</span>` : ''; }  // 優先度1〜3
 function prioRank(m){ return m&&m.prio ? m.prio : 99; }           // 小さいほど優先（1が最優先）
 // この人の上限回数：個人設定があればそれ、無ければ全体設定。0/未設定は無制限
@@ -550,7 +562,8 @@ function renderGrid(){
   dates.forEach(dt=>{ const o=d2(dt); h+=`<th class="${wdClass(o.wd)}">${o.m}/${o.d}<br><small>${WD[o.wd]}</small></th>`; });
   h += '</tr></thead><tbody>';
   S.members.forEach(m=>{
-    h += `<tr><th class="name" data-m="${m.id}">${esc(m.name)}<span class="gr">${esc(m.grade||"")}</span><span class="go">▸</span></th>`;
+    const sm=statusMeta(m);
+    h += `<tr><th class="name" data-m="${m.id}"><span class="nm-open">${esc(m.name)}<span class="gr">${esc(m.grade||"")}</span><span class="go">▸</span></span><br><span class="rowstat ${sm.c}" data-cyc="${m.id}">${sm.l}</span></th>`;
     dates.forEach(dt=>{
       const v=av(m.id,dt);
       const cls = v==="ok"?"ok":v==="maybe"?"maybe":v==="ng"?"ng":"";
@@ -563,7 +576,16 @@ function renderGrid(){
   $("#gridWrap").innerHTML = h;
 }
 const CYCLE = ["", "ok", "maybe", "ng"];
+function cycleStatusInline(id, el){
+  const m=member(id); const order=['normal','flex','locked'];
+  m.status=order[(order.indexOf(m.status||'normal')+1)%3]; m.locked=(m.status==='locked'); save();
+  const sm=statusMeta(m); if(el){ el.className='rowstat '+sm.c; el.textContent=sm.l; }
+  renderAuto(); renderView();
+  toast(m.status==='locked'?`${m.name}：確定（触りません）`:m.status==='flex'?`${m.name}：変更希望`:`${m.name}：通常`);
+}
 $("#gridWrap").addEventListener("click", e=>{
+  const stat = e.target.closest(".rowstat");
+  if(stat){ cycleStatusInline(stat.dataset.cyc, stat); return; }
   const nameTh = e.target.closest("th.name");
   if(nameTh){ openPersonSheet(nameTh.dataset.m); return; }
   const td = e.target.closest("td.cell"); if(!td) return;
@@ -574,6 +596,14 @@ $("#gridWrap").addEventListener("click", e=>{
   td.className = "cell "+(nv==="ok"?"ok":nv==="maybe"?"maybe":nv==="ng"?"ng":"");
   td.querySelector(".mk").textContent = nv==="ok"?"○":nv==="maybe"?"△":nv==="ng"?"×":"";
 });
+
+function setAllStatus(s){
+  S.members.forEach(m=>{ m.status=s; m.locked=(s==='locked'); });
+  save(); renderGrid(); renderAuto(); renderView();
+  toast(s==='locked'?"全員を確定にしました":"全員を通常にしました");
+}
+$("#allLocked").addEventListener("click", ()=>setAllStatus('locked'));
+$("#allNormal").addEventListener("click", ()=>setAllStatus('normal'));
 
 /* 名前タップ → その人の出欠をカレンダーで入力（練習じゃない日は斜線） */
 function openPersonSheet(mid){ if(!member(mid)) return; renderPersonSheet(mid); $("#ov").classList.add("show"); }
