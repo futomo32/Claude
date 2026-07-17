@@ -95,6 +95,16 @@
   .chip.warn{background:#fdeceb; color:var(--red)}
   .chip.ghost{background:#eceef0; color:#9aa0a6; font-weight:500; border:1px dashed #cbd0d6}
   .chip.ghost s{color:#9aa0a6}
+  .swap{background:#eaf3ff; color:#1d63c9; font-weight:700; font-size:12px; padding:5px 8px; border-radius:16px; align-self:center}
+  .swap:active{background:#d6e8ff}
+  .prio-toggle{border:1.5px solid var(--line); border-radius:10px; padding:11px 12px; text-align:center; font-weight:700; color:var(--sub); cursor:pointer; user-select:none}
+  .prio-toggle.on{border-color:#f0a500; background:#fff7e6; color:#b26a00}
+  .star{color:#f0a500}
+  .advice{list-style:none; margin:0; padding:0}
+  .advice li{display:flex; gap:8px; padding:8px 2px; border-bottom:1px solid var(--line); font-size:13.5px}
+  .advice li:last-child{border-bottom:none}
+  .advice li .ic{flex:none}
+  .advice .ok{color:var(--accent-d)}
   .cnt-tbl{width:100%; border-collapse:collapse; font-size:13.5px}
   .cnt-tbl td{padding:8px 4px; border-bottom:1px solid var(--line)}
   .cnt-tbl td.n{font-weight:600}
@@ -179,6 +189,10 @@
       </div>
     </div>
     <div id="genWarn"></div>
+    <div class="card">
+      <h2>🤖 チェック＆提案</h2>
+      <ul class="advice" id="advice"></ul>
+    </div>
     <div class="card">
       <h2>📅 日ごとの当番</h2>
       <div id="dayList"></div>
@@ -265,7 +279,7 @@ function hasAny(o){ if(!o) return false; for(const k in o){ const v=o[k]; if(v&&
 let S = load();
 if(!S){ S = seed(); }                                   // まっさらな初回：画像データを反映
 else if(!(S.dates&&S.dates.length) && !hasAny(S.avail) && !hasAny(S.assign)){ S = seed(); } // 空っぽのまま＝実質未使用なら反映
-S.members.forEach(m=>{ if(!m.status) m.status = m.locked ? 'locked' : 'normal'; });  // 旧データ移行
+S.members.forEach(m=>{ if(!m.status) m.status = m.locked ? 'locked' : 'normal'; if(m.prio===undefined) m.prio=false; });  // 旧データ移行
 save();
 
 function emptySeed(){
@@ -276,7 +290,7 @@ function emptySeed(){
   ];
   return {
     time:"午後7時30分〜8時30分", place:"一区区民会館 2階 集会室", per:2,
-    members: names.map(([n,g])=>({id:uid(), name:n, grade:g, locked:false, status:'normal'})),
+    members: names.map(([n,g])=>({id:uid(), name:n, grade:g, locked:false, status:'normal', prio:false})),
     dates: [],
     avail: {},          // avail[memberId][date] = 'ok'|'maybe'|'ng'
     assign: {}          // assign[date] = [{m:id, pin:bool}]
@@ -289,7 +303,7 @@ function seed(){
     ["近藤","中2"],["田中","中2"],["萱島","小3"],["大羅","小1"],["佐野","小1"],
     ["中島","小1"],["池野","中3"],["鈴木","小2"],["渡邉","小3"],["Jeniffer","—"]
   ];
-  const members=M.map(([n,g])=>({id:uid(), name:n, grade:g, locked:false, status:'normal'}));
+  const members=M.map(([n,g])=>({id:uid(), name:n, grade:g, locked:false, status:'normal', prio:false}));
   const id={}; members.forEach(m=>id[m.name]=m.id);
   const dates=[
     "2026-07-29","2026-07-30","2026-07-31","2026-08-01","2026-08-02",
@@ -387,6 +401,8 @@ function autoGenerate(){
         );
         if(!cands.length) return null;
         cands.sort((a,b)=>{
+          const ra=a.prio?0:1, rb=b.prio?0:1;                                       // ⭐優先指定を最優先
+          if(ra!==rb) return ra-rb;
           const fa=isFlex(a)?0:1, fb=isFlex(b)?0:1;                                 // ①変更希望者を優先して融通に使う
           if(fa!==fb) return fa-fb;
           if(counts[a.id]!==counts[b.id]) return counts[a.id]-counts[b.id];        // 回数が少ない人優先
@@ -446,6 +462,21 @@ $("#gridWrap").addEventListener("click", e=>{
 /* ---------- render: auto ---------- */
 function activeSlots(dt){ return (S.assign[dt]||[]).filter(a=>!a.dropped); }
 function ghostSlots(dt){ return (S.assign[dt]||[]).filter(a=>a.dropped); }
+// その日 🟢 で、今どの枠にも入っていない人（＝交代候補）
+function greenAlts(dt, act, exceptId){
+  const on=new Set(act.map(a=>a.m));
+  return S.members.filter(m=>!isLocked(m) && m.id!==exceptId && !on.has(m.id) && av(m.id,dt)==="ok");
+}
+function rotateSlot(dt, slot){
+  const A=activeSlots(dt), G=ghostSlots(dt); const cur=A[slot]; if(!cur) return;
+  const alts=greenAlts(dt, A, cur.m).map(m=>m.id);
+  if(!alts.length) return;
+  const pool=[cur.m, ...alts];
+  const nx=pool[(pool.indexOf(cur.m)+1)%pool.length];
+  A[slot]={m:nx, pin:cur.pin};        // pinの状態は引き継ぐ（⚫️なら⚫️のまま）
+  S.assign[dt]=A.concat(G); save(); renderAuto();
+  const m=member(nx); toast(`交代：${m?m.name:""}`);
+}
 function renderAuto(){
   const dates=[...S.dates].sort();
   const per = Math.max(1, parseInt(S.per)||2);
@@ -462,7 +493,13 @@ function renderAuto(){
         const m=member(a.m);
         const v = m?av(m.id,dt):"";
         const cd = v==="ok"?"var(--green)":v==="maybe"?"var(--yellow)":v==="ng"?"var(--red)":"#bbb";
-        chips+=`<span class="chip ${a.pin?"pin":""}" data-dt="${dt}" data-slot="${i}"><span class="cd" style="background:${cd}"></span>${m?esc(m.name):"?"}${a.pin?" ⚫️":""}</span>`;
+        const star = m&&m.prio?'<span class="star">⭐</span>':'';
+        chips+=`<span class="chip ${a.pin?"pin":""}" data-dt="${dt}" data-slot="${i}"><span class="cd" style="background:${cd}"></span>${star}${m?esc(m.name):"?"}${a.pin?" ⚫️":""}</span>`;
+        // 同条件（🟢）の交代候補がいれば ⇄ を出す
+        if(v==="ok"){
+          const alt=greenAlts(dt, act, a.m).length;
+          if(alt>0) chips+=`<button class="swap" data-dt="${dt}" data-slot="${i}" title="他に${alt}人 同じ🟢条件。押すと交代">⇄${alt}</button>`;
+        }
       }else{
         chips+=`<span class="chip empty" data-dt="${dt}" data-slot="${i}">＋ 未定</span>`;
       }
@@ -488,11 +525,55 @@ function renderAuto(){
     const st=m.status||'normal';
     const lbl = st==='locked'?'確定 ✓' : st==='flex'?'変更希望' : '通常';
     const pc  = st==='locked'?'done'   : st==='flex'?'flex'     : 'open';
-    ct+=`<tr><td class="n">${esc(m.name)} <span class="muted">${esc(m.grade||"")}</span></td>`
+    ct+=`<tr><td class="n">${m.prio?'<span class="star">⭐</span>':''}${esc(m.name)} <span class="muted">${esc(m.grade||"")}</span></td>`
       + `<td class="c">${cnt[m.id]}回</td>`
       + `<td class="lk"><span class="pill ${pc}" data-cyc="${m.id}">${lbl}</span></td></tr>`;
   });
   $("#cntTbl").innerHTML = ct;
+  renderAdvice(dates, per, cnt);
+}
+/* 自動チェック＆提案（AIなし・端末内で計算） */
+function renderAdvice(dates, per, cnt){
+  const tips=[];
+  if(!dates.length){ $("#advice").innerHTML=`<li><span class="ic">📌</span>設定タブで日付を追加してください。</li>`; return; }
+
+  // 未定の日
+  const short=dates.filter(dt=>activeSlots(dt).length<per);
+  if(short.length) tips.push(["⚠️", `未定の日が${short.length}日（${short.map(fmtShort).join("、")}）。その日を🟢にできる人がいないか確認、または誰かを「変更希望」にすると埋めやすくなります。`]);
+
+  // 🔴で外れた暫定（グレー）
+  let ghosts=0; dates.forEach(dt=>ghosts+=ghostSlots(dt).length);
+  if(ghosts) tips.push(["🔴", `本人が🔴で外れた暫定当番が${ghosts}件（グレー表示）。差し替え済みか確認してください。`]);
+
+  // 出番0回だが出られる日がある人
+  const zero=S.members.filter(m=>!isLocked(m) && (cnt[m.id]||0)===0 && dates.some(dt=>av(m.id,dt)==="ok"));
+  if(zero.length) tips.push(["🙋", `まだ0回だけど出られる日がある人：${zero.map(m=>m.name).join("、")}。⭐優先や手動で入れられます。`]);
+
+  // 回数の偏り
+  const active=S.members.filter(m=>!isLocked(m));
+  const vals=active.map(m=>cnt[m.id]||0);
+  if(vals.length){
+    const mx=Math.max(...vals), mn=Math.min(...vals);
+    if(mx-mn>=2){
+      const most=active.filter(m=>(cnt[m.id]||0)===mx).map(m=>m.name).slice(0,3).join("、");
+      const least=active.filter(m=>(cnt[m.id]||0)===mn).map(m=>m.name).slice(0,3).join("、");
+      tips.push(["⚖️", `回数に差があります（最多 ${most}=${mx}回／最少 ${least}=${mn}回）。⇄で交代すると平準化できます。`]);
+    }
+  }
+
+  // ⭐優先なのに0回
+  const prioZero=S.members.filter(m=>m.prio && (cnt[m.id]||0)===0);
+  if(prioZero.length) tips.push(["⭐", `優先指定なのに未割当：${prioZero.map(m=>m.name).join("、")}。出られる日(🟢)が入っているか確認を。`]);
+
+  // 交代候補（⇄）がある日
+  let swapDays=0; dates.forEach(dt=>{ const act=activeSlots(dt);
+    if(act.some((a,i)=>av(a.m,dt)==="ok" && greenAlts(dt,act,a.m).length>0)) swapDays++;
+  });
+  if(swapDays) tips.push(["⇄", `どちらでもOKな交代候補がある日が${swapDays}日。⇄ボタンで好みの人に変えられます。`]);
+
+  if(!tips.length) tips.push(["✅", "バランスよく組めています。特に直す点は見つかりませんでした。", true]);
+
+  $("#advice").innerHTML = tips.map(([ic,txt,ok])=>`<li><span class="ic">${ic}</span><span class="${ok?"ok":""}">${txt}</span></li>`).join("");
 }
 $("#cntTbl").addEventListener("click", e=>{
   const p=e.target.closest("[data-cyc]"); if(!p) return;
@@ -508,6 +589,8 @@ $("#cntTbl").addEventListener("click", e=>{
 
 /* slot tap -> choose member */
 $("#dayList").addEventListener("click", e=>{
+  const sw=e.target.closest(".swap");
+  if(sw){ rotateSlot(sw.dataset.dt, +sw.dataset.slot); return; }
   const g=e.target.closest(".chip.ghost");
   if(g){ openGhost(g.dataset.dt, g.dataset.gm); return; }
   const chip=e.target.closest(".chip"); if(!chip) return;
@@ -600,15 +683,21 @@ function openMemberSheet(id){
     +`<label class="muted">名前</label>`
     +`<input type="text" id="emName" style="margin:4px 0 10px">`
     +`<label class="muted">学年（任意）</label>`
-    +`<input type="text" id="emGrade" style="margin:4px 0 14px">`
+    +`<input type="text" id="emGrade" style="margin:4px 0 12px">`
+    +`<div id="emPrio" class="prio-toggle">⭐ 優先して入れる</div>`
+    +`<div class="muted" style="margin:6px 0 14px">ONにすると、出られる日で優先的に当番へ入れます。</div>`
     +`<div class="row"><button class="btn" style="flex:1" id="emSave">保存</button>`
     +`<button class="btn danger" id="emDel">削除</button></div>`;
   $("#ov").classList.add("show");
   $("#emName").value=m.name; $("#emGrade").value=m.grade||"";
+  let prio = !!m.prio;
+  const paint=()=>{ $("#emPrio").classList.toggle("on", prio); $("#emPrio").textContent = (prio?"⭐ 優先する（ON）":"☆ 優先しない"); };
+  paint();
+  $("#emPrio").onclick=()=>{ prio=!prio; paint(); };
   $("#emName").focus();
   $("#emSave").onclick=()=>{
     const n=$("#emName").value.trim(); if(!n){toast("名前を入れてください");return;}
-    m.name=n; m.grade=$("#emGrade").value.trim();
+    m.name=n; m.grade=$("#emGrade").value.trim(); m.prio=prio;
     save(); closeOv(); renderSettings(); renderGrid(); renderAuto(); toast("保存しました");
   };
   $("#emDel").onclick=()=>{
