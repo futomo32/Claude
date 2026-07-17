@@ -581,6 +581,9 @@ function renderPersonSheet(mid){
   const m=member(mid); if(!m) return;
   const dates=[...S.dates].sort(); const set=new Set(dates);
   let h=`<h3>${esc(m.name)}${m.grade?` <small class="muted">${esc(m.grade)}</small>`:''} の出欠</h3>`
+    +`<label class="muted">この人の状態</label>`
+    +`<div class="seg" id="pStatus"><button data-v="normal">通常</button><button data-v="flex">変更希望</button><button data-v="locked">確定</button></div>`
+    +`<div class="muted" style="margin:4px 0 10px">確定＝自動で触らない（編集不可扱い）／変更希望＝⚫️も融通OK。</div>`
     +`<div class="legend" style="margin-bottom:8px"><span><i class="dot g"></i>出られる</span><span><i class="dot y"></i>要確認</span><span><i class="dot r"></i>出られない</span><span>斜線＝練習なし</span></div>`
     +`<div class="muted" style="margin-bottom:8px">日をタップするたび 空→🟢→🟡→🔴 と変わります。</div>`;
   if(!dates.length) h+=`<div class="muted">日付がありません（設定タブで追加）</div>`;
@@ -609,7 +612,12 @@ function renderPersonSheet(mid){
   });
   h+=`<button class="btn block" id="pDone" style="margin-top:10px">とじる</button>`;
   $("#sheet").innerHTML=h;
+  const paintStatus=()=>{ const st=m.status||'normal'; document.querySelectorAll('#pStatus button').forEach(x=>x.classList.toggle('on', x.dataset.v===st)); };
+  paintStatus();
   $("#sheet").onclick=ev=>{
+    const sb=ev.target.closest("#pStatus button");
+    if(sb){ m.status=sb.dataset.v; m.locked=(m.status==='locked'); save(); paintStatus();
+      toast(m.status==='locked'?`${m.name}：確定（触りません）`:m.status==='flex'?`${m.name}：変更希望`:`${m.name}：通常`); return; }
     if(ev.target.closest("#pDone")){ closeOv(); renderGrid(); renderAuto(); renderView(); return; }
     const td=ev.target.closest("td.pd"); if(!td) return;
     const dt=td.dataset.dt, cur=av(mid,dt);
