@@ -104,6 +104,14 @@
   .chip.ghost{background:#eceef0; color:#9aa0a6; font-weight:500; border:1px dashed #cbd0d6}
   .chip.ghost s{color:#9aa0a6}
   .chip.locked{background:#e5e7eb; color:#5f6368; cursor:pointer; box-shadow:none}
+  .chip.res{background:#eef2f7; color:#33415c; border:1px solid #cfd8e6; font-weight:600}
+  .chip.res.full{opacity:.55}
+  .chip.res small{color:var(--sub); font-weight:400; margin-left:2px}
+  .reslabel{align-self:center; font-size:11px; color:var(--sub); margin-left:6px; margin-right:1px; white-space:nowrap}
+  .histlist{list-style:none; margin:0; padding:0}
+  .histlist li{display:flex; align-items:center; gap:8px; padding:7px 2px; border-bottom:1px solid var(--line); font-size:13px}
+  .histlist li:last-child{border-bottom:none}
+  .histlist li .ht{flex:1}
   .swap{background:#eaf3ff; color:#1d63c9; font-weight:700; font-size:12px; padding:5px 8px; border-radius:16px; align-self:center}
   .swap:active{background:#d6e8ff}
   .prio-toggle{border:1.5px solid var(--line); border-radius:10px; padding:11px 12px; text-align:center; font-weight:700; color:var(--sub); cursor:pointer; user-select:none}
@@ -256,7 +264,16 @@
     </div>
     <div class="card">
       <h2>📅 日ごとの当番</h2>
+      <div class="muted" style="margin-bottom:6px">当番2人の隣に <b>⚫️控え（採用可）</b> を表示。控えをタップ→採用（当番1人が控えへ）。数字は 回数/上限。</div>
+      <label class="row" style="gap:8px; align-items:center; cursor:pointer; margin-bottom:8px">
+        <input type="checkbox" id="chkIncLock" style="width:auto; transform:scale(1.2)">
+        <span class="muted">控えに「確定🔒」の人も出す（苦しい時用）</span>
+      </label>
       <div id="dayList"></div>
+    </div>
+    <div class="card">
+      <h2>🕒 変更履歴</h2>
+      <ul class="histlist" id="histList"></ul>
     </div>
     <div class="card">
       <h2>👥 回数と状態</h2>
@@ -690,6 +707,54 @@ function greenAlts(dt, act, exceptId, cnt, curCount){
   return S.members.filter(m=>!isLocked(m) && m.id!==exceptId && !on.has(m.id) && slotAv(m.id,dt)==="ok"
     && (cnt ? (cnt[m.id]||0)===curCount : true));
 }
+function logHistory(text){
+  S.history=S.history||[];
+  S.history.unshift({text, before:JSON.stringify(S.assign)});
+  if(S.history.length>30) S.history.length=30;
+}
+// 控えを採用（当番2人のうち1人を控えに落とす）
+function openAdopt(dt, resId){
+  const R=member(resId); if(!R) return;
+  const per=Math.max(1,parseInt(S.per)||2);
+  const o=d2(dt);
+  const cnt=countAssign();
+  const rc=capOf(R); const rFull=isFinite(rc)&&(cnt[R.id]||0)>=rc;
+  const act=activeSlots(dt);
+  // 空きがあればそのまま採用
+  if(act.length<per){
+    if(rFull && !confirm(`${R.name} は上限(${rc}回)に達しています。それでも採用しますか？`)) return;
+    logHistory(`${o.m}/${o.d} ${R.name} を採用`);
+    pushUndo(); const G=ghostSlots(dt);
+    S.assign[dt]=activeSlots(dt).concat([{m:resId,pin:true}]).concat(G);
+    save(); renderAuto(); renderView(); toast(`採用：${R.name}`); return;
+  }
+  // 満員：控えに落とす当番を選ぶ（確定は落とせない）
+  const demotable=act.filter(a=>!isLocked(member(a.m)));
+  if(!demotable.length){ toast("当番が確定の人だけです。確定を解除してください"); return; }
+  let h=`<h3>${o.m}/${o.d}（${WD[o.wd]}） ${esc(R.name)} を採用</h3>`
+    +`<div class="muted" style="margin-bottom:8px">${esc(R.name)}：${cnt[R.id]||0}${isFinite(rc)?"/"+rc:""}回${rFull?' <b style="color:#c0392b">⚠️上限</b>':""}</div>`
+    +`<div class="muted" style="margin:0 0 6px">控えに回す当番を選んでください</div>`;
+  act.forEach(a=>{ const m=member(a.m); const lk=isLocked(m); const c=capOf(m);
+    h+=`<div class="opt" ${lk?"":`data-demote="${a.m}"`} style="${lk?"opacity:.5":""}">`
+      +`<span style="flex:1">${esc(m.name)} <small class="muted">${cnt[m.id]||0}${isFinite(c)?"/"+c:""}回</small></span>`
+      +`<small class="muted">${lk?"確定🔒（不可）":"→ 控えにする"}</small></div>`;
+  });
+  h+=`<button class="btn ghost block" id="adoptCancel" style="margin-top:10px">やめる</button>`;
+  $("#sheet").innerHTML=h; $("#ov").classList.add("show");
+  $("#sheet").onclick=ev=>{
+    if(ev.target.closest("#adoptCancel")){ closeOv(); return; }
+    const d=ev.target.closest("[data-demote]"); if(!d) return;
+    const demoteMid=d.dataset.demote;
+    if(rFull && !confirm(`${R.name} は上限(${rc}回)に達しています。それでも採用しますか？`)) return;
+    logHistory(`${o.m}/${o.d} ${member(demoteMid).name} → ${R.name}`);
+    pushUndo();
+    const A=activeSlots(dt), G=ghostSlots(dt);
+    const idx=A.findIndex(a=>a.m===demoteMid);
+    if(idx>=0) A[idx]={m:resId, pin:true};
+    S.assign[dt]=A.concat(G);
+    save(); closeOv(); renderAuto(); renderView(); toast(`採用：${R.name}（${member(demoteMid).name}は控えへ）`);
+  };
+}
 function rotateSlot(dt, slot){
   const cnt=countAssign();
   const A=activeSlots(dt), G=ghostSlots(dt); const cur=A[slot]; if(!cur) return;
@@ -708,6 +773,7 @@ function renderAuto(){
   const cnt = countAssign();                 // 交代候補の判定・回数表・提案で共用
   updateUndoBtn();
   { const ck=$("#chkKeep"); if(ck) ck.checked=!!S.keepPins; }
+  { const ci=$("#chkIncLock"); if(ci) ci.checked=!!S.incLockedRes; }
   // day list
   let dl="";
   if(!dates.length){ dl=`<div class="muted">日付がありません（設定タブで追加）</div>`; }
@@ -724,11 +790,6 @@ function renderAuto(){
         const cd = v==="ok"?"var(--green)":v==="maybe"?"var(--yellow)":v==="ng"?"var(--red)":"#bbb";
         const star = prioBadge(m);
         chips+=`<span class="chip ${a.pin?"pin":""} ${locked?"locked":""}" data-dt="${dt}" data-slot="${i}"${locked?' data-locked="1"':''}><span class="cd" style="background:${cd}"></span>${star}${m?esc(m.name):"?"}${locked?" 🔒":(a.pin?" ⚫️":"")}</span>`;
-        // 確定は動かせない。調整の人だけ、完全同条件の交代候補がいれば ⇄ を出す
-        if(!locked && m && slotAv(m.id,dt)==="ok"){
-          const alt=greenAlts(dt, act, a.m, cnt, cnt[a.m]||0).length;
-          if(alt>0) chips+=`<button class="swap" data-dt="${dt}" data-slot="${i}" title="他に${alt}人 同条件（出られる・回数も同じ）。押すと交代">⇄${alt}</button>`;
-        }
       }else{
         chips+=`<span class="chip empty" data-dt="${dt}" data-slot="${i}">＋ 未定</span>`;
       }
@@ -736,6 +797,15 @@ function renderAuto(){
     // 🔴で外れた暫定（⚫️）をグレーで残す
     gh.forEach(a=>{ const m=member(a.m);
       chips+=`<span class="chip ghost" data-dt="${dt}" data-gm="${a.m}" title="本人が🔴のため外れた暫定当番"><span class="cd" style="background:var(--red)"></span>🔴<s>${m?esc(m.name):"?"}</s></span>`;
+    });
+    // 控え（採用可）：その日に出られる（🟢）で当番でない人。確定は既定で除外
+    const onDuty=new Set(act.map(a=>a.m));
+    let reserves=S.members.filter(m=> !onDuty.has(m.id) && slotAv(m.id,dt)==="ok" && (S.incLockedRes || !isLocked(m)));
+    reserves.sort((a,b)=>(cnt[a.id]||0)-(cnt[b.id]||0) || prioRank(a)-prioRank(b));
+    if(reserves.length) chips+=`<span class="reslabel">｜控え▶</span>`;
+    reserves.forEach(m=>{
+      const c=capOf(m); const full=isFinite(c)&&(cnt[m.id]||0)>=c;
+      chips+=`<span class="chip res ${full?"full":""}" data-dt="${dt}" data-res="${m.id}" title="控え：タップで採用">⚫️${esc(m.name)}<small>${cnt[m.id]||0}${isFinite(c)?"/"+c:""}${full?" ⚠️":""}${isLocked(m)?" 🔒":""}</small></span>`;
     });
     dl+=`<div class="day"><div class="date ${wdClass(o.wd)}">${o.m}/${o.d}<small>(${WD[o.wd]})</small></div><div class="slots">${chips}</div></div>`;
   });
@@ -760,6 +830,14 @@ function renderAuto(){
   });
   $("#cntTbl").innerHTML = ct;
   renderAdvice(dates, per, cnt);
+  renderHistory();
+}
+function renderHistory(){
+  const el=$("#histList"); if(!el) return;
+  const h=S.history||[];
+  el.innerHTML = h.length
+    ? h.map((e,i)=>`<li><span class="ht">${esc(e.text)}</span><button class="btn ghost sm" data-hrev="${i}">戻す</button></li>`).join("")
+    : `<li class="muted">まだ変更はありません</li>`;
 }
 /* 自動チェック＆提案（AIなし・端末内で計算） */
 function renderAdvice(dates, per, cnt){
@@ -819,8 +897,8 @@ $("#cntTbl").addEventListener("click", e=>{
 
 /* slot tap -> choose member */
 $("#dayList").addEventListener("click", e=>{
-  const sw=e.target.closest(".swap");
-  if(sw){ rotateSlot(sw.dataset.dt, +sw.dataset.slot); return; }
+  const res=e.target.closest(".chip.res");
+  if(res){ openAdopt(res.dataset.dt, res.dataset.res); return; }
   const g=e.target.closest(".chip.ghost");
   if(g){ openGhost(g.dataset.dt, g.dataset.gm); return; }
   const chip=e.target.closest(".chip"); if(!chip) return;
@@ -1024,6 +1102,15 @@ $("#btnGen").addEventListener("click", autoGenerate);
 $("#btnUndo").addEventListener("click", undo);
 $("#btnUndoIn").addEventListener("click", undo);
 $("#chkKeep").addEventListener("change", e=>{ S.keepPins=e.target.checked; save(); });
+$("#chkIncLock").addEventListener("change", e=>{ S.incLockedRes=e.target.checked; save(); renderAuto(); });
+$("#histList").addEventListener("click", e=>{
+  const btn=e.target.closest("[data-hrev]"); if(!btn) return;
+  const i=+btn.dataset.hrev; const ent=(S.history||[])[i]; if(!ent) return;
+  pushUndo();
+  S.assign=JSON.parse(ent.before);
+  S.history.splice(0, i+1);
+  save(); renderAuto(); renderView(); toast("その変更を取り消しました");
+});
 $("#btnClearAssign").addEventListener("click", ()=>{
   if(!confirm("当番の割り当てを全部消しますか？（出欠は残ります）"))return;
   pushUndo();
