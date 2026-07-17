@@ -246,7 +246,10 @@
       <label class="muted">場所</label>
       <input type="text" id="setPlace" placeholder="一区区民会館 2階 集会室" style="margin:4px 0 10px">
       <label class="muted">1日の当番人数</label>
-      <input type="text" id="setPer" inputmode="numeric" style="margin:4px 0 0; width:90px">
+      <input type="text" id="setPer" inputmode="numeric" style="margin:4px 0 10px; width:90px">
+      <label class="muted" style="display:block">1人の上限回数（空欄＝無制限）</label>
+      <input type="text" id="setMax" inputmode="numeric" placeholder="3" style="margin:4px 0 0; width:90px">
+      <div class="muted" style="margin-top:6px">できるだけ均等に割り振ったうえで、この回数を超えないようにします。</div>
     </div>
 
     <div class="card">
@@ -314,6 +317,7 @@ let S = load();
 if(!S){ S = seed(); }                                   // まっさらな初回：画像データを反映
 else if(!(S.dates&&S.dates.length) && !hasAny(S.avail) && !hasAny(S.assign)){ S = seed(); } // 空っぽのまま＝実質未使用なら反映
 S.members.forEach(m=>{ if(!m.status) m.status = m.locked ? 'locked' : 'normal'; if(m.prio===undefined) m.prio=false; });  // 旧データ移行
+if(S.maxPer===undefined) S.maxPer=3;
 save();
 
 function emptySeed(){
@@ -323,7 +327,7 @@ function emptySeed(){
     ["中島","小1"],["池野","中3"],["鈴木","小2"],["渡邉","小3"],["Jeniffer","—"]
   ];
   return {
-    time:"午後7時30分〜8時30分", place:"一区区民会館 2階 集会室", per:2,
+    time:"午後7時30分〜8時30分", place:"一区区民会館 2階 集会室", per:2, maxPer:3,
     members: names.map(([n,g])=>({id:uid(), name:n, grade:g, locked:false, status:'normal', prio:false})),
     dates: [],
     avail: {},          // avail[memberId][date] = 'ok'|'maybe'|'ng'
@@ -372,7 +376,7 @@ function seed(){
     "2026-08-17":P("家田","内山"), "2026-08-18":P("平岩","伊藤"), "2026-08-19":P("佐野","中島"),
     "2026-08-20":P("近藤","大羅"), "2026-08-21":P("池野","鈴木")
   };
-  return { time:"午後7時30分〜8時30分", place:"一区区民会館 2階 集会室", per:2, members, dates, avail, assign };
+  return { time:"午後7時30分〜8時30分", place:"一区区民会館 2階 集会室", per:2, maxPer:3, members, dates, avail, assign };
 }
 function load(){ try{return JSON.parse(localStorage.getItem(KEY))}catch(e){return null} }
 function save(){ localStorage.setItem(KEY, JSON.stringify(S)); }
@@ -448,8 +452,10 @@ function autoGenerate(){
     while(activeCnt(dt) < per){
       const taken = new Set(next[dt].map(x=>x.m));
       const pick = (level)=>{
+        const cap = parseInt(S.maxPer)||0;   // 0＝無制限
         const cands = S.members.filter(m=>
           !isLocked(m) && !taken.has(m.id) && av(m.id,dt)===level
+          && (!cap || counts[m.id] < cap)     // 上限に達した人は選ばない
         );
         if(!cands.length) return null;
         cands.sort((a,b)=>{
@@ -582,8 +588,9 @@ function renderAuto(){
     const st=m.status||'normal';
     const lbl = st==='locked'?'確定 ✓' : st==='flex'?'変更希望' : '通常';
     const pc  = st==='locked'?'done'   : st==='flex'?'flex'     : 'open';
+    const cap0=parseInt(S.maxPer)||0; const atCap=cap0 && cnt[m.id]>=cap0;
     ct+=`<tr><td class="n">${m.prio?'<span class="star">⭐</span>':''}${esc(m.name)} <span class="muted">${esc(m.grade||"")}</span></td>`
-      + `<td class="c">${cnt[m.id]}回</td>`
+      + `<td class="c">${cnt[m.id]}回${atCap?' <span style="color:#c0392b;font-size:11px">上限</span>':''}</td>`
       + `<td class="lk"><span class="pill ${pc}" data-cyc="${m.id}">${lbl}</span></td></tr>`;
   });
   $("#cntTbl").innerHTML = ct;
@@ -595,8 +602,12 @@ function renderAdvice(dates, per, cnt){
   if(!dates.length){ $("#advice").innerHTML=`<li><span class="ic">📌</span>設定タブで日付を追加してください。</li>`; return; }
 
   // 未定の日
+  const cap=parseInt(S.maxPer)||0;
   const short=dates.filter(dt=>activeSlots(dt).length<per);
   if(short.length) tips.push(["⚠️", `未定の日が${short.length}日（${short.map(fmtShort).join("、")}）。その日を🟢にできる人がいないか確認、または誰かを「変更希望」にすると埋めやすくなります。`]);
+  if(short.length && cap && S.members.some(m=>!isLocked(m) && (cnt[m.id]||0)>=cap)){
+    tips.push(["🔢", `上限${cap}回に達した人がいます。未定が埋まらない時は設定で上限を上げてみてください。`]);
+  }
 
   // 🔴で外れた暫定（グレー）
   let ghosts=0; dates.forEach(dt=>ghosts+=ghostSlots(dt).length);
@@ -706,6 +717,7 @@ $("#ov").addEventListener("click", e=>{ if(e.target.id==="ov") closeOv(); });
 /* ---------- render: settings ---------- */
 function renderSettings(){
   $("#setTime").value=S.time||""; $("#setPlace").value=S.place||""; $("#setPer").value=S.per||2;
+  $("#setMax").value = (S.maxPer===0||S.maxPer)?S.maxPer:"";
   $("#mCount").textContent=S.members.length;
   $("#mList").innerHTML = S.members.map(m=>
     `<li data-edit="${m.id}" style="cursor:pointer"><span class="mn">${esc(m.name)}<small>${esc(m.grade||"")}</small></span>`
@@ -722,6 +734,7 @@ function renderDateList(){
 $("#setTime").addEventListener("input", e=>{ S.time=e.target.value; save(); renderHeader(); });
 $("#setPlace").addEventListener("input", e=>{ S.place=e.target.value; save(); renderHeader(); });
 $("#setPer").addEventListener("input", e=>{ S.per=Math.max(1,parseInt(e.target.value)||2); save(); });
+$("#setMax").addEventListener("input", e=>{ const v=e.target.value.trim(); S.maxPer = v==="" ? null : Math.max(1,parseInt(v)||1); save(); });
 
 $("#mAdd").addEventListener("click", ()=>{
   const n=$("#mName").value.trim(); if(!n){toast("名前を入れてください");return;}
