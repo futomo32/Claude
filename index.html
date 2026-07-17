@@ -103,6 +103,7 @@
   .chip.warn{background:#fdeceb; color:var(--red)}
   .chip.ghost{background:#eceef0; color:#9aa0a6; font-weight:500; border:1px dashed #cbd0d6}
   .chip.ghost s{color:#9aa0a6}
+  .chip.locked{background:#e5e7eb; color:#5f6368; cursor:pointer; box-shadow:none}
   .swap{background:#eaf3ff; color:#1d63c9; font-weight:700; font-size:12px; padding:5px 8px; border-radius:16px; align-self:center}
   .swap:active{background:#d6e8ff}
   .prio-toggle{border:1.5px solid var(--line); border-radius:10px; padding:11px 12px; text-align:center; font-weight:700; color:var(--sub); cursor:pointer; user-select:none}
@@ -218,12 +219,11 @@
         <span><i class="dot r"></i>出られない</span>
       </div>
       <div class="row wrap" style="margin-top:10px; gap:6px; align-items:center">
-        <span class="muted" style="font-size:12px">名前の下の状態タップで 通常→変更希望→確定。一括：</span>
+        <span class="muted" style="font-size:12px">「状態」列タップで 調整⇄確定。一括：</span>
         <button class="btn ghost sm" id="allLocked">全員 確定</button>
-        <button class="btn ghost sm" id="allFlex">全員 変更希望</button>
-        <button class="btn ghost sm" id="allNormal">全員 通常</button>
+        <button class="btn ghost sm" id="allNormal">全員 調整</button>
       </div>
-      <div class="muted" style="font-size:12px; margin-top:6px">「確定」の人は自動作成で動きません。変更希望の人だけ通常/変更希望にすると、他の人に迷惑がかかりません。</div>
+      <div class="muted" style="font-size:12px; margin-top:6px">「確定」の人は自動作成で動きません。動かしたい人だけ「調整」にすれば、他の人に迷惑がかかりません。</div>
     </div>
     <div class="card" style="padding:8px">
       <div class="row" style="justify-content:flex-end; padding:2px 4px 6px">
@@ -260,7 +260,7 @@
     </div>
     <div class="card">
       <h2>👥 回数と状態</h2>
-      <div class="muted" style="margin-bottom:6px">名前の右をタップで状態が切替：<b>通常</b>→<b style="color:#b26a00">変更希望</b>→<b style="color:var(--accent-d)">確定</b>。<br><b>確定</b>＝触らない／<b style="color:#b26a00">変更希望</b>＝⚫️も融通OK（🔴解消の差し替えに優先的に使う）。</div>
+      <div class="muted" style="margin-bottom:6px">右のボタンをタップで <b>調整</b>⇄<b style="color:var(--accent-d)">確定</b>。<b style="color:var(--accent-d)">確定</b>＝自動で触らない／<b>調整</b>＝組み替えOK。</div>
       <table class="cnt-tbl" id="cntTbl"></table>
     </div>
   </section>
@@ -358,7 +358,7 @@ function hasAny(o){ if(!o) return false; for(const k in o){ const v=o[k]; if(v&&
 let S = load();
 if(!S){ S = seed(); }                                   // まっさらな初回：画像データを反映
 else if(!(S.dates&&S.dates.length) && !hasAny(S.avail) && !hasAny(S.assign)){ S = seed(); } // 空っぽのまま＝実質未使用なら反映
-S.members.forEach(m=>{ if(!m.status) m.status = m.locked ? 'locked' : 'normal'; m.prio = (m.prio===true?1:(m.prio===false||m.prio==null?0:(parseInt(m.prio)||0))); });  // 旧データ移行（真偽値→数値の優先度）
+S.members.forEach(m=>{ if(!m.status) m.status = m.locked ? 'locked' : 'normal'; if(m.status==='flex') m.status='normal'; m.locked=(m.status==='locked'); m.prio = (m.prio===true?1:(m.prio===false||m.prio==null?0:(parseInt(m.prio)||0))); });  // 旧データ移行（状態は 調整/確定 の2種、真偽値→数値の優先度）
 if(S.maxPer===undefined) S.maxPer=2;
 if(S.keepPins===undefined) S.keepPins=false;
 save();
@@ -468,7 +468,7 @@ function slotAv(mid,dt){ return av(mid,dt); }
 function member(id){ return S.members.find(m=>m.id===id); }
 function isLocked(m){ return (m.status||'normal')==='locked'; }   // 確定：触らない
 function isFlex(m){ return (m.status||'normal')==='flex'; }       // 変更希望：⚫️も融通OK
-function statusMeta(m){ const s=m.status||'normal'; return s==='locked'?{l:'確定',c:'done'}:s==='flex'?{l:'変更希望',c:'flex'}:{l:'通常',c:'open'}; }
+function statusMeta(m){ return (m.status||'normal')==='locked'?{l:'確定',c:'done'}:{l:'調整',c:'open'}; }
 function prioBadge(m){ return m&&m.prio ? `<span class="star">⭐${m.prio}</span>` : ''; }  // 優先度1〜3
 function prioRank(m){ return m&&m.prio ? m.prio : 99; }           // 小さいほど優先（1が最優先）
 // この人の上限回数：個人設定があればそれ、無ければ全体設定。0/未設定は無制限
@@ -584,12 +584,12 @@ function renderGrid(){
 }
 const CYCLE = ["", "ok", "maybe", "ng"];
 function cycleStatusInline(id, el){
-  const m=member(id); const order=['normal','flex','locked'];
+  const m=member(id);
   pushUndo();
-  m.status=order[(order.indexOf(m.status||'normal')+1)%3]; m.locked=(m.status==='locked'); save();
+  m.status=(m.status==='locked')?'normal':'locked'; m.locked=(m.status==='locked'); save();
   const sm=statusMeta(m); if(el){ el.className='rowstat '+sm.c; el.textContent=sm.l; }
   renderAuto(); renderView();
-  toast(m.status==='locked'?`${m.name}：確定（触りません）`:m.status==='flex'?`${m.name}：変更希望`:`${m.name}：通常`);
+  toast(m.status==='locked'?`${m.name}：確定（触りません）`:`${m.name}：調整`);
 }
 $("#gridWrap").addEventListener("click", e=>{
   const stat = e.target.closest(".rowstat");
@@ -609,10 +609,9 @@ function setAllStatus(s){
   pushUndo();
   S.members.forEach(m=>{ m.status=s; m.locked=(s==='locked'); });
   save(); renderGrid(); renderAuto(); renderView();
-  toast(s==='locked'?"全員を確定にしました":s==='flex'?"全員を変更希望にしました":"全員を通常にしました");
+  toast(s==='locked'?"全員を確定にしました":"全員を調整にしました");
 }
 $("#allLocked").addEventListener("click", ()=>setAllStatus('locked'));
-$("#allFlex").addEventListener("click", ()=>setAllStatus('flex'));
 $("#allNormal").addEventListener("click", ()=>setAllStatus('normal'));
 
 /* 名前タップ → その人の出欠をカレンダーで入力（練習じゃない日は斜線） */
@@ -622,8 +621,8 @@ function renderPersonSheet(mid){
   const dates=[...S.dates].sort(); const set=new Set(dates);
   let h=`<h3>${esc(m.name)}${m.grade?` <small class="muted">${esc(m.grade)}</small>`:''} の出欠</h3>`
     +`<label class="muted">この人の状態</label>`
-    +`<div class="seg" id="pStatus"><button data-v="normal">通常</button><button data-v="flex">変更希望</button><button data-v="locked">確定</button></div>`
-    +`<div class="muted" style="margin:4px 0 10px">確定＝自動で触らない（編集不可扱い）／変更希望＝⚫️も融通OK。</div>`
+    +`<div class="seg" id="pStatus"><button data-v="normal">調整</button><button data-v="locked">確定</button></div>`
+    +`<div class="muted" style="margin:4px 0 10px">調整＝自動で組み替えOK／確定＝自動で触らない。</div>`
     +`<div class="legend" style="margin-bottom:8px"><span><i class="dot g"></i>出られる</span><span><i class="dot y"></i>要確認</span><span><i class="dot r"></i>出られない</span><span>斜線＝練習なし</span></div>`
     +`<div class="row wrap" style="gap:6px; margin-bottom:6px"><span class="muted" style="font-size:12px">空欄をまとめて：</span>`
     +`<button class="btn ghost sm" data-fill="ok">空欄を◯</button>`
@@ -662,7 +661,7 @@ function renderPersonSheet(mid){
   $("#sheet").onclick=ev=>{
     const sb=ev.target.closest("#pStatus button");
     if(sb){ pushUndo(); m.status=sb.dataset.v; m.locked=(m.status==='locked'); save(); paintStatus();
-      toast(m.status==='locked'?`${m.name}：確定（触りません）`:m.status==='flex'?`${m.name}：変更希望`:`${m.name}：通常`); return; }
+      toast(m.status==='locked'?`${m.name}：確定（触りません）`:`${m.name}：調整`); return; }
     const fb=ev.target.closest("[data-fill]");
     if(fb){ pushUndo(); const key=fb.dataset.fill;
       if(key==="clr"){ [...S.dates].forEach(dt=>setAv(mid,dt,"")); }
@@ -720,12 +719,13 @@ function renderAuto(){
       const a=act[i];
       if(a){
         const m=member(a.m);
+        const locked = m && isLocked(m);
         const v = m?av(m.id,dt):"";
         const cd = v==="ok"?"var(--green)":v==="maybe"?"var(--yellow)":v==="ng"?"var(--red)":"#bbb";
         const star = prioBadge(m);
-        chips+=`<span class="chip ${a.pin?"pin":""}" data-dt="${dt}" data-slot="${i}"><span class="cd" style="background:${cd}"></span>${star}${m?esc(m.name):"?"}${a.pin?" ⚫️":""}</span>`;
-        // 完全に同条件（出られる＆回数も同じ）の交代候補がいる時だけ ⇄ を出す
-        if(m && slotAv(m.id,dt)==="ok"){
+        chips+=`<span class="chip ${a.pin?"pin":""} ${locked?"locked":""}" data-dt="${dt}" data-slot="${i}"${locked?' data-locked="1"':''}><span class="cd" style="background:${cd}"></span>${star}${m?esc(m.name):"?"}${locked?" 🔒":(a.pin?" ⚫️":"")}</span>`;
+        // 確定は動かせない。調整の人だけ、完全同条件の交代候補がいれば ⇄ を出す
+        if(!locked && m && slotAv(m.id,dt)==="ok"){
           const alt=greenAlts(dt, act, a.m, cnt, cnt[a.m]||0).length;
           if(alt>0) chips+=`<button class="swap" data-dt="${dt}" data-slot="${i}" title="他に${alt}人 同条件（出られる・回数も同じ）。押すと交代">⇄${alt}</button>`;
         }
@@ -750,8 +750,8 @@ function renderAuto(){
   let ct="";
   S.members.forEach(m=>{
     const st=m.status||'normal';
-    const lbl = st==='locked'?'確定 ✓' : st==='flex'?'変更希望' : '通常';
-    const pc  = st==='locked'?'done'   : st==='flex'?'flex'     : 'open';
+    const lbl = st==='locked'?'確定 ✓' : '調整';
+    const pc  = st==='locked'?'done'   : 'open';
     const c0=capOf(m); const atCap=isFinite(c0) && cnt[m.id]>=c0;
     const own=(m.maxOwn!=null&&m.maxOwn!=="");
     ct+=`<tr><td class="n">${prioBadge(m)}${esc(m.name)} <span class="muted">${esc(m.grade||"")}</span></td>`
@@ -768,7 +768,7 @@ function renderAdvice(dates, per, cnt){
 
   // 未定の日
   const short=dates.filter(dt=>activeSlots(dt).length<per);
-  if(short.length) tips.push(["⚠️", `未定の日が${short.length}日（${short.map(fmtShort).join("、")}）。その日を🟢にできる人がいないか確認、または誰かを「変更希望」にすると埋めやすくなります。`]);
+  if(short.length) tips.push(["⚠️", `未定の日が${short.length}日（${short.map(fmtShort).join("、")}）。その日を🟢にできる人がいないか確認、または誰かを「調整」にすると埋めやすくなります。`]);
   if(short.length && S.members.some(m=>!isLocked(m) && isFinite(capOf(m)) && (cnt[m.id]||0)>=capOf(m))){
     tips.push(["🔢", `上限に達した人がいます。未定が埋まらない時は、全体または個人の上限を上げてみてください。`]);
   }
@@ -810,14 +810,11 @@ function renderAdvice(dates, per, cnt){
 $("#cntTbl").addEventListener("click", e=>{
   const p=e.target.closest("[data-cyc]"); if(!p) return;
   const m=member(p.dataset.cyc);
-  const order=['normal','flex','locked'];
   pushUndo();
-  m.status = order[(order.indexOf(m.status||'normal')+1)%3];
+  m.status = (m.status==='locked')?'normal':'locked';
   m.locked = (m.status==='locked');
   save(); renderAuto();
-  toast(m.status==='locked'?`${m.name}：確定（触りません）`
-       :m.status==='flex'  ?`${m.name}：変更希望（⚫️も融通OK）`
-                            :`${m.name}：通常`);
+  toast(m.status==='locked'?`${m.name}：確定（触りません）`:`${m.name}：調整`);
 });
 
 /* slot tap -> choose member */
@@ -827,7 +824,16 @@ $("#dayList").addEventListener("click", e=>{
   const g=e.target.closest(".chip.ghost");
   if(g){ openGhost(g.dataset.dt, g.dataset.gm); return; }
   const chip=e.target.closest(".chip"); if(!chip) return;
-  openSlotSheet(chip.dataset.dt, +chip.dataset.slot);
+  const dt=chip.dataset.dt, slot=+chip.dataset.slot;
+  if(chip.dataset.locked){                       // 確定：切り替え確認
+    const a=activeSlots(dt)[slot], m=a&&member(a.m);
+    if(m && confirm(`${m.name} は「確定」です。「調整」に切り替えますか？\n（切り替えると変更できます）`)){
+      pushUndo(); m.status='normal'; m.locked=false; save(); renderAuto(); renderView(); renderGrid();
+      openSlotSheet(dt, slot);
+    }
+    return;
+  }
+  openSlotSheet(dt, slot);
 });
 function openGhost(dt, mid){
   const m=member(mid), o=d2(dt);
