@@ -105,7 +105,7 @@
   .chip.ghost s{color:#9aa0a6}
   .chip.locked{background:#e5e7eb; color:#5f6368; cursor:pointer; box-shadow:none}
   .chip.res{background:#eef2f7; color:#33415c; border:1px solid #cfd8e6; font-weight:600}
-  .chip.res.full{opacity:.55}
+  .chip.res.full{opacity:.8}
   .chip.res.more{background:#dbe3f0; color:#2b3a55; font-weight:700}
   .chip.res small{color:var(--sub); font-weight:400; margin-left:2px}
   .reslabel{align-self:center; font-size:11px; color:var(--sub); margin-left:6px; margin-right:1px; white-space:nowrap}
@@ -739,13 +739,12 @@ function openAdopt(dt, resId){
   const cnt=countAssign();
   const rc=capOf(R); const rFull=isFinite(rc)&&(cnt[R.id]||0)>=rc;
   const act=activeSlots(dt);
-  // 空きがあればそのまま採用
+  // 空きがあればそのまま採用（上限でもOK。あとで調整）
   if(act.length<per){
-    if(rFull && !confirm(`${R.name} は上限(${rc}回)に達しています。それでも採用しますか？`)) return;
     logHistory(`${o.m}/${o.d} ${R.name} を採用`);
     pushUndo(); const G=ghostSlots(dt);
     S.assign[dt]=activeSlots(dt).concat([{m:resId,pin:true}]).concat(G);
-    save(); renderAuto(); renderView(); toast(`採用：${R.name}`); return;
+    save(); renderAuto(); renderView(); toast(rFull?`採用：${R.name}（上限超・要調整）`:`採用：${R.name}`); return;
   }
   // 満員：控えに落とす当番を選ぶ（確定は落とせない）
   const demotable=act.filter(a=>!isLocked(member(a.m)));
@@ -764,7 +763,6 @@ function openAdopt(dt, resId){
     if(ev.target.closest("#adoptCancel")){ closeOv(); return; }
     const d=ev.target.closest("[data-demote]"); if(!d) return;
     const demoteMid=d.dataset.demote;
-    if(rFull && !confirm(`${R.name} は上限(${rc}回)に達しています。それでも採用しますか？`)) return;
     logHistory(`${o.m}/${o.d} ${member(demoteMid).name} → ${R.name}`);
     pushUndo();
     const A=activeSlots(dt), G=ghostSlots(dt);
