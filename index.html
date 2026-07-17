@@ -105,6 +105,24 @@
   .advice li:last-child{border-bottom:none}
   .advice li .ic{flex:none}
   .advice .ok{color:var(--accent-d)}
+  button:disabled{opacity:.4}
+
+  /* 完成表（カレンダー） */
+  .vhead{text-align:center; margin-bottom:8px}
+  .vhead .t{font-weight:700; font-size:15px}
+  .vhead .s{color:var(--sub); font-size:12.5px}
+  .vmonth{margin-bottom:14px}
+  .vmonth h3{text-align:center; font-size:14px; margin:0 0 6px}
+  table.vcal{width:100%; border-collapse:collapse; table-layout:fixed}
+  table.vcal th{font-size:11px; padding:3px 0; color:var(--sub); font-weight:600}
+  table.vcal th.sun,table.vcal td.sun .dn{color:var(--red)}
+  table.vcal th.sat,table.vcal td.sat .dn{color:#2563eb}
+  table.vcal td{border:1px solid var(--line); height:52px; vertical-align:top; padding:2px 3px; width:14.28%}
+  table.vcal td.off{background:#fafbfc}
+  table.vcal td .dn{font-size:11px; color:#333; font-weight:600; line-height:1.1}
+  table.vcal td .nm{font-size:11px; line-height:1.25; margin-top:1px; word-break:break-all}
+  table.vcal td .nm .p{color:var(--red)}
+  .shot{background:#fff; border-radius:12px; padding:14px}
   .cnt-tbl{width:100%; border-collapse:collapse; font-size:13.5px}
   .cnt-tbl td{padding:8px 4px; border-bottom:1px solid var(--line)}
   .cnt-tbl td.n{font-weight:600}
@@ -182,6 +200,7 @@
     <div class="card">
       <div class="row" style="gap:10px">
         <button class="btn" style="flex:1" id="btnGen">⚡ 自動で組む</button>
+        <button class="btn ghost sm" id="btnUndo" disabled>↩ 戻す</button>
         <button class="btn ghost sm" id="btnClearAssign">クリア</button>
       </div>
       <div class="muted" style="margin-top:8px">
@@ -201,6 +220,20 @@
       <h2>👥 回数と状態</h2>
       <div class="muted" style="margin-bottom:6px">名前の右をタップで状態が切替：<b>通常</b>→<b style="color:#b26a00">変更希望</b>→<b style="color:var(--accent-d)">確定</b>。<br><b>確定</b>＝触らない／<b style="color:#b26a00">変更希望</b>＝⚫️も融通OK（🔴解消の差し替えに優先的に使う）。</div>
       <table class="cnt-tbl" id="cntTbl"></table>
+    </div>
+  </section>
+
+  <!-- ===== 完成表タブ ===== -->
+  <section id="tab-view" class="hidden">
+    <div class="card">
+      <div class="row" style="gap:8px">
+        <button class="btn sm" id="btnCopy2" style="flex:1">📋 テキストでコピー</button>
+        <button class="btn ghost sm" id="btnCsv" style="flex:1">⬇️ エクセル(CSV)</button>
+      </div>
+      <div class="muted" style="margin-top:8px">下の表をそのままスクリーンショットして共有できます。</div>
+    </div>
+    <div class="card shot" id="viewCard">
+      <div id="calView"></div>
     </div>
   </section>
 
@@ -262,6 +295,7 @@
 <nav class="tabs">
   <button data-tab="input" class="active"><span class="ic">✍️</span>出欠入力</button>
   <button data-tab="auto"><span class="ic">⚡</span>自動作成</button>
+  <button data-tab="view"><span class="ic">📋</span>完成表</button>
   <button data-tab="set"><span class="ic">⚙️</span>設定</button>
 </nav>
 
@@ -343,6 +377,23 @@ function seed(){
 function load(){ try{return JSON.parse(localStorage.getItem(KEY))}catch(e){return null} }
 function save(){ localStorage.setItem(KEY, JSON.stringify(S)); }
 
+/* ---------- undo（当番の変更を元に戻す） ---------- */
+let undoStack=[];
+function pushUndo(){ undoStack.push(JSON.stringify(S.assign||{})); if(undoStack.length>40) undoStack.shift(); }
+function updateUndoBtn(){ const b=$("#btnUndo"); if(b) b.disabled = undoStack.length===0; }
+function undo(){ if(!undoStack.length) return; S.assign=JSON.parse(undoStack.pop()); save(); renderAuto(); renderView(); toast("元に戻しました"); }
+
+/* ---------- ファイル保存（エクセル用CSVなど） ---------- */
+function downloadFile(filename, text, mime){
+  try{
+    const blob=new Blob([text],{type:(mime||"text/plain")+";charset=utf-8"});
+    const url=URL.createObjectURL(blob); const a=document.createElement("a");
+    a.href=url; a.download=filename; document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); },800);
+    return true;
+  }catch(e){ return false; }
+}
+
 /* ---------- helpers ---------- */
 const WD = ["日","月","火","水","木","金","土"];
 function d2(iso){ const [y,m,d]=iso.split("-").map(Number); return {y,m,d, wd:new Date(y,m-1,d).getDay()}; }
@@ -358,6 +409,7 @@ function toast(t){ const el=$("#toast"); el.textContent=t; el.classList.add("sho
 
 /* ---------- scheduling ---------- */
 function autoGenerate(){
+  pushUndo();
   const per = Math.max(1, parseInt(S.per)||2);
   const dates = [...S.dates].sort();
   const counts = {}; S.members.forEach(m=>counts[m.id]=0);
@@ -462,24 +514,31 @@ $("#gridWrap").addEventListener("click", e=>{
 /* ---------- render: auto ---------- */
 function activeSlots(dt){ return (S.assign[dt]||[]).filter(a=>!a.dropped); }
 function ghostSlots(dt){ return (S.assign[dt]||[]).filter(a=>a.dropped); }
-// その日 🟢 で、今どの枠にも入っていない人（＝交代候補）
-function greenAlts(dt, act, exceptId){
+// カウント（現役の割当のみ）
+function countAssign(){ const c={}; S.members.forEach(m=>c[m.id]=0); [...S.dates].forEach(d=>activeSlots(d).forEach(a=>{ if(c[a.m]!=null)c[a.m]++; })); return c; }
+// その日 🟢 で今どの枠にも入っていない人。かつ「回数も同じ」＝完全に同条件の交代候補だけ返す
+function greenAlts(dt, act, exceptId, cnt, curCount){
   const on=new Set(act.map(a=>a.m));
-  return S.members.filter(m=>!isLocked(m) && m.id!==exceptId && !on.has(m.id) && av(m.id,dt)==="ok");
+  return S.members.filter(m=>!isLocked(m) && m.id!==exceptId && !on.has(m.id) && av(m.id,dt)==="ok"
+    && (cnt ? (cnt[m.id]||0)===curCount : true));
 }
 function rotateSlot(dt, slot){
+  const cnt=countAssign();
   const A=activeSlots(dt), G=ghostSlots(dt); const cur=A[slot]; if(!cur) return;
-  const alts=greenAlts(dt, A, cur.m).map(m=>m.id);
+  const alts=greenAlts(dt, A, cur.m, cnt, cnt[cur.m]||0).map(m=>m.id);
   if(!alts.length) return;
+  pushUndo();
   const pool=[cur.m, ...alts];
   const nx=pool[(pool.indexOf(cur.m)+1)%pool.length];
   A[slot]={m:nx, pin:cur.pin};        // pinの状態は引き継ぐ（⚫️なら⚫️のまま）
-  S.assign[dt]=A.concat(G); save(); renderAuto();
+  S.assign[dt]=A.concat(G); save(); renderAuto(); renderView();
   const m=member(nx); toast(`交代：${m?m.name:""}`);
 }
 function renderAuto(){
   const dates=[...S.dates].sort();
   const per = Math.max(1, parseInt(S.per)||2);
+  const cnt = countAssign();                 // 交代候補の判定・回数表・提案で共用
+  updateUndoBtn();
   // day list
   let dl="";
   if(!dates.length){ dl=`<div class="muted">日付がありません（設定タブで追加）</div>`; }
@@ -495,10 +554,10 @@ function renderAuto(){
         const cd = v==="ok"?"var(--green)":v==="maybe"?"var(--yellow)":v==="ng"?"var(--red)":"#bbb";
         const star = m&&m.prio?'<span class="star">⭐</span>':'';
         chips+=`<span class="chip ${a.pin?"pin":""}" data-dt="${dt}" data-slot="${i}"><span class="cd" style="background:${cd}"></span>${star}${m?esc(m.name):"?"}${a.pin?" ⚫️":""}</span>`;
-        // 同条件（🟢）の交代候補がいれば ⇄ を出す
+        // 完全に同条件（🟢かつ回数も同じ）の交代候補がいる時だけ ⇄ を出す
         if(v==="ok"){
-          const alt=greenAlts(dt, act, a.m).length;
-          if(alt>0) chips+=`<button class="swap" data-dt="${dt}" data-slot="${i}" title="他に${alt}人 同じ🟢条件。押すと交代">⇄${alt}</button>`;
+          const alt=greenAlts(dt, act, a.m, cnt, cnt[a.m]||0).length;
+          if(alt>0) chips+=`<button class="swap" data-dt="${dt}" data-slot="${i}" title="他に${alt}人 同条件（🟢・回数も同じ）。押すと交代">⇄${alt}</button>`;
         }
       }else{
         chips+=`<span class="chip empty" data-dt="${dt}" data-slot="${i}">＋ 未定</span>`;
@@ -517,9 +576,7 @@ function renderAuto(){
   $("#genWarn").innerHTML = short.length
     ? `<div class="banner">⚠️ ${short.length}日ぶん 当番が埋まっていません（${short.map(fmtShort).join("、")}）。🟡や出欠を見直すか、手動で追加してください。</div>` : "";
 
-  // counts（グレー＝外れた暫定は数えない）
-  const cnt={}; S.members.forEach(m=>cnt[m.id]=0);
-  dates.forEach(dt=>activeSlots(dt).forEach(a=>{ if(cnt[a.m]!=null)cnt[a.m]++; }));
+  // counts（グレー＝外れた暫定は数えない。cntは冒頭で計算済み）
   let ct="";
   S.members.forEach(m=>{
     const st=m.status||'normal';
@@ -565,11 +622,11 @@ function renderAdvice(dates, per, cnt){
   const prioZero=S.members.filter(m=>m.prio && (cnt[m.id]||0)===0);
   if(prioZero.length) tips.push(["⭐", `優先指定なのに未割当：${prioZero.map(m=>m.name).join("、")}。出られる日(🟢)が入っているか確認を。`]);
 
-  // 交代候補（⇄）がある日
+  // 交代候補（⇄）がある日＝完全に同条件（🟢・回数も同じ）
   let swapDays=0; dates.forEach(dt=>{ const act=activeSlots(dt);
-    if(act.some((a,i)=>av(a.m,dt)==="ok" && greenAlts(dt,act,a.m).length>0)) swapDays++;
+    if(act.some(a=>av(a.m,dt)==="ok" && greenAlts(dt,act,a.m,cnt,cnt[a.m]||0).length>0)) swapDays++;
   });
-  if(swapDays) tips.push(["⇄", `どちらでもOKな交代候補がある日が${swapDays}日。⇄ボタンで好みの人に変えられます。`]);
+  if(swapDays) tips.push(["⇄", `どちらでもOKな交代候補（同条件）がある日が${swapDays}日。⇄ボタンで好みの人に変えられます。`]);
 
   if(!tips.length) tips.push(["✅", "バランスよく組めています。特に直す点は見つかりませんでした。", true]);
 
@@ -599,8 +656,9 @@ $("#dayList").addEventListener("click", e=>{
 function openGhost(dt, mid){
   const m=member(mid), o=d2(dt);
   if(confirm(`${o.m}/${o.d}(${WD[o.wd]}) の暫定当番「${m?m.name:""}」は本人が🔴のため外れています。\nこの暫定（⚫️）を消しますか？`)){
+    pushUndo();
     S.assign[dt]=(S.assign[dt]||[]).filter(a=>!(a.dropped && a.m===mid));
-    save(); renderAuto(); toast("暫定を消しました");
+    save(); renderAuto(); renderView(); toast("暫定を消しました");
   }
 }
 function openSlotSheet(dt, slot){
@@ -627,6 +685,7 @@ function openSlotSheet(dt, slot){
   $("#ov").classList.add("show");
   $("#sheet").onclick = ev=>{
     const el=ev.target.closest(".opt"); if(!el) return;
+    pushUndo();
     let A = activeSlots(dt);              // 現役の枠
     let G = ghostSlots(dt);              // グレー（外れた暫定）
     const h = A[slot];
@@ -638,7 +697,7 @@ function openSlotSheet(dt, slot){
       G = G.filter(x=>x.m!==id);         // その人がグレーで残っていたら解消
     }
     S.assign[dt]=A.filter(Boolean).concat(G);
-    save(); closeOv(); renderAuto();
+    save(); closeOv(); renderAuto(); renderView();
   };
 }
 function closeOv(){ $("#ov").classList.remove("show"); }
@@ -773,19 +832,74 @@ $("#dList").addEventListener("click", e=>{
 
 /* ---------- data ---------- */
 $("#btnGen").addEventListener("click", autoGenerate);
+$("#btnUndo").addEventListener("click", undo);
 $("#btnClearAssign").addEventListener("click", ()=>{
   if(!confirm("当番の割り当てを全部消しますか？（出欠は残ります）"))return;
-  S.assign={}; save(); renderAuto(); toast("割り当てを消しました");
+  pushUndo();
+  S.assign={}; save(); renderAuto(); renderView(); toast("割り当てを消しました");
 });
-$("#btnCopy").addEventListener("click", ()=>{
+function buildResultText(){
   const dates=[...S.dates].sort();
   let t=`◆当番表  ${S.time||""}\n${S.place?"（"+S.place+"）\n":""}\n`;
   dates.forEach(dt=>{ const o=d2(dt);
     const names=activeSlots(dt).map(a=>{const m=member(a.m);return m?m.name+(a.pin?"⚫️":""):"";}).filter(Boolean);
     t+=`${o.m}/${o.d}(${WD[o.wd]})  ${names.join("・")||"未定"}\n`;
   });
-  navigator.clipboard.writeText(t).then(()=>toast("コピーしました")).catch(()=>{ prompt("コピーしてください", t); });
+  return t;
+}
+function buildCsv(){
+  const dates=[...S.dates].sort();
+  const per=Math.max(1,parseInt(S.per)||2);
+  const head=["日付","曜日"]; for(let i=1;i<=per;i++) head.push("当番"+i);
+  const rows=[head];
+  dates.forEach(dt=>{ const o=d2(dt);
+    const names=activeSlots(dt).map(a=>{const m=member(a.m);return m?m.name:"";});
+    const row=[`${o.y}/${o.m}/${o.d}`, WD[o.wd]];
+    for(let i=0;i<per;i++) row.push(names[i]||"");
+    rows.push(row);
+  });
+  return "﻿"+rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\r\n");
+}
+function copyResult(){ const t=buildResultText(); navigator.clipboard.writeText(t).then(()=>toast("コピーしました")).catch(()=>{ prompt("コピーしてください", t); }); }
+$("#btnCopy").addEventListener("click", copyResult);
+$("#btnCopy2").addEventListener("click", copyResult);
+$("#btnCsv").addEventListener("click", ()=>{
+  const csv=buildCsv();
+  if(downloadFile("toban.csv", csv, "text/csv")) toast("CSVを保存しました（Excelで開けます）");
+  else prompt("コピーして .csv で保存してください", csv);
 });
+/* ---------- 完成表（カレンダー） ---------- */
+function renderView(){
+  const el=$("#calView"); if(!el) return;
+  const dates=[...S.dates].sort();
+  if(!dates.length){ el.innerHTML=`<div class="muted" style="text-align:center;padding:16px">まだ日付がありません（設定タブで追加）</div>`; return; }
+  let h=`<div class="vhead"><div class="t">🗓️ 当番表</div><div class="s">${esc([S.time,S.place].filter(Boolean).join("　／　"))}</div></div>`;
+  const months=[], seen={};
+  dates.forEach(dt=>{ const o=d2(dt); const k=o.y+"-"+o.m; if(!seen[k]){ seen[k]={y:o.y,m:o.m}; months.push(seen[k]); } });
+  months.forEach(mo=>{
+    h+=`<div class="vmonth"><h3>${mo.y}年 ${mo.m}月</h3><table class="vcal"><thead><tr>`;
+    ["日","月","火","水","木","金","土"].forEach((w,i)=>{ h+=`<th class="${i===0?"sun":i===6?"sat":""}">${w}</th>`; });
+    h+='</tr></thead><tbody><tr>';
+    const first=new Date(mo.y,mo.m-1,1).getDay(), dim=new Date(mo.y,mo.m,0).getDate();
+    let col=0;
+    for(let i=0;i<first;i++){ h+='<td class="off"></td>'; col++; }
+    for(let d=1;d<=dim;d++){
+      if(col===7){ h+='</tr><tr>'; col=0; }
+      const dt=iso(mo.y,mo.m,d), wd=new Date(mo.y,mo.m-1,d).getDay();
+      const wc=wd===0?"sun":wd===6?"sat":"";
+      if(S.dates.includes(dt)){
+        const nm=activeSlots(dt).map(a=>{const m=member(a.m);return m?`<div>${m.prio?'<span class="p">⭐</span>':''}${esc(m.name)}</div>`:"";}).join("");
+        h+=`<td class="${wc}"><div class="dn">${d}</div><div class="nm">${nm||'<span style="color:#c0392b">未定</span>'}</div></td>`;
+      }else{
+        h+=`<td class="off ${wc}"><div class="dn">${d}</div></td>`;
+      }
+      col++;
+    }
+    while(col>0 && col<7){ h+='<td class="off"></td>'; col++; }
+    h+='</tr></tbody></table></div>';
+  });
+  el.innerHTML=h;
+}
 $("#btnExport").addEventListener("click", ()=>{ prompt("このテキストを保存してください（読み込みに使えます）", JSON.stringify(S)); });
 $("#btnImport").addEventListener("click", ()=>{
   const t=prompt("書き出したテキストを貼り付けてください"); if(!t)return;
@@ -805,17 +919,18 @@ document.querySelectorAll("nav.tabs button").forEach(b=>{
   b.addEventListener("click", ()=>{
     document.querySelectorAll("nav.tabs button").forEach(x=>x.classList.remove("active"));
     b.classList.add("active");
-    ["input","auto","set"].forEach(t=>$("#tab-"+t).classList.toggle("hidden", t!==b.dataset.tab));
+    ["input","auto","view","set"].forEach(t=>$("#tab-"+t).classList.toggle("hidden", t!==b.dataset.tab));
     if(b.dataset.tab==="auto") renderAuto();
     if(b.dataset.tab==="set") renderSettings();
     if(b.dataset.tab==="input") renderGrid();
+    if(b.dataset.tab==="view") renderView();
     window.scrollTo(0,0);
   });
 });
 function renderHeader(){ $("#hdrMeta").textContent = [S.time,S.place].filter(Boolean).join("　／　"); }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
-function renderAll(){ renderHeader(); renderGrid(); renderAuto(); renderSettings(); }
+function renderAll(){ renderHeader(); renderGrid(); renderAuto(); renderView(); renderSettings(); }
 renderAll();
 </script>
 </body>
