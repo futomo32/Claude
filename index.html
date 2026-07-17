@@ -227,7 +227,7 @@
         <button class="btn ghost sm" id="btnClearAssign">クリア</button>
       </div>
       <div class="muted" style="margin-top:8px">
-        🟢を優先し、足りない日だけ🟡を使います。ふだんは毎回、<b>確定の人以外を均等に組み直します</b>（優先度・上限を反映）。出欠を1つも入力していない人は「いつでもOK」として均等に入れます。
+        🟢を優先し、足りない日だけ🟡を使います。ふだんは毎回、<b>確定の人以外を均等に組み直します</b>（優先度・上限を反映）。出られる人が少ない日から先に埋めます。
       </div>
       <label class="row" style="margin-top:8px; gap:8px; align-items:center; cursor:pointer">
         <input type="checkbox" id="chkKeep" style="width:auto; transform:scale(1.2)">
@@ -401,6 +401,15 @@ function seed(){
     "2026-08-17":NG,"2026-08-18":NG,"2026-08-19":NG,"2026-08-20":NG,"2026-08-21":OK});
   // 中島：8/7×、8/19○
   setA("中島",{"2026-08-07":NG,"2026-08-19":OK});
+  // 暫定当番だった人に、その日の○を付与（他の日は各自で入力してください）
+  setA("内山",{"2026-08-02":OK,"2026-08-17":OK});
+  setA("田中",{"2026-08-05":OK});
+  setA("萱島",{"2026-07-30":OK,"2026-08-06":OK});
+  setA("大羅",{"2026-08-06":OK,"2026-08-20":OK});
+  setA("佐野",{"2026-08-07":OK,"2026-08-19":OK});
+  setA("池野",{"2026-08-21":OK});
+  setA("鈴木",{"2026-07-31":OK,"2026-08-21":OK});
+  setA("渡邉",{"2026-07-31":OK,"2026-08-04":OK});
   // カレンダーの暫定当番（⚫️＝固定）
   const P=(a,b)=>[{m:id[a],pin:true},{m:id[b],pin:true}];
   const assign={
@@ -439,10 +448,8 @@ function fmtShort(iso){ const o=d2(iso); return `${o.m}/${o.d}`; }
 function wdClass(wd){ return wd===0?"wknd":wd===6?"sat":""; }
 function av(m,dt){ return (S.avail[m]&&S.avail[m][dt])||""; }
 function setAv(m,dt,v){ (S.avail[m]=S.avail[m]||{}); if(v) S.avail[m][dt]=v; else delete S.avail[m][dt]; }
-// 出欠を1つも入力していない人がいるか
-function hasAvail(mid){ const a=S.avail[mid]; if(!a) return false; for(const k in a){ if(a[k]) return true; } return false; }
-// 自動作成で使う実効の出欠：未入力なら「いつでもOK(ok)」扱い、1つでも入力があれば空欄は候補外
-function slotAv(mid,dt){ const v=av(mid,dt); if(v) return v; return hasAvail(mid)?"":"ok"; }
+// 自動作成で使う出欠（○△×のみ。空欄＝候補外）
+function slotAv(mid,dt){ return av(mid,dt); }
 function member(id){ return S.members.find(m=>m.id===id); }
 function isLocked(m){ return (m.status||'normal')==='locked'; }   // 確定：触らない
 function isFlex(m){ return (m.status||'normal')==='flex'; }       // 変更希望：⚫️も融通OK
@@ -493,40 +500,43 @@ function autoGenerate(){
     });
   });
 
-  // 2) 残りの枠を埋める
-  const shortage = [];
-  dates.forEach((dt,i)=>{
-    while(activeCnt(dt) < per){
-      const taken = new Set(next[dt].map(x=>x.m));
-      const pick = (level)=>{
-        const cands = S.members.filter(m=>
-          !isLocked(m) && !taken.has(m.id) && slotAv(m.id,dt)===level
-          && counts[m.id] < capOf(m)          // 上限（個人設定 or 全体）に達した人は選ばない
-        );
-        if(!cands.length) return null;
-        cands.sort((a,b)=>{
-          const ra=prioRank(a), rb=prioRank(b);                                     // ⭐優先度（1→2→3→なし）
-          if(ra!==rb) return ra-rb;
-          const fa=isFlex(a)?0:1, fb=isFlex(b)?0:1;                                 // ①変更希望者を優先して融通に使う
-          if(fa!==fb) return fa-fb;
-          if(counts[a.id]!==counts[b.id]) return counts[a.id]-counts[b.id];        // 回数が少ない人優先
-          const pa=(lastDay[a.id]===i-1)?1:0, pb=(lastDay[b.id]===i-1)?1:0;         // 連日を避ける
-          if(pa!==pb) return pa-pb;
-          return Math.random()-0.5;
-        });
-        return cands[0];
-      };
-      const chosen = pick("ok") || pick("maybe");
-      if(!chosen){ shortage.push({dt, need: per-next[dt].length}); break; }
-      next[dt].push({m:chosen.id, pin:false});
-      counts[chosen.id]++; lastDay[chosen.id]=i;
-    }
+  // 2) 残りの枠を埋める（出られる人が少ない日から先に＝希少な人を取りこぼさない）
+  const idxOf={}; dates.forEach((d,i)=>idxOf[d]=i);
+  const cand = (dt,level)=>{
+    const taken=new Set(next[dt].map(x=>x.m));
+    return S.members.filter(m=> !isLocked(m) && !taken.has(m.id) && slotAv(m.id,dt)===level && counts[m.id] < capOf(m));
+  };
+  const sortCands = (cands,i)=> cands.sort((a,b)=>{
+    const ra=prioRank(a), rb=prioRank(b);                          // ⭐優先度（1→2→3→なし）
+    if(ra!==rb) return ra-rb;
+    const fa=isFlex(a)?0:1, fb=isFlex(b)?0:1;                       // 変更希望を先に融通
+    if(fa!==fb) return fa-fb;
+    if(counts[a.id]!==counts[b.id]) return counts[a.id]-counts[b.id];   // 回数が少ない人優先＝均等
+    const pa=(lastDay[a.id]===i-1||lastDay[a.id]===i+1)?1:0, pb=(lastDay[b.id]===i-1||lastDay[b.id]===i+1)?1:0;
+    if(pa!==pb) return pa-pb;                                       // 連日を避ける
+    return Math.random()-0.5;
   });
+  const fillPass = (level)=>{
+    while(true){
+      let best=null;
+      for(const dt of dates){
+        if(activeCnt(dt)>=per) continue;
+        const cs=cand(dt,level);
+        if(!cs.length) continue;
+        if(!best || cs.length<best.cs.length) best={dt, cs, i:idxOf[dt]};   // 候補が少ない日を最優先
+      }
+      if(!best) break;
+      const chosen=sortCands(best.cs, best.i)[0];
+      next[best.dt].push({m:chosen.id, pin:false});
+      counts[chosen.id]++; lastDay[chosen.id]=best.i;
+    }
+  };
+  fillPass("ok"); fillPass("maybe");
 
   S.assign = next;
-  save(); renderAuto();
-  const uniqShort = [...new Map(shortage.map(s=>[s.dt,s])).values()];
-  toast(uniqShort.length ? `${uniqShort.length}日ぶん 人が足りません` : "自動作成しました");
+  save(); renderAuto(); renderView();
+  const short = dates.filter(dt=>activeCnt(dt)<per);
+  toast(short.length ? `${short.length}日ぶん 人が足りません` : "自動作成しました");
 }
 
 /* ---------- render: input grid ---------- */
@@ -1002,7 +1012,7 @@ function renderView(){
       const dt=iso(mo.y,mo.m,d), wd=new Date(mo.y,mo.m-1,d).getDay();
       const wc=wd===0?"sun":wd===6?"sat":"";
       if(S.dates.includes(dt)){
-        const nm=activeSlots(dt).map(a=>{const m=member(a.m);return m?`<div>${m&&m.prio?`<span class="p">⭐${m.prio}</span>`:''}${esc(m.name)}</div>`:"";}).join("");
+        const nm=activeSlots(dt).map(a=>{const m=member(a.m);return m?`<div>${esc(m.name)}</div>`:"";}).join("");
         h+=`<td class="${wc}"><div class="dn">${d}</div><div class="nm">${nm||'<span style="color:#c0392b">未定</span>'}</div></td>`;
       }else{
         h+=`<td class="off ${wc}"><div class="dn">${d}</div></td>`;
