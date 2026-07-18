@@ -13,6 +13,7 @@ pyserial が必要: pip install pyserial
 """
 import os
 import sys
+import time
 import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))

@@ -218,15 +218,22 @@ class TCP300II:
         time.sleep(3.2)
 
     # ---- 磁気ライト(誤書込防止のため既定では使わない) ----
-    def _set_track2(self, data: bytes):
-        """第2トラックのライトデータ設定(3Ch)。データは 01h〜7Eh(02h/03h除く)。"""
-        _, status, _ = self.command(0x3C, data, resp_timeout=10.0)
+    # データ設定コマンド(第2トラック): 書式ごとに使い分ける
+    DATASET_STD = 0x3C   # 既定書式(メモリスイッチ依存)の第2トラックデータ設定
+    DATASET_7BIT = 0x39  # 7bit(JIS X 6302)第2トラック
+    DATASET_REV7 = 0x36  # 逆7bit(JIS X 6302 逆方向)第2トラック ← 宝飾ナビと同形式
+
+    def _set_track2(self, data: bytes, cmd: int = 0x3C):
+        """第2トラックのライトデータ設定。データは 01h〜7Eh(02h/03h除く)。
+        cmd で書式を選ぶ(3Ch=既定 / 39h=7bit / 36h=逆7bit)。"""
+        _, status, _ = self.command(cmd, data, resp_timeout=10.0)
         return status
 
-    def write_track2(self, data: bytes, resp_timeout=30.0):
-        """磁気ライト: (1)3Ch でデータ設定 → (2)31h で書込実行(トラック2)。
-        ★実機での動作未検証。使用前に読み取りで疎通を確認してから。"""
-        st = self._set_track2(data)
+    def write_track2(self, data: bytes, dataset_cmd: int = 0x3C, resp_timeout=30.0):
+        """磁気ライト: (1)データ設定(dataset_cmd) → (2)31h で書込実行(トラック2)。
+        dataset_cmd で書式を指定する(既定3Ch / 7bit=39h / 逆7bit=36h)。
+        書込後は装置が自動でベリファイする。status=0x20 が正常。"""
+        st = self._set_track2(data, dataset_cmd)
         if st != 0x20:
             raise TCP300IIError("データ設定失敗: " + status_text(st))
         _, status, _ = self.command(0x31, b"2", resp_timeout=resp_timeout)
