@@ -150,8 +150,8 @@ class Handler(BaseHTTPRequestHandler):
                 con.close()
                 return self._send(200, json.dumps(blob, ensure_ascii=False).encode("utf-8"))
             if path in ("/api/customer_detail", "/api/products", "/api/product_categories",
-                        "/api/product_suppliers", "/api/daily_sales", "/api/slip_lines",
-                        "/api/documents"):
+                        "/api/product_suppliers", "/api/supplier_master", "/api/daily_sales",
+                        "/api/slip_lines", "/api/documents"):
                 qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
 
                 def q1(name, default=""):
@@ -164,13 +164,15 @@ class Handler(BaseHTTPRequestHandler):
                         result = db_query.customer_detail(con, q1("id"))
                     elif path == "/api/products":
                         result = db_query.search_products(
-                            con, q1("q"), q1("cat"), q1("state"), q1("supplier"),
+                            con, q1("q"), q1("cat"), q1("state"), q1("supplier"), q1("genre"),
                             q1("sort", "no"), q1("order", "asc"),
                             q1("limit", "50"), q1("offset", "0"))
                     elif path == "/api/product_categories":
                         result = {"categories": db_query.product_categories(con)}
                     elif path == "/api/product_suppliers":
                         result = {"suppliers": db_query.product_suppliers(con)}
+                    elif path == "/api/supplier_master":
+                        result = {"suppliers": db_query.list_supplier_master(con)}
                     elif path == "/api/daily_sales":
                         result = {"lines": db_query.daily_sales(con, q1("date"))}
                     elif path == "/api/documents":
@@ -227,6 +229,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/document":
                 con = connect()
                 result = db_query.save_document(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/supplier_genre":
+                con = connect()
+                result = db_query.set_supplier_genre(con, payload.get("name"), payload.get("genre"))
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/product_image":

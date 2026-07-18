@@ -23,6 +23,12 @@ def glass_kind(*texts):
 def ensure_schema(con):
     """後付けした列がDBに無ければ自動で足す(冪等)。pull直後にmigrate_dbを忘れても
     サーバーが動くための保険。列不足でクエリが落ちて『在庫0件』等になるのを防ぐ。"""
+    # 仕入先マスタ(分類フラグ付き)。無ければ作る
+    con.execute("""CREATE TABLE IF NOT EXISTS supplier_master (
+        name  TEXT PRIMARY KEY,   -- 仕入先名(products.supplier と一致)
+        genre TEXT                 -- 商品ジャンル: 宝石/メガネ/時計/その他(未設定はNULL)
+    )""")
+
     def cols(t):
         try:
             return {r[1] for r in con.execute(f"PRAGMA table_info({t})")}
@@ -352,7 +358,7 @@ PRODUCT_SORT_COLS = {"no": "product_no", "name": "name", "cat": "category",
                      "loc": "location", "supplier": "supplier"}
 
 
-def search_products(con, q="", cat="", state="", supplier="", sort="no", order="asc", limit=50, offset=0):
+def search_products(con, q="", cat="", state="", supplier="", genre="", sort="no", order="asc", limit=50, offset=0):
     """商品検索(在庫一覧・レジの商品ピッカー用)。全商品(21万件)を送らずサーバーで絞り込む。
     戻り値 {rows:[...], total:N}。rows は
       [商品番号,品名,分類,上代,状態,置場,石,商品キー,画像,下代,仕入先]。
@@ -375,6 +381,10 @@ def search_products(con, q="", cat="", state="", supplier="", sort="no", order="
         where.append("state = ?"); args.append(state)
     if supplier:
         where.append("supplier = ?"); args.append(supplier)
+    if genre:
+        # 仕入先ジャンルで絞り込み(仕入先マスタで該当ジャンルに設定された仕入先の商品のみ)
+        where.append("supplier IN (SELECT name FROM supplier_master WHERE genre = ?)")
+        args.append(genre)
     wsql = (" WHERE " + " AND ".join(where)) if where else ""
     col = PRODUCT_SORT_COLS.get(sort, "product_no")
     direction = "DESC" if str(order).lower() == "desc" else "ASC"
@@ -404,6 +414,43 @@ def product_suppliers(con):
     """仕入先の一覧(在庫一覧・レジの商品ピッカーの絞り込みプルダウン用)。"""
     return [r[0] for r in con.execute(
         "SELECT DISTINCT supplier FROM products WHERE supplier IS NOT NULL AND supplier<>'' ORDER BY supplier")]
+
+
+SUPPLIER_GENRES = ("宝石", "メガネ", "時計", "その他")
+
+
+def sync_supplier_master(con):
+    """商品に登場する仕入先名を仕入先マスタに取り込む(未登録のみ・分類はNULL)。"""
+    con.execute("""INSERT OR IGNORE INTO supplier_master(name, genre)
+                   SELECT DISTINCT supplier, NULL FROM products
+                   WHERE supplier IS NOT NULL AND supplier<>''""")
+    con.commit()
+
+
+def list_supplier_master(con):
+    """仕入先マスタ一覧(分類割り当て画面用)。名前・ジャンル・商品件数を返す。"""
+    sync_supplier_master(con)
+    con.row_factory = sqlite3.Row
+    rows = []
+    for r in con.execute("""SELECT m.name, m.genre,
+                                   (SELECT COUNT(*) FROM products p WHERE p.supplier = m.name) cnt
+                            FROM supplier_master m ORDER BY m.name"""):
+        rows.append({"name": r["name"], "genre": r["genre"], "count": r["cnt"]})
+    return rows
+
+
+def set_supplier_genre(con, name, genre):
+    """仕入先のジャンルを設定/変更する。"""
+    name = str(name or "").strip()
+    if not name:
+        raise ValueError("仕入先が指定されていません")
+    genre = (genre or "").strip() or None
+    if genre is not None and genre not in SUPPLIER_GENRES:
+        raise ValueError("不正なジャンルです")
+    con.execute("""INSERT INTO supplier_master(name, genre) VALUES(?,?)
+                   ON CONFLICT(name) DO UPDATE SET genre=excluded.genre""", (name, genre))
+    con.commit()
+    return {"name": name, "genre": genre}
 
 
 def daily_sales(con, date):

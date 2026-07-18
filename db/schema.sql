@@ -285,6 +285,12 @@ CREATE TABLE app_users (
   active       INTEGER NOT NULL DEFAULT 1
 );
 
+-- 仕入先マスタ(商品ジャンルの分類フラグを持つ。在庫一覧の絞り込みに使う)
+CREATE TABLE supplier_master (
+  name  TEXT PRIMARY KEY,   -- 仕入先名(products.supplier と一致)
+  genre TEXT                 -- 宝石/メガネ/時計/その他(未設定はNULL)
+);
+
 -- 発行した見積書・請求書の履歴(呼び出して編集→再発行できる)
 CREATE TABLE issued_documents (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
