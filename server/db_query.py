@@ -657,20 +657,46 @@ def sync_staff_from_names(con):
     con.commit()
 
 
+# 担当者が実データで紐づく場所(名前で照合)。使用件数=削除時の警告に使う。
+STAFF_USAGE = [("customers", "staff_name"), ("sales_slips", "staff_name"),
+               ("approach_history", "staff_name"), ("prescriptions", "handler"),
+               ("repairs", "staff_name")]
+
+
+def _staff_usage_map(con):
+    """担当者名→使用件数(5テーブル合算)。GROUP BYで一括集計して高速化。"""
+    usage = {}
+    for t, c in STAFF_USAGE:
+        try:
+            for r in con.execute(f"SELECT {c}, COUNT(*) FROM {t} WHERE {c} IS NOT NULL AND {c}<>'' GROUP BY {c}"):
+                usage[r[0]] = usage.get(r[0], 0) + r[1]
+        except sqlite3.Error:
+            pass
+    return usage
+
+
 def list_staff(con):
-    """担当者マスタ一覧(担当者マスタ管理画面用)。code/name/active を返す。"""
+    """担当者マスタ一覧。code/name/active＋使用件数(顧客/売上/アプローチ/処方箋/修理の合算)。"""
     sync_staff_from_names(con)
+    umap = _staff_usage_map(con)
     con.row_factory = sqlite3.Row
-    return [{"code": r["staff_code"], "name": r["name"], "active": bool(r["active"])}
+    return [{"code": r["staff_code"], "name": r["name"], "active": bool(r["active"]),
+             "count": umap.get(r["name"], 0)}
             for r in con.execute("SELECT staff_code,name,active FROM staff ORDER BY active DESC, name")]
 
 
 def save_staff(con, p):
-    """担当者の追加(code空)/更新(name・active)。"""
+    """担当者の 追加(code空)/更新(name・active)/削除(action=delete)。"""
     code = str(p.get("code") or "").strip()
     name = str(p.get("name") or "").strip()
     active = 1 if p.get("active", 1) else 0
     cur = con.cursor()
+    if p.get("action") == "delete":
+        if not code:
+            raise ValueError("担当者が指定されていません")
+        cur.execute("DELETE FROM staff WHERE staff_code=?", (code,))
+        con.commit()
+        return {"deleted": code}
     if not code:  # 新規
         if not name:
             raise ValueError("担当者名を入力してください")

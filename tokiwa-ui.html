@@ -1275,7 +1275,7 @@
       </div>
       <div class="table-scroll" style="max-height:50vh;overflow-y:auto">
         <table class="data">
-          <thead><tr><th>担当者名</th><th>状態</th><th></th></tr></thead>
+          <thead><tr><th>担当者名</th><th class="r">使用件数</th><th>状態</th><th></th></tr></thead>
           <tbody id="staff-tbody"></tbody>
         </table>
       </div>
@@ -2915,9 +2915,22 @@
     var tb = document.getElementById("staff-tbody");
     tb.innerHTML = staffMaster.length ? staffMaster.map(function (s, i) {
       return '<tr><td><input value="' + esc(s.name) + '" onchange="renameStaff(' + i + ',this.value)"></td>' +
+        '<td class="r num">' + num(s.count || 0) + '</td>' +
         '<td>' + (s.active ? '<span class="chip chip-green">有効</span>' : '<span class="chip chip-plain">停止中</span>') + '</td>' +
-        '<td><button class="btn" onclick="toggleStaff(' + i + ')">' + (s.active ? "利用停止" : "有効化") + '</button></td></tr>';
-    }).join("") : '<tr><td colspan="3" style="color:var(--muted)">担当者がいません。上で追加してください。</td></tr>';
+        '<td><button class="btn" onclick="toggleStaff(' + i + ')">' + (s.active ? "利用停止" : "有効化") + '</button> ' +
+        '<button class="btn" onclick="deleteStaff(' + i + ')">削除</button></td></tr>';
+    }).join("") : '<tr><td colspan="4" style="color:var(--muted)">担当者がいません。上で追加してください。</td></tr>';
+  }
+  function deleteStaff(i) {
+    var s = staffMaster[i]; if (!s) return;
+    var cnt = s.count || 0;
+    var msg = cnt > 0
+      ? "「" + s.name + "」は " + cnt.toLocaleString() + " 件のデータと繋がっています。削除しますか?（データの値は残ります。使用中の担当者は次回再表示される場合があるので、その時は「利用停止」をお使いください）"
+      : "「" + s.name + "」を削除しますか?（未使用の担当者です）";
+    alertPopup(msg, {
+      type: "warn", title: "削除の確認", okText: "削除する", cancelText: "やめる", confirm: true,
+      onOk: function () { saveStaffRow({ code: s.code, action: "delete" }, "削除しました。"); }
+    });
   }
   function saveStaffRow(payload, msg) {
     fetch(API + "/staff", {
