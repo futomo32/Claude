@@ -36,10 +36,12 @@ def image_path(fname):
     if os.path.isfile(p):
         return p
     if _img_index is None:
+        # サブフォルダも含めて索引化(大文字小文字も無視)。check_images.py と同じ探し方。
         _img_index = {}
         if os.path.isdir(IMAGES):
-            for fn in os.listdir(IMAGES):
-                _img_index[fn.lower()] = os.path.join(IMAGES, fn)
+            for root, _dirs, fnames in os.walk(IMAGES):
+                for fn in fnames:
+                    _img_index.setdefault(fn.lower(), os.path.join(root, fn))
     return _img_index.get(fname.lower())
 
 sys.path.insert(0, os.path.dirname(__file__))

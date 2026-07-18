@@ -2597,11 +2597,19 @@
   function prodImgUrl(imageFile) {
     return (API && imageFile) ? (API + "/product_image?file=" + encodeURIComponent(imageFile)) : null;
   }
+  // 画像ファイルが見つからない時は空欄でなく分かる表示に差し替える(登録名はあるがファイル無し)
+  function imgFallback(el) {
+    var span = document.createElement("span");
+    span.className = "prod-nothumb";
+    span.textContent = "無";
+    span.title = "画像ファイルが見つかりません";
+    if (el && el.parentNode) el.parentNode.replaceChild(span, el);
+  }
   function paintProducts() {
     var stateChip = { "在庫": "chip-green", "売上": "chip-plain", "受託": "chip-warn", "返品": "chip-danger" };
     document.getElementById("stock-tbody").innerHTML = prodRows.map(function (p, i) {
       var url = prodImgUrl(p[8]);
-      var thumb = url ? '<img class="prod-thumb" loading="lazy" src="' + esc(url) + '" onerror="this.style.display=\'none\'">' : '<span class="prod-nothumb">なし</span>';
+      var thumb = url ? '<img class="prod-thumb" loading="lazy" src="' + esc(url) + '" onerror="imgFallback(this)">' : '<span class="prod-nothumb">なし</span>';
       return '<tr style="cursor:pointer" onclick="openProductDetail(' + i + ')"><td>' + thumb + '</td><td class="num">' + esc(dash(p[0])) + '</td><td>' + esc(dash(p[1])) + '</td><td>' + esc(dash(p[2])) + '</td><td class="num">' + esc(dash(p[6])) + '</td><td class="r num">' + (p[3] ? "¥" + num(p[3]) : "—") + '</td><td>' + esc(dash(p[5])) + '</td><td><span class="chip ' + (stateChip[p[4]] || "chip-plain") + '">' + esc(dash(p[4])) + '</span></td></tr>';
     }).join("") || '<tr><td colspan="8" style="color:var(--muted)">該当する商品が見つかりません</td></tr>';
     document.getElementById("prod-count").textContent =
