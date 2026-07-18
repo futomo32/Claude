@@ -28,6 +28,12 @@ def ensure_schema(con):
         name  TEXT PRIMARY KEY,   -- 仕入先名(products.supplier と一致)
         genre TEXT                 -- 商品ジャンル: 宝石/メガネ/時計/その他(未設定はNULL)
     )""")
+    # 汎用マスタ(商品分類・保管場所・支払方法など「名前の一覧」型を1テーブルで管理)
+    con.execute("""CREATE TABLE IF NOT EXISTS master_items (
+        master_type TEXT NOT NULL,   -- category / location / pay_method ...
+        name        TEXT NOT NULL,
+        PRIMARY KEY (master_type, name)
+    )""")
 
     def cols(t):
         try:
@@ -560,6 +566,80 @@ def set_product_image(con, product_key, image_file):
     if cur.rowcount == 0:
         raise ValueError("対象の商品が見つかりません")
     return {"product_key": pk, "image_file": image_file}
+
+
+# 汎用マスタの定義(「名前の一覧」型)。table/col は使用件数と改名時のデータ追随に使う。
+# ※table/col はここの固定値のみ(ユーザー入力ではない)なのでSQL的に安全。
+MASTERS = {
+    "category":   {"label": "商品分類",   "table": "products",      "col": "category"},
+    "location":   {"label": "保管場所",   "table": "products",      "col": "location"},
+    "pay_method": {"label": "支払方法",   "table": "sale_payments", "col": "method",
+                   "seed": ["現金", "クレジット", "PayPay", "掛売", "分割"]},
+}
+
+
+def master_types():
+    """管理できるマスタの一覧(マスタ管理TOPのプルダウン用)。"""
+    return [{"type": k, "label": v["label"]} for k, v in MASTERS.items()]
+
+
+def _master_cfg(mtype):
+    cfg = MASTERS.get(mtype)
+    if not cfg:
+        raise ValueError("不明なマスタです")
+    return cfg
+
+
+def sync_master(con, mtype):
+    """既存データ(＋seed)に登場する値をマスタに取り込む(未登録のみ)。"""
+    cfg = _master_cfg(mtype)
+    for nm in cfg.get("seed", []):
+        con.execute("INSERT OR IGNORE INTO master_items(master_type,name) VALUES (?,?)", (mtype, nm))
+    t, c = cfg["table"], cfg["col"]
+    con.execute(f"""INSERT OR IGNORE INTO master_items(master_type,name)
+                    SELECT ?, {c} FROM {t} WHERE {c} IS NOT NULL AND {c}<>'' GROUP BY {c}""", (mtype,))
+    con.commit()
+
+
+def list_master_items(con, mtype):
+    """マスタの項目一覧＋各項目の使用件数(削除時の警告に使う)。"""
+    cfg = _master_cfg(mtype)
+    sync_master(con, mtype)
+    t, c = cfg["table"], cfg["col"]
+    items = []
+    for r in con.execute("SELECT name FROM master_items WHERE master_type=? ORDER BY name", (mtype,)):
+        cnt = con.execute(f"SELECT COUNT(*) FROM {t} WHERE {c}=?", (r[0],)).fetchone()[0]
+        items.append({"name": r[0], "count": cnt})
+    return {"type": mtype, "label": cfg["label"], "items": items}
+
+
+def save_master_item(con, p):
+    """マスタ項目の 追加/改名/削除。改名時は実データの該当列も追随して置換する。"""
+    mtype = p.get("type")
+    cfg = _master_cfg(mtype)
+    action = p.get("action")
+    name = str(p.get("name") or "").strip()
+    t, c = cfg["table"], cfg["col"]
+    cur = con.cursor()
+    if action == "add":
+        if not name:
+            raise ValueError("名称を入力してください")
+        cur.execute("INSERT OR IGNORE INTO master_items(master_type,name) VALUES (?,?)", (mtype, name))
+    elif action == "rename":
+        new = str(p.get("new_name") or "").strip()
+        if not name or not new:
+            raise ValueError("名称を入力してください")
+        if new != name:
+            cur.execute("INSERT OR IGNORE INTO master_items(master_type,name) VALUES (?,?)", (mtype, new))
+            cur.execute("DELETE FROM master_items WHERE master_type=? AND name=?", (mtype, name))
+            cur.execute(f"UPDATE {t} SET {c}=? WHERE {c}=?", (new, name))  # 実データも追随
+    elif action == "delete":
+        cur.execute("DELETE FROM master_items WHERE master_type=? AND name=?", (mtype, name))
+        # ※実データの値は残す(表示はできる)。マスタのプルダウン候補から消えるだけ。
+    else:
+        raise ValueError("不明な操作です")
+    con.commit()
+    return {"ok": True, "type": mtype, "action": action}
 
 
 def sync_staff_from_names(con):

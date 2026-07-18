@@ -291,6 +291,13 @@ CREATE TABLE supplier_master (
   genre TEXT                 -- 宝石/メガネ/時計/その他(未設定はNULL)
 );
 
+-- 汎用マスタ(商品分類・保管場所・支払方法など「名前の一覧」型を1テーブルで管理)
+CREATE TABLE master_items (
+  master_type TEXT NOT NULL,   -- category / location / pay_method ...
+  name        TEXT NOT NULL,
+  PRIMARY KEY (master_type, name)
+);
+
 -- 発行した見積書・請求書の履歴(呼び出して編集→再発行できる)
 CREATE TABLE issued_documents (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,

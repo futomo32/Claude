@@ -1103,7 +1103,8 @@
     <section class="content" data-screen="settings">
       <div class="settings-grid">
         <div class="card" style="cursor:pointer" onclick="openStaffMaster()"><h3>担当者マスタ</h3><p>担当者の追加・名称変更・利用停止。レジ・修理・処方箋・日報・顧客の担当者選択に反映されます。</p></div>
-        <div class="card" style="cursor:pointer" onclick="openSupplierMaster()"><h3>仕入先マスタ</h3><p>仕入先の分類(宝石/メガネ/時計/その他)を設定。在庫一覧の「仕入先ジャンル」絞り込みに反映されます。(商品分類などは順次追加)</p></div>
+        <div class="card" style="cursor:pointer" onclick="openSupplierMaster()"><h3>仕入先マスタ</h3><p>仕入先の分類(宝石/メガネ/時計/その他)を設定。在庫一覧の「仕入先ジャンル」絞り込みに反映されます。</p></div>
+        <div class="card" style="cursor:pointer" onclick="openMasterHub()"><h3>各種マスタ管理</h3><p>商品分類・保管場所・支払方法などを選んで、項目の追加・名称変更・削除ができます。</p></div>
         <div class="card"><h3>スタッフと権限</h3><p>ユーザーの追加、レジ操作・帳票出力・マスター編集の権限設定。</p></div>
         <div class="card"><h3>ポイント設定</h3><p>還元率、有効期限、ランク別優待の設定。</p></div>
         <div class="card"><h3>オフライン同期</h3><p>通信障害時の一時保存と自動再送の設定。未送信キューの確認・手動送信もこちら。</p></div>
@@ -1228,6 +1229,34 @@
     <div class="modal-foot">
       <button class="btn" onclick="closeProductDetail()">閉じる</button>
     </div>
+  </div>
+</div>
+
+<!-- 各種マスタ管理(汎用)モーダル: TOPで選択→項目の追加/編集/削除 -->
+<div class="modal-back" id="master-hub-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mh-title">
+    <div class="modal-head">
+      <h3 id="mh-title">各種マスタ管理</h3>
+      <button class="close" aria-label="閉じる" onclick="closeMasterHub()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="field" style="margin-bottom:0.8rem">
+        <label>マスタを選択</label>
+        <select id="mh-type" onchange="loadMasterItems()"></select>
+      </div>
+      <div style="display:flex;gap:0.5em;margin-bottom:0.8rem">
+        <input id="mh-new-name" placeholder="新しい項目名" style="flex:1">
+        <button class="btn btn-primary" onclick="addMasterItem()">追加</button>
+      </div>
+      <div class="table-scroll" style="max-height:48vh;overflow-y:auto">
+        <table class="data">
+          <thead><tr><th>項目名</th><th class="r">使用件数</th><th></th></tr></thead>
+          <tbody id="mh-tbody"></tbody>
+        </table>
+      </div>
+      <p style="margin:0.6rem 0 0;color:var(--muted);font-size:0.8em">名称を書き換えると実データにも反映されます。削除してもデータの値は残ります(プルダウンの候補から外れるだけ)。</p>
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="closeMasterHub()">閉じる</button></div>
   </div>
 </div>
 
@@ -1909,6 +1938,7 @@
   bindBackdropClose("prod-detail-modal", closeProductDetail);
   bindBackdropClose("supplier-master-modal", closeSupplierMaster);
   bindBackdropClose("staff-master-modal", closeStaffMaster);
+  bindBackdropClose("master-hub-modal", closeMasterHub);
   bindBackdropClose("alert-modal", alertCancel);
   bindBackdropClose("free-modal", closeFreePicker);
   bindBackdropClose("rx-modal", closeRxModal);
@@ -2763,6 +2793,84 @@
     document.getElementById("prod-detail-modal").classList.add("show");
   }
   function closeProductDetail() { document.getElementById("prod-detail-modal").classList.remove("show"); }
+  /* ── 各種マスタ管理(汎用) TOPで選択→追加/編集/削除 ── */
+  var mhTypes = [], mhItems = [];
+  function openMasterHub() {
+    document.getElementById("master-hub-modal").classList.add("show");
+    if (!API) {
+      document.getElementById("mh-tbody").innerHTML = '<tr><td colspan="3" style="color:var(--muted)">サーバー起動時に利用できます。</td></tr>';
+      return;
+    }
+    fetch(API + "/masters").then(function (r) { return r.json(); }).then(function (res) {
+      mhTypes = res.masters || [];
+      var sel = document.getElementById("mh-type");
+      sel.innerHTML = mhTypes.map(function (m) { return '<option value="' + esc(m.type) + '">' + esc(m.label) + '</option>'; }).join("");
+      loadMasterItems();
+    }).catch(function () {});
+  }
+  function closeMasterHub() { document.getElementById("master-hub-modal").classList.remove("show"); }
+  function currentMasterType() { return document.getElementById("mh-type").value; }
+  function loadMasterItems() {
+    var tb = document.getElementById("mh-tbody");
+    if (!API) return;
+    tb.innerHTML = '<tr><td colspan="3" style="color:var(--muted)">読み込み中…</td></tr>';
+    fetch(API + "/master?type=" + encodeURIComponent(currentMasterType())).then(function (r) { return r.json(); }).then(function (res) {
+      mhItems = res.items || [];
+      renderMasterItems();
+    }).catch(function () { tb.innerHTML = '<tr><td colspan="3" style="color:var(--muted)">読み込みに失敗しました。</td></tr>'; });
+  }
+  function renderMasterItems() {
+    var tb = document.getElementById("mh-tbody");
+    tb.innerHTML = mhItems.length ? mhItems.map(function (it, i) {
+      return '<tr><td><input value="' + esc(it.name) + '" onchange="renameMasterItem(' + i + ',this.value)"></td>' +
+        '<td class="r num">' + num(it.count || 0) + '</td>' +
+        '<td><button class="btn" onclick="deleteMasterItem(' + i + ')">削除</button></td></tr>';
+    }).join("") : '<tr><td colspan="3" style="color:var(--muted)">項目がありません。上で追加してください。</td></tr>';
+  }
+  function postMasterItem(payload, msg) {
+    fetch(API + "/master_item", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (res.error) throw new Error(res.error);
+      loadMasterItems();
+      refreshMasterDependentDropdowns();
+      if (msg) showToast(msg);
+    }).catch(function (e) { showToast("保存に失敗: " + (e.message || e)); });
+  }
+  function addMasterItem() {
+    var name = document.getElementById("mh-new-name").value.trim();
+    if (!name) return showToast("項目名を入力してください");
+    document.getElementById("mh-new-name").value = "";
+    postMasterItem({ type: currentMasterType(), action: "add", name: name }, name + " を追加しました。");
+  }
+  function renameMasterItem(i, newName) {
+    var it = mhItems[i]; if (!it) return;
+    newName = (newName || "").trim();
+    if (!newName || newName === it.name) { renderMasterItems(); return; }
+    postMasterItem({ type: currentMasterType(), action: "rename", name: it.name, new_name: newName }, "変更しました。");
+  }
+  function deleteMasterItem(i) {
+    var it = mhItems[i]; if (!it) return;
+    var cnt = it.count || 0;
+    var msg = cnt > 0
+      ? "「" + it.name + "」は " + cnt.toLocaleString() + " 件のデータと繋がっています。マスタから削除しますか?（データの値はそのまま残ります）"
+      : "「" + it.name + "」を削除しますか?";
+    alertPopup(msg, {
+      type: "warn", title: "削除の確認", okText: "削除する", cancelText: "やめる", confirm: true,
+      onOk: function () { postMasterItem({ type: currentMasterType(), action: "delete", name: it.name }, "削除しました。"); }
+    });
+  }
+  // マスタ変更後、関連する画面の選択肢を最新化(商品分類・保管場所はサーバー再取得)
+  function refreshMasterDependentDropdowns() {
+    var t = currentMasterType();
+    if (t === "category" && API) {
+      fetch(API + "/product_categories").then(function (r) { return r.json(); }).then(function (res) {
+        var sel = document.getElementById("q-cat");
+        if (sel) { sel.innerHTML = '<option value="">すべて</option>' + (res.categories || []).map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join(""); }
+      }).catch(function () {});
+    }
+  }
+
   /* ── 担当者マスタ ── 各画面の担当者プルダウンをマスタ(D.staff)から埋める */
   function fillStaffSelect(id, names, keepFirst, short) {
     var sel = document.getElementById(id);

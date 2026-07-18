@@ -151,6 +151,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(blob, ensure_ascii=False).encode("utf-8"))
             if path in ("/api/customer_detail", "/api/products", "/api/product_categories",
                         "/api/product_suppliers", "/api/supplier_master", "/api/staff",
+                        "/api/masters", "/api/master",
                         "/api/daily_sales", "/api/slip_lines", "/api/documents"):
                 qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
 
@@ -175,6 +176,10 @@ class Handler(BaseHTTPRequestHandler):
                         result = {"suppliers": db_query.list_supplier_master(con)}
                     elif path == "/api/staff":
                         result = {"staff": db_query.list_staff(con)}
+                    elif path == "/api/masters":
+                        result = {"masters": db_query.master_types()}
+                    elif path == "/api/master":
+                        result = db_query.list_master_items(con, q1("type"))
                     elif path == "/api/daily_sales":
                         result = {"lines": db_query.daily_sales(con, q1("date"))}
                     elif path == "/api/documents":
@@ -241,6 +246,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/staff":
                 con = connect()
                 result = db_query.save_staff(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/master_item":
+                con = connect()
+                result = db_query.save_master_item(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/product_image":
