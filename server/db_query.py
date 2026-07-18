@@ -87,7 +87,7 @@ def build_blob(con):
         return d
 
     sales = group("""SELECT s.customer_id, s.sold_at, COALESCE(l.free_name, p.name), l.info,
-                            l.amount, s.pay_method, s.staff_name
+                            l.amount, s.pay_method, s.staff_name, p.product_no
                      FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
                      LEFT JOIN products p ON l.product_key = p.product_key
                      WHERE s.customer_id IS NOT NULL
@@ -310,7 +310,7 @@ def customer_detail(con, cid):
 
     sales = [list(r) for r in cur.execute("""
         SELECT s.sold_at, COALESCE(l.free_name, p.name), l.info,
-               l.amount, s.pay_method, s.staff_name
+               l.amount, s.pay_method, s.staff_name, p.product_no
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         WHERE s.customer_id = ?
