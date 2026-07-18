@@ -482,6 +482,18 @@ def list_documents(con, limit=100):
     return out
 
 
+def set_product_image(con, product_key, image_file):
+    """商品の写真ファイル名を更新する(B-7 撮影・登録)。実ファイルの保存はサーバー側で行う。"""
+    pk = str(product_key or "").strip()
+    if not pk:
+        raise ValueError("商品が指定されていません")
+    cur = con.execute("UPDATE products SET image_file=? WHERE product_key=?", (image_file, pk))
+    con.commit()
+    if cur.rowcount == 0:
+        raise ValueError("対象の商品が見つかりません")
+    return {"product_key": pk, "image_file": image_file}
+
+
 def sample_in_stock_key(con):
     """会計デモ用に、在庫状態の商品を1つ選んでその product_key を返す。"""
     row = con.execute("SELECT product_key FROM products WHERE state='在庫' AND name IS NOT NULL LIMIT 1").fetchone()

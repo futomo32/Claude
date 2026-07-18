@@ -14,7 +14,7 @@
 正式運用(Windows単機)ではこのサーバーをローカルで起動し、ブラウザで開く構成。
 将来デスクトップアプリ(Electron等)に載せ替える場合もAPIはそのまま流用できる。
 """
-import json, mimetypes, os, re, socket, sqlite3, sys, urllib.request, urllib.parse
+import base64, json, mimetypes, os, re, socket, sqlite3, sys, time, urllib.request, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = os.path.join(os.path.dirname(__file__), "..")
@@ -24,6 +24,12 @@ ASSETS = os.path.join(BASE, "assets")
 IMAGES = os.path.join(BASE, "data", "real", "images")   # 商品写真(B-7)
 
 _img_index = None  # 大文字小文字違いに対応するための {小文字ファイル名: 実パス} キャッシュ
+
+
+def reset_img_index():
+    """画像索引を無効化(次回リクエストで作り直す)。写真を新規保存した後に呼ぶ。"""
+    global _img_index
+    _img_index = None
 
 
 def image_path(fname):
@@ -220,6 +226,30 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/document":
                 con = connect()
                 result = db_query.save_document(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/product_image":
+                # 商品写真の登録: ブラウザでリサイズ済みのJPEG(dataURL)を受け取り保存する
+                pk = str(payload.get("product_key") or "").strip()
+                data = payload.get("image") or ""
+                if not pk or not data:
+                    raise ValueError("商品と画像を指定してください")
+                if "," in data and data[:5].lower() == "data:":
+                    data = data.split(",", 1)[1]
+                try:
+                    raw = base64.b64decode(data)
+                except (ValueError, TypeError):
+                    raise ValueError("画像データが不正です")
+                if len(raw) > 8 * 1024 * 1024:
+                    raise ValueError("画像が大きすぎます(8MBまで)")
+                safe = re.sub(r"[^A-Za-z0-9_-]", "_", pk)
+                fname = f"{safe}_{int(time.time())}.jpg"
+                os.makedirs(IMAGES, exist_ok=True)
+                with open(os.path.join(IMAGES, fname), "wb") as f:
+                    f.write(raw)
+                reset_img_index()  # 新ファイルを索引に載せ直す
+                con = connect()
+                result = db_query.set_product_image(con, pk, fname)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/prescription":
