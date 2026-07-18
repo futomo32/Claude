@@ -203,43 +203,63 @@ def main():
             print(f"\n[書き込みエラー] {e}")
             print("→ このリーダー/カードでは書き込めない可能性。ログを確認してください。")
             return
-        print(f"書き込みステータス: {status_text(wst)}")
+        print(f"書き込みステータス(装置応答): {status_text(wst)}")
         if wst != 0x20:
             note += f" | write status={status_text(wst)}"
-            print("→ 正常に書き込めませんでした。")
+            print("→ 装置が書き込み失敗を返しました。")
             return
-        print("書き込み成功(装置の自動ベリファイも通過)。")
+        print("装置は書き込み成功(20h)を応答。ただしこれだけでは確定しません。")
 
-        # --- 読み戻し ---
-        print("\n>> 書いた内容を読み戻して照合します...")
+        # --- 参考: その場読み(排出せず) ---
+        # ※排出せず読むと「直前にセットした書込バッファ」を返すだけの可能性があり、
+        #   一致しても“本当に磁気に書けた”証明にはならない(誤判定しうる)。
         try:
-            rst, rdata = dev.read_track2_fmt(read_fmt, resp_timeout=15.0)
+            rst0, rdata0 = dev.read_track2_fmt(read_fmt, resp_timeout=10.0)
+            print(f"\n(参考)排出前のその場読み: {status_text(rst0)}")
+            if rst0 == 0x20:
+                dump(rdata0)
+            print("  ↑これは確定判定に使いません(バッファ由来の可能性があるため)。")
         except TCP300IIError as e:
-            # カードが排出済み等で読めない場合は再挿入を促して1回だけ再試行
-            print(f"(読み戻しで例外: {e} → カードを入れ直して再試行します)")
-            input("  カードを入れ直したら Enter を押してください...")
-            rst, rdata = dev.read_track2_fmt(read_fmt, resp_timeout=30.0)
+            print(f"(参考のその場読みはスキップ: {e})")
 
-        print(f"読み戻しステータス: {status_text(rst)}")
+        # --- ★確定判定: いったん排出 → 同じカードを入れ直して読む ---
+        print("\n==================================================")
+        print("  これから【カードを一度排出】します。")
+        print("  ★同じカードをもう一度入れて、磁気に本当に書けたかを確定します。")
+        print("==================================================")
+        eject_card(dev)
+        input("\n>> 同じカードを入れ直したら Enter を押してください...")
+        print(">> 入れ直したカードを読み取ります...")
+        try:
+            rst, rdata = dev.read_track2_fmt(read_fmt, resp_timeout=30.0)
+        except TCP300IIError as e:
+            note += f" | 確定read失敗: {e}"
+            print(f"\n[確定読みエラー] {e}")
+            print("→ 逆差し/カード未挿入の可能性。もう一度実行してください。")
+            return
+
+        print(f"\n確定読みステータス: {status_text(rst)}")
         if rst == 0x20:
-            print("読み戻した磁気データ:")
+            print("入れ直して読み取った磁気データ:")
             dump(rdata)
             if rdata == data:
                 print("\n==================================================")
-                print("  ★★ 判定: 成功(書いた内容と完全一致)★★")
-                print("  → このリーダーでカード書き込みができることを確認。")
+                print("  ★★ 判定: 成功(排出→再挿入後も一致)★★")
+                print("  → このリーダーで磁気に本当に書き込めることを確認。")
                 print("  → トキワ独自形式でのカード書き換え方式が成立します。")
                 print("==================================================")
-                note += " | RESULT=PASS"
+                note += " | RESULT=PASS(再挿入確定)"
             else:
-                print("\n[不一致] 書いた内容と読み戻しが違います。")
+                print("\n[不一致] 書いた内容と、入れ直して読んだ内容が違います。")
                 print(f"  書込: {data_str}")
                 print(f"  読戻: {rdata.decode('ascii', 'replace')}")
-                print("  → 書式(逆7bit/7bit)の選択が合っていない可能性。別書式でも試してください。")
-                note += " | RESULT=MISMATCH"
+                print("  → 実際には書けていない可能性。書式2(7bit)や磁気付きカードでも試してください。")
+                note += " | RESULT=MISMATCH(実書込されず?)"
         else:
-            print("読み戻せませんでした(書式違い/カード種別違いの可能性)。")
-            note += f" | read status={status_text(rst)}"
+            print("入れ直したカードを読めませんでした。")
+            print("  → 磁気が書かれていない/カードに磁気ストライプが無い可能性が高い。")
+            print("  → 書式2(7bit)、または別の磁気付きカードで再試験してください。")
+            note += f" | 確定read status={status_text(rst)}(実書込されず?)"
     finally:
         if dev is not None:
             eject_card(dev)
