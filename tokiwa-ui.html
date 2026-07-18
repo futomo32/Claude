@@ -639,6 +639,10 @@
   .doc-sheet table.doc-table td.r { text-align: right; }
   .doc-sheet .doc-total-row td { font-weight: 700; }
   .doc-sheet .doc-note { margin-top: 1.2em; font-size: 9pt; color: #333; }
+  .doc-sheet .doc-reg { font-size: 9pt; color: #222; margin-top: 0.3em; }
+  .doc-sheet .doc-bank { margin-top: 1.6em; border: 1.5px solid #000; padding: 0.7em 1em; display: inline-block; min-width: 70mm; }
+  .doc-sheet .doc-bank .bk-title { font-weight: 700; font-size: 10.5pt; margin-bottom: 0.4em; }
+  .doc-sheet .doc-bank .bk-line { font-size: 10pt; line-height: 1.9; }
 </style>
 
 <!-- ════ ログイン ════ -->
@@ -958,11 +962,17 @@
 
     <!-- ── 見積・請求(レジと独立。どの顧客・買い物でも発行可。保存なしのその場印刷) ── -->
     <section class="content" data-screen="estimate">
+      <div class="tabs" data-tabgroup="est">
+        <button class="tab active" id="est-tab-quote" onclick="setEstMode('quote')">見積書</button>
+        <button class="tab" id="est-tab-invoice" onclick="setEstMode('invoice')">請求書</button>
+      </div>
       <div class="card">
-        <p style="margin:0 0 0.8rem;color:var(--muted);font-size:0.9em">お客様名と品目を入れて、見積書または請求書をその場で印刷します(データは保存されません)。レジを通さずに発行できます。</p>
+        <p style="margin:0 0 0.8rem;color:var(--muted);font-size:0.9em">上のタブで<b>見積書／請求書</b>を切り替え、お客様名と品目を入れてその場で印刷します(保存されません)。レジを通さず発行できます。</p>
         <div class="search-row">
-          <div class="field" style="flex:2"><label>宛名(お客様名)<span class="req">必須</span></label>
-            <input id="est-to" placeholder="例: 山田 太郎(登録の有無を問わず入力可)"></div>
+          <div class="field" style="flex:2"><label>宛名(お客様名・会社名)<span class="req">必須</span></label>
+            <input id="est-to" placeholder="例: 山田 太郎 / 株式会社〇〇(登録の有無を問わず入力可)"></div>
+          <div class="field"><label>敬称</label>
+            <select id="est-keisho"><option>様</option><option>御中</option></select></div>
         </div>
         <div class="section-title">品目を追加</div>
         <div class="search-row" style="align-items:flex-end">
@@ -978,9 +988,9 @@
           </table>
         </div>
         <div class="pos-total-row grand" style="max-width:360px;margin-left:auto"><span>合計(税込)</span><span class="v num" id="est-total">¥0</span></div>
+        <p id="est-invoice-note" style="display:none;margin:0.6rem 0 0;color:var(--muted);font-size:0.82em">請求書には登録番号(インボイス)と振込先口座が自動で印字されます。</p>
         <div style="display:flex;gap:0.8rem;margin-top:1rem">
-          <button class="btn btn-primary" onclick="estDoc('quote')">見積書を印刷</button>
-          <button class="btn btn-primary" onclick="estDoc('invoice')">請求書を印刷</button>
+          <button class="btn btn-primary" id="est-print-btn" onclick="estDoc()">見積書を印刷</button>
           <button class="btn" onclick="estClear()">クリア</button>
         </div>
       </div>
@@ -3425,13 +3435,24 @@
   var STORE_HEAD_HTML = window.TOKIWA_API
     ? '<img src="/assets/logo.png" alt="' + esc(STORE_PRINT_NAME) + '">'
     : esc(STORE_PRINT_NAME);
-  function buildDocHtml(title, docNo, toName, innerHtml) {
+  // 帳票に印字する店舗固定情報(適格請求書の登録番号・振込先口座)。変更時はここを直す。
+  var STORE_INVOICE_NO = "T1810816014712";
+  var STORE_BANK_HTML =
+    '<div class="doc-bank"><div class="bk-title">振込先口座</div>' +
+    '<div class="bk-line">豊田信用金庫　普通預金</div>' +
+    '<div class="bk-line">店番 011　口座番号 9264690</div>' +
+    '<div class="bk-line">名義　築瀬 智宏</div></div>';
+  // opts(任意): { keisho:"様"|"御中", showInvoiceNo:true, footer:HTML }
+  function buildDocHtml(title, docNo, toName, innerHtml, opts) {
+    opts = opts || {};
+    var keisho = opts.keisho || "様";
+    var reg = opts.showInvoiceNo ? '<div class="doc-reg">登録番号: ' + esc(STORE_INVOICE_NO) + '</div>' : '';
     return '<div class="doc-sheet">' +
       '<div class="doc-head"><div class="doc-no">No. ' + esc(docNo) + '<br>発行日: ' + TODAY_ISO + '</div>' +
-      '<div class="doc-store">' + STORE_HEAD_HTML + '</div></div>' +
+      '<div class="doc-store">' + STORE_HEAD_HTML + reg + '</div></div>' +
       '<div class="doc-title">' + esc(title) + '</div>' +
-      '<div class="doc-to">' + esc(toName) + ' 様</div>' +
-      innerHtml +
+      '<div class="doc-to">' + esc(toName) + ' ' + esc(keisho) + '</div>' +
+      innerHtml + (opts.footer || '') +
       '</div>';
   }
   function printDocument(html) { showPrintPreview("doc", html); }
@@ -3504,6 +3525,15 @@
 
   /* ── 見積・請求(独立画面): レジを通さず、どの顧客・買い物でも発行。保存はしない ── */
   var estLines = [];
+  var estMode = "quote";   // "quote"=見積書 / "invoice"=請求書(タブで切替)
+  function setEstMode(mode) {
+    estMode = mode === "invoice" ? "invoice" : "quote";
+    var isInv = estMode === "invoice";
+    document.getElementById("est-tab-quote").classList.toggle("active", !isInv);
+    document.getElementById("est-tab-invoice").classList.toggle("active", isInv);
+    document.getElementById("est-print-btn").textContent = isInv ? "請求書を印刷" : "見積書を印刷";
+    document.getElementById("est-invoice-note").style.display = isInv ? "" : "none";
+  }
   function renderEstLines() {
     var tb = document.getElementById("est-tbody");
     if (!tb) return;
@@ -3532,28 +3562,28 @@
     document.getElementById("est-amt-in").value = "";
     renderEstLines();
   }
-  function estDoc(kind) {
+  function estDoc() {
     var to = document.getElementById("est-to").value.trim();
     if (!to) return showToast("宛名(お客様名)を入力してください");
     if (!estLines.length) return showToast("品目がありません。追加してください");
+    var keisho = document.getElementById("est-keisho").value || "様";
     var total = estLines.reduce(function (t, l) { return t + (l.amount || 0); }, 0);
     var tax = Math.floor(total * 10 / 110);
     var rows = estLines.map(function (l) {
       return '<tr><td>' + esc(l.name) + '</td><td class="r">¥' + num(l.amount || 0) + '</td></tr>';
     }).join("");
-    var title, note, prefix;
-    if (kind === "invoice") {
-      title = "御 請 求 書"; prefix = "I";
-      note = "お支払い期限: 発行日より14日以内にお願いいたします。";
-    } else {
-      title = "御 見 積 書"; prefix = "Q";
-      note = "有効期限: 発行日より30日間。上記金額にて承ります。";
-    }
+    var isInv = estMode === "invoice";
+    var title = isInv ? "御 請 求 書" : "御 見 積 書";
+    var prefix = isInv ? "I" : "Q";
+    var note = isInv ? "お支払い期限: 発行日より14日以内に下記口座へお振込みください。"
+                     : "有効期限: 発行日より30日間。上記金額にて承ります。";
     var body = '<table class="doc-table"><thead><tr><th>品名</th><th class="r">金額</th></tr></thead><tbody>' + rows +
       '<tr class="doc-total-row"><td>合計(税込)</td><td class="r">¥' + num(total) + '</td></tr>' +
       '<tr><td>(内消費税)</td><td class="r">¥' + num(tax) + '</td></tr></tbody></table>' +
       '<p class="doc-note">' + note + '</p>';
-    printDocument(buildDocHtml(title, docNoStamp(prefix), to, body));
+    var opts = { keisho: keisho, showInvoiceNo: true };
+    if (isInv) opts.footer = STORE_BANK_HTML;   // 請求書のみ振込先口座を印字
+    printDocument(buildDocHtml(title, docNoStamp(prefix), to, body, opts));
   }
 
   function rxError(msg) { var e = document.getElementById("rx-error"); e.textContent = msg; e.style.display = "block"; }
