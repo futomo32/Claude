@@ -14,7 +14,7 @@
 正式運用(Windows単機)ではこのサーバーをローカルで起動し、ブラウザで開く構成。
 将来デスクトップアプリ(Electron等)に載せ替える場合もAPIはそのまま流用できる。
 """
-import json, mimetypes, os, re, socket, sqlite3, sys, urllib.request
+import json, mimetypes, os, re, socket, sqlite3, sys, urllib.request, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = os.path.join(os.path.dirname(__file__), "..")
@@ -55,7 +55,7 @@ def render_index(remote=False):
     """UIのHTMLに、DBから組み立てたデータとAPI有効フラグを埋め込んで返す。
     remote=True(他PCからのアクセス)ではレジ機能をUI側で無効化するフラグを埋め込む。"""
     con = connect()
-    blob = db_query.build_blob(con)
+    blob = db_query.build_blob_light(con)  # 起動時は軽量データのみ(明細は遅延取得)
     sample = db_query.sample_in_stock_key(con)
     con.close()
     html = open(UI, encoding="utf-8").read()
@@ -111,6 +111,30 @@ class Handler(BaseHTTPRequestHandler):
                 blob = db_query.build_blob(con)
                 con.close()
                 return self._send(200, json.dumps(blob, ensure_ascii=False).encode("utf-8"))
+            if path in ("/api/customer_detail", "/api/products", "/api/product_categories",
+                        "/api/daily_sales", "/api/slip_lines"):
+                qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+
+                def q1(name, default=""):
+                    v = qs.get(name)
+                    return v[0] if v else default
+
+                con = connect()
+                try:
+                    if path == "/api/customer_detail":
+                        result = db_query.customer_detail(con, q1("id"))
+                    elif path == "/api/products":
+                        result = db_query.search_products(
+                            con, q1("q"), q1("cat"), q1("state"), q1("limit", "50"), q1("offset", "0"))
+                    elif path == "/api/product_categories":
+                        result = {"categories": db_query.product_categories(con)}
+                    elif path == "/api/daily_sales":
+                        result = {"lines": db_query.daily_sales(con, q1("date"))}
+                    else:  # /api/slip_lines
+                        result = {"lines": db_query.slip_lines(con, q1("from"), q1("to"), q1("staff"))}
+                finally:
+                    con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/postal":
                 # 郵便番号→住所検索(zipcloudへの中継)。オフライン時はエラーを返すだけ
                 zipc = re.sub(r"[^0-9]", "", self.path.split("zip=")[-1])

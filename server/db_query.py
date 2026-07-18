@@ -167,6 +167,233 @@ def build_blob(con):
                 repairs=repairs, tenders=tenders, stockStats=stock_stats)
 
 
+def build_blob_light(con):
+    """起動時にブラウザへ渡す軽量データ。重い明細(売上/処方箋/処方箋候補/ポイント履歴/
+    アプローチ/商品)は含めず、顧客一覧と小さな集計だけを返す(全データ一括送信=60MB超を回避)。
+    重い明細は必要時に取得する:
+      顧客詳細 → /api/customer_detail  / 商品 → /api/products
+      日報・期間集計 → /api/daily_sales, /api/slip_lines
+    """
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    # 一覧表示に要る集計値(累計・当年度・最終購入日)は明細から先に算出しておく
+    totals, y_cur, last_buy = {}, {}, {}
+    cur_year = str(datetime.date.today().year)
+    for r in cur.execute("""
+        SELECT s.customer_id cid, SUM(l.amount) tot,
+               SUM(CASE WHEN s.sold_at LIKE ? THEN l.amount ELSE 0 END) yc,
+               MAX(s.sold_at) last
+        FROM sales_slips s JOIN sale_lines l ON l.slip_id = s.slip_id
+        WHERE s.customer_id IS NOT NULL AND l.amount IS NOT NULL
+        GROUP BY s.customer_id""", (cur_year + "%",)):
+        totals[r["cid"]] = r["tot"] or 0
+        y_cur[r["cid"]] = r["yc"] or 0
+        last_buy[r["cid"]] = r["last"]
+
+    customers = []
+    for r in cur.execute("""SELECT customer_id,name,kana,tel,staff_name,address,birthday,gender,wedding_day,
+                                   is_test,note,postal,address2,tel2,email
+                            FROM customers ORDER BY is_test DESC, CAST(customer_id AS INTEGER)"""):
+        cid = r["customer_id"]
+        customers.append([
+            cid, r["name"], r["kana"], r["tel"], r["staff_name"], r["address"],
+            r["birthday"], r["gender"], totals.get(cid, 0), y_cur.get(cid, 0), r["wedding_day"],
+            r["is_test"], r["note"], last_buy.get(cid),
+            r["postal"], r["address2"], r["tel2"], r["email"],
+        ])
+
+    def group(sql, key_idx=0):
+        d = {}
+        for row in cur.execute(sql):
+            vals = list(row)
+            d.setdefault(str(vals[key_idx]), []).append(vals[1:])
+        return d
+
+    # 顧客詳細で使うが小さい(合計0.5MB程度)ものと、日報/売掛集計で全件走査するものは
+    # 起動時に持っておく(遅延化しても効果が薄く、集計側の作り直しが増えるため)
+    families = group("""SELECT customer_id, name, relation, gender, birthday, linked_customer_id, id
+                        FROM customer_families ORDER BY id""")
+    urikake = group("""SELECT customer_id, id, product_name, bought_at, down_payment, balance, last_paid_at
+                       FROM receivables""")
+    urikake_hist = group("""SELECT customer_id, entry_date, entry_type, product_name, amount, paid
+                            FROM receivable_entries ORDER BY entry_date DESC""")
+    points = {str(r["customer_id"]): r["balance"]
+              for r in cur.execute("SELECT customer_id, balance FROM point_balances")}
+
+    repairs = []
+    for r in cur.execute("""SELECT id,repair_no,customer_id,item_name,issue,estimate,
+                                   received_at,promised_at,status,completed_at,staff_name,note
+                            FROM repairs ORDER BY id DESC"""):
+        repairs.append({
+            "id": r["id"], "repair_no": r["repair_no"], "customer_id": r["customer_id"],
+            "item_name": r["item_name"], "issue": r["issue"], "estimate": r["estimate"],
+            "received_at": r["received_at"], "promised_at": r["promised_at"],
+            "status": r["status"], "completed_at": r["completed_at"],
+            "staff_name": r["staff_name"], "note": r["note"],
+        })
+
+    TAX_RATE = 0.10
+    srow = cur.execute("""SELECT COUNT(*) c, COALESCE(SUM(list_price),0) lt, COALESCE(SUM(cost_price),0) ct
+                          FROM products WHERE state='在庫'""").fetchone()
+    s_count, s_list, s_cost = srow["c"], srow["lt"] or 0, srow["ct"] or 0
+    s_margin = round((1 - (s_cost * (1 + TAX_RATE)) / s_list) * 100, 1) if s_list else 0
+    stock_stats = {"count": s_count, "listTotal": s_list, "costTotal": s_cost,
+                   "marginRate": s_margin, "taxRate": TAX_RATE}
+
+    tenders = []
+    for r in cur.execute("""SELECT s.sold_at, sp.method, sp.amount, s.customer_id
+                            FROM sale_payments sp JOIN sales_slips s ON s.slip_id = sp.slip_id
+                            ORDER BY s.sold_at DESC"""):
+        tenders.append([r["sold_at"], r["method"], r["amount"], str(r["customer_id"])])
+
+    return dict(customers=customers, families=families, points=points,
+                urikake=urikake, urikakeHist=urikake_hist,
+                repairs=repairs, tenders=tenders, stockStats=stock_stats,
+                lite=True)  # lite=True で「明細は遅延取得」とUIに知らせる
+
+
+def _rx_row(r):
+    """prescriptions の1行を画面用dictに変換(build_blob と customer_detail で共用)。"""
+    return {
+        "id": r["id"], "rx_no": r["rx_no"], "purpose": r["purpose"],
+        "lens_name": r["lens_name"], "frame_name": r["frame_name"],
+        "lens_price": r["lens_price"], "frame_price": r["frame_price"], "total": r["total_sell"],
+        "misassign": bool(r["jewelry_misassign"]), "sale_line_id": r["sale_line_id"],
+        "sph_r": r["sph_r"], "sph_l": r["sph_l"], "cyl_r": r["cyl_r"], "cyl_l": r["cyl_l"],
+        "ax_r": r["ax_r"], "ax_l": r["ax_l"], "pri_r": r["pri_r"], "pri_l": r["pri_l"],
+        "base_r": r["base_r"], "base_l": r["base_l"],
+        "pri2_r": r["pri2_r"], "pri2_l": r["pri2_l"], "base2_r": r["base2_r"], "base2_l": r["base2_l"],
+        "add_r": r["add_r"], "add_l": r["add_l"],
+        "pd_far_both": r["pd_far_both"], "pd_far_r": r["pd_far_r"], "pd_far_l": r["pd_far_l"],
+        "pd_near_both": r["pd_near_both"], "pd_near_r": r["pd_near_r"], "pd_near_l": r["pd_near_l"],
+        "naked_both": r["naked_both"], "naked_r": r["naked_r"], "naked_l": r["naked_l"],
+        "corrected_both": r["corrected_both"], "corrected_r": r["corrected_r"], "corrected_l": r["corrected_l"],
+        "handler": r["handler"], "rx_date": r["rx_date"],
+    }
+
+
+def customer_detail(con, cid):
+    """1顧客ぶんの重い明細(売上/処方箋/処方箋候補/ポイント履歴/アプローチ)を返す。
+    顧客詳細を開いた時にだけ呼ぶ(遅延取得)。UIの D.sales[id] 等と同じ形状。"""
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+    cid = str(cid)
+
+    sales = [list(r) for r in cur.execute("""
+        SELECT s.sold_at, COALESCE(l.free_name, p.name), l.info,
+               l.amount, s.pay_method, s.staff_name
+        FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
+        LEFT JOIN products p ON l.product_key = p.product_key
+        WHERE s.customer_id = ?
+        ORDER BY s.sold_at DESC""", (cid,))]
+
+    point_tx = [list(r) for r in cur.execute("""
+        SELECT occurred_at, tx_type, add_points, use_points, balance
+        FROM point_transactions WHERE customer_id = ? ORDER BY occurred_at DESC""", (cid,))]
+
+    approach = [list(r) for r in cur.execute("""
+        SELECT approach_date, kind, title, staff_name
+        FROM approach_history WHERE customer_id = ? ORDER BY approach_date DESC""", (cid,))]
+
+    rx = [_rx_row(r) for r in cur.execute(
+        "SELECT * FROM prescriptions WHERE customer_id = ? ORDER BY id DESC", (cid,))]
+
+    linked = set(r[0] for r in cur.execute(
+        "SELECT sale_line_id FROM prescriptions WHERE customer_id = ? AND sale_line_id IS NOT NULL", (cid,)))
+    rx_candidates = []
+    for r in cur.execute("""
+        SELECT l.line_id, s.sold_at, l.amount,
+               COALESCE(l.free_name, p.name) nm, p.is_glasses g, p.category cat
+        FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
+        LEFT JOIN products p ON l.product_key = p.product_key
+        WHERE s.customer_id = ?""", (cid,)):
+        nm = r["nm"] or ""
+        is_glass = r["g"] == 1 or bool(GLASS_PAT.search(nm))
+        if is_glass and r["line_id"] not in linked:
+            rx_candidates.append([r["line_id"], r["sold_at"], nm, r["amount"], glass_kind(r["cat"], nm)])
+
+    return {"sales": sales, "rx": rx, "rxCandidates": rx_candidates,
+            "pointTx": point_tx, "approach": approach}
+
+
+def search_products(con, q="", cat="", state="", limit=50, offset=0):
+    """商品検索(在庫一覧・レジの商品ピッカー用)。全商品(21万件)を送らずサーバーで絞り込む。
+    戻り値 {rows:[...], total:N}。rows は build_blob の products と同じ並び。"""
+    con.row_factory = sqlite3.Row
+    try:
+        limit = max(1, min(int(limit), 500))
+        offset = max(0, int(offset))
+    except (TypeError, ValueError):
+        limit, offset = 50, 0
+    where, args = [], []
+    if q:
+        where.append("(product_no LIKE ? OR name LIKE ?)")
+        like = "%" + q.replace("%", "").replace("_", "") + "%"
+        args += [like, like]
+    if cat:
+        where.append("category = ?"); args.append(cat)
+    if state:
+        where.append("state = ?"); args.append(state)
+    wsql = (" WHERE " + " AND ".join(where)) if where else ""
+    total = con.execute("SELECT COUNT(*) FROM products" + wsql, args).fetchone()[0]
+    rows = []
+    for r in con.execute(
+            "SELECT product_no,name,category,list_price,state,location,center_stone,center_carat "
+            "FROM products" + wsql + " ORDER BY product_no LIMIT ? OFFSET ?", args + [limit, offset]):
+        stone = r["center_stone"] or ""
+        if stone and r["center_carat"]:
+            stone += f' {r["center_carat"]}ct'
+        rows.append([r["product_no"], r["name"], r["category"], r["list_price"],
+                     r["state"], r["location"], stone or None])
+    return {"rows": rows, "total": total}
+
+
+def product_categories(con):
+    """商品分類の一覧(在庫一覧の絞り込みプルダウン用)。"""
+    return [r[0] for r in con.execute(
+        "SELECT DISTINCT category FROM products WHERE category IS NOT NULL AND category<>'' ORDER BY category")]
+
+
+def daily_sales(con, date):
+    """指定日のレジ売上明細(日報・ホームタイル用)。全売上をブラウザに持たずサーバーで集計。"""
+    con.row_factory = sqlite3.Row
+    out = []
+    for r in con.execute("""
+        SELECT s.customer_id cid, c.name cname,
+               COALESCE(l.free_name, p.name) item, l.info, l.amount, s.pay_method, s.staff_name
+        FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
+        LEFT JOIN products p ON l.product_key = p.product_key
+        LEFT JOIN customers c ON c.customer_id = s.customer_id
+        WHERE s.sold_at = ?""", (str(date),)):
+        out.append({"cid": r["cid"], "name": r["cname"] or r["cid"], "item": r["item"],
+                    "info": r["info"], "amount": r["amount"] or 0,
+                    "pay": r["pay_method"] or "現金", "staff": r["staff_name"]})
+    return out
+
+
+def slip_lines(con, frm, to, staff=""):
+    """期間の売上伝票明細(売上集計・CSV用)。サーバー側で期間・担当者で絞り込む。"""
+    con.row_factory = sqlite3.Row
+    args = [str(frm), str(to)]
+    staffsql = ""
+    if staff:
+        staffsql = " AND s.staff_name = ?"
+        args.append(staff)
+    out = []
+    for r in con.execute("""
+        SELECT s.sold_at, s.customer_id cid, c.name cname,
+               COALESCE(l.free_name, p.name) item, l.amount, s.pay_method, s.staff_name
+        FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
+        LEFT JOIN products p ON l.product_key = p.product_key
+        LEFT JOIN customers c ON c.customer_id = s.customer_id
+        WHERE s.sold_at >= ? AND s.sold_at <= ?""" + staffsql + """
+        ORDER BY s.sold_at""", args):
+        out.append({"date": r["sold_at"], "name": r["cname"] or r["cid"], "item": r["item"],
+                    "amount": r["amount"] or 0, "pay": r["pay_method"] or "", "staff": r["staff_name"]})
+    return out
+
+
 def sample_in_stock_key(con):
     """会計デモ用に、在庫状態の商品を1つ選んでその product_key を返す。"""
     row = con.execute("SELECT product_key FROM products WHERE state='在庫' AND name IS NOT NULL LIMIT 1").fetchone()
