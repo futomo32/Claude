@@ -283,3 +283,16 @@ CREATE TABLE app_users (
   pass_hash    TEXT,
   active       INTEGER NOT NULL DEFAULT 1
 );
+
+-- 発行した見積書・請求書の履歴(呼び出して編集→再発行できる)
+CREATE TABLE issued_documents (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  doc_type   TEXT NOT NULL,            -- 'quote'=見積書 / 'invoice'=請求書
+  issued_at  TEXT NOT NULL,            -- 発行日 YYYY-MM-DD
+  to_name    TEXT,                     -- 宛名
+  keisho     TEXT,                     -- 敬称(様/御中)
+  total      INTEGER,                  -- 合計(税込)
+  tax        INTEGER,                  -- 内消費税
+  lines_json TEXT,                     -- 明細 [{name,amount},...] のJSON
+  created_at TEXT DEFAULT (datetime('now','localtime'))
+);

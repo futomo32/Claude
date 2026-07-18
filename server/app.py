@@ -112,7 +112,8 @@ class Handler(BaseHTTPRequestHandler):
                 con.close()
                 return self._send(200, json.dumps(blob, ensure_ascii=False).encode("utf-8"))
             if path in ("/api/customer_detail", "/api/products", "/api/product_categories",
-                        "/api/product_suppliers", "/api/daily_sales", "/api/slip_lines"):
+                        "/api/product_suppliers", "/api/daily_sales", "/api/slip_lines",
+                        "/api/documents"):
                 qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
 
                 def q1(name, default=""):
@@ -133,6 +134,8 @@ class Handler(BaseHTTPRequestHandler):
                         result = {"suppliers": db_query.product_suppliers(con)}
                     elif path == "/api/daily_sales":
                         result = {"lines": db_query.daily_sales(con, q1("date"))}
+                    elif path == "/api/documents":
+                        result = {"documents": db_query.list_documents(con, q1("limit", "100"))}
                     else:  # /api/slip_lines
                         result = {"lines": db_query.slip_lines(con, q1("from"), q1("to"), q1("staff"))}
                 finally:
@@ -180,6 +183,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/family":
                 con = connect()
                 result = db_query.add_family(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/document":
+                con = connect()
+                result = db_query.save_document(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/prescription":

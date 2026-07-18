@@ -965,9 +965,10 @@
       <div class="tabs" data-tabgroup="est">
         <button class="tab active" id="est-tab-quote" onclick="setEstMode('quote')">見積書</button>
         <button class="tab" id="est-tab-invoice" onclick="setEstMode('invoice')">請求書</button>
+        <button class="tab" id="est-tab-history" onclick="showEstHistory()">発行履歴</button>
       </div>
-      <div class="card">
-        <p style="margin:0 0 0.8rem;color:var(--muted);font-size:0.9em">上のタブで<b>見積書／請求書</b>を切り替え、お客様名と品目を入れてその場で印刷します(保存されません)。レジを通さず発行できます。</p>
+      <div class="card" id="est-form-card">
+        <p style="margin:0 0 0.8rem;color:var(--muted);font-size:0.9em">上のタブで<b>見積書／請求書</b>を切り替え、お客様名と品目を入れてその場で印刷します。印刷した内容は<b>発行履歴</b>に残り、あとで呼び出して編集・再発行できます。</p>
         <div class="search-row">
           <div class="field" style="flex:2"><label>宛名(お客様名・会社名)<span class="req">必須</span></label>
             <input id="est-to" placeholder="例: 山田 太郎 / 株式会社〇〇(登録の有無を問わず入力可)"></div>
@@ -992,6 +993,15 @@
         <div style="display:flex;gap:0.8rem;margin-top:1rem">
           <button class="btn btn-primary" id="est-print-btn" onclick="estDoc()">見積書を印刷</button>
           <button class="btn" onclick="estClear()">クリア</button>
+        </div>
+      </div>
+      <div class="card" id="est-history-card" style="display:none">
+        <p style="margin:0 0 0.8rem;color:var(--muted);font-size:0.9em">過去に発行した見積書・請求書です。<b>「呼び出す」</b>で内容をフォームに読み込み、編集して再発行できます。</p>
+        <div class="table-scroll">
+          <table class="data">
+            <thead><tr><th>発行日</th><th>種別</th><th>宛名</th><th class="r">金額</th><th></th></tr></thead>
+            <tbody id="est-history-tbody"></tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -3455,13 +3465,14 @@
       innerHtml + (opts.footer || '') +
       '</div>';
   }
-  function printDocument(html) { showPrintPreview("doc", html); }
+  function printDocument(html, save) { showPrintPreview("doc", html, save); }
 
   // 印刷前に必ずプレビューを挟む(内容確認 → 印刷 or キャンセル)。
   // doc(見積書・請求書・修理伝票)と labels(住所ラベル)で共通。
+  // save(任意): 印刷確定時に発行履歴へ保存するペイロード(見積・請求のみ)。
   var pendingPrint = null;
-  function showPrintPreview(kind, html) {
-    pendingPrint = { kind: kind, html: html };
+  function showPrintPreview(kind, html, save) {
+    pendingPrint = { kind: kind, html: html, save: save || null };
     document.getElementById("print-preview-content").innerHTML = html;
     document.getElementById("print-preview").classList.add("show");
   }
@@ -3472,7 +3483,7 @@
   }
   function confirmPrint() {
     if (!pendingPrint) return;
-    var kind = pendingPrint.kind, html = pendingPrint.html;
+    var kind = pendingPrint.kind, html = pendingPrint.html, save = pendingPrint.save;
     var rootId = kind === "labels" ? "label-print-root" : "doc-print-root";
     var cls = kind === "labels" ? "printing-labels" : "printing-doc";
     document.getElementById("print-preview").classList.remove("show");
@@ -3486,6 +3497,12 @@
     };
     window.addEventListener("afterprint", cleanup);
     setTimeout(function () { window.print(); }, 50);
+    // 実際に印刷した見積書・請求書だけ発行履歴へ保存(プレビューでキャンセルした分は残さない)
+    if (save && API) {
+      fetch(API + "/document", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(save)
+      }).catch(function () {});
+    }
     pendingPrint = null;
   }
   function docNoStamp(prefix) {
@@ -3531,8 +3548,49 @@
     var isInv = estMode === "invoice";
     document.getElementById("est-tab-quote").classList.toggle("active", !isInv);
     document.getElementById("est-tab-invoice").classList.toggle("active", isInv);
+    document.getElementById("est-tab-history").classList.remove("active");
+    document.getElementById("est-form-card").style.display = "";
+    document.getElementById("est-history-card").style.display = "none";
     document.getElementById("est-print-btn").textContent = isInv ? "請求書を印刷" : "見積書を印刷";
     document.getElementById("est-invoice-note").style.display = isInv ? "" : "none";
+  }
+  /* 発行履歴: 一覧表示と、呼び出して編集→再発行 */
+  var estHistory = [];
+  function showEstHistory() {
+    document.getElementById("est-tab-quote").classList.remove("active");
+    document.getElementById("est-tab-invoice").classList.remove("active");
+    document.getElementById("est-tab-history").classList.add("active");
+    document.getElementById("est-form-card").style.display = "none";
+    document.getElementById("est-history-card").style.display = "";
+    loadEstHistory();
+  }
+  function loadEstHistory() {
+    var tb = document.getElementById("est-history-tbody");
+    if (!API) { tb.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">発行履歴はサーバー起動時に利用できます。</td></tr>'; return; }
+    tb.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">読み込み中…</td></tr>';
+    fetch(API + "/documents?limit=200").then(function (r) { return r.json(); }).then(function (res) {
+      estHistory = res.documents || [];
+      renderEstHistory();
+    }).catch(function () { tb.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">読み込みに失敗しました。</td></tr>'; });
+  }
+  function renderEstHistory() {
+    var tb = document.getElementById("est-history-tbody");
+    tb.innerHTML = estHistory.length ? estHistory.map(function (d) {
+      var typeLabel = d.doc_type === "invoice" ? "請求書" : "見積書";
+      return '<tr><td class="num">' + esc(dash(d.issued_at)) + '</td><td>' + typeLabel + '</td><td>' +
+        esc(dash(d.to_name)) + ' ' + esc(d.keisho || "") + '</td><td class="r num">¥' + num(d.total || 0) + '</td>' +
+        '<td><button class="btn" onclick="estLoadFromHistory(' + d.id + ')">呼び出す</button></td></tr>';
+    }).join("") : '<tr><td colspan="5" style="color:var(--muted)">まだ発行履歴はありません。</td></tr>';
+  }
+  function estLoadFromHistory(id) {
+    var d = estHistory.filter(function (x) { return x.id === id; })[0];
+    if (!d) return;
+    setEstMode(d.doc_type === "invoice" ? "invoice" : "quote");  // フォーム表示に戻す
+    document.getElementById("est-to").value = d.to_name || "";
+    document.getElementById("est-keisho").value = d.keisho || "様";
+    estLines = (d.lines || []).map(function (l) { return { name: l.name, amount: l.amount || 0 }; });
+    renderEstLines();
+    showToast("履歴を呼び出しました。内容を編集して再発行できます。");
   }
   function renderEstLines() {
     var tb = document.getElementById("est-tbody");
@@ -3583,7 +3641,10 @@
       '<p class="doc-note">' + note + '</p>';
     var opts = { keisho: keisho, showInvoiceNo: true };
     if (isInv) opts.footer = STORE_BANK_HTML;   // 請求書のみ振込先口座を印字
-    printDocument(buildDocHtml(title, docNoStamp(prefix), to, body, opts));
+    // 印刷確定時に発行履歴へ保存する(あとで呼び出して編集・再発行できる)
+    var save = { doc_type: estMode, to_name: to, keisho: keisho, total: total, tax: tax,
+                 lines: estLines.map(function (l) { return { name: l.name, amount: l.amount || 0 }; }) };
+    printDocument(buildDocHtml(title, docNoStamp(prefix), to, body, opts), save);
   }
 
   function rxError(msg) { var e = document.getElementById("rx-error"); e.textContent = msg; e.style.display = "block"; }

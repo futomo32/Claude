@@ -2,7 +2,7 @@
 
 UIの描画コードを変えずに済むよう、埋め込み版と同じ配列の並びで返す。
 """
-import re, sqlite3, datetime
+import json, re, sqlite3, datetime
 
 GLASS_PAT = re.compile(r"メガネ|眼鏡|レンズ|フレーム|ﾒｶﾞﾈ|ﾚﾝｽﾞ")
 FRAME_PAT = re.compile(r"フレーム|ﾌﾚｰﾑ|frame", re.I)
@@ -400,6 +400,57 @@ def slip_lines(con, frm, to, staff=""):
         ORDER BY s.sold_at""", args):
         out.append({"date": r["sold_at"], "name": r["cname"] or r["cid"], "item": r["item"],
                     "amount": r["amount"] or 0, "pay": r["pay_method"] or "", "staff": r["staff_name"]})
+    return out
+
+
+def _ensure_documents_table(con):
+    """発行履歴テーブルを(無ければ)作る。既存DBでもマイグレーション不要で動くように。"""
+    con.execute("""CREATE TABLE IF NOT EXISTS issued_documents (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        doc_type   TEXT NOT NULL,          -- 'quote'=見積書 / 'invoice'=請求書
+        issued_at  TEXT NOT NULL,          -- 発行日 YYYY-MM-DD
+        to_name    TEXT,                   -- 宛名
+        keisho     TEXT,                   -- 敬称(様/御中)
+        total      INTEGER,                -- 合計(税込)
+        tax        INTEGER,                -- 内消費税
+        lines_json TEXT,                   -- 明細 [{name,amount},...] のJSON
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+    )""")
+
+
+def save_document(con, p):
+    """発行した見積書/請求書を履歴に保存する。"""
+    _ensure_documents_table(con)
+    lines = p.get("lines") or []
+    cur = con.cursor()
+    cur.execute("""INSERT INTO issued_documents(doc_type,issued_at,to_name,keisho,total,tax,lines_json)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (p.get("doc_type"), p.get("issued_at") or datetime.date.today().isoformat(),
+                 p.get("to_name"), p.get("keisho"),
+                 int(p.get("total") or 0), int(p.get("tax") or 0),
+                 json.dumps(lines, ensure_ascii=False)))
+    con.commit()
+    return {"id": cur.lastrowid}
+
+
+def list_documents(con, limit=100):
+    """発行履歴の一覧(新しい順)。明細も含めて返し、UIで呼び出し→編集できるようにする。"""
+    _ensure_documents_table(con)
+    con.row_factory = sqlite3.Row
+    try:
+        limit = max(1, min(int(limit), 500))
+    except (TypeError, ValueError):
+        limit = 100
+    out = []
+    for r in con.execute("""SELECT id,doc_type,issued_at,to_name,keisho,total,tax,lines_json
+                            FROM issued_documents ORDER BY id DESC LIMIT ?""", (limit,)):
+        try:
+            lines = json.loads(r["lines_json"] or "[]")
+        except (ValueError, TypeError):
+            lines = []
+        out.append({"id": r["id"], "doc_type": r["doc_type"], "issued_at": r["issued_at"],
+                    "to_name": r["to_name"], "keisho": r["keisho"], "total": r["total"],
+                    "tax": r["tax"], "lines": lines})
     return out
 
 
