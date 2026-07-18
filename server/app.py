@@ -21,6 +21,26 @@ BASE = os.path.join(os.path.dirname(__file__), "..")
 DB = os.path.join(BASE, "db", "tokiwa.db")
 UI = os.path.join(BASE, "tokiwa-ui.html")
 ASSETS = os.path.join(BASE, "assets")
+IMAGES = os.path.join(BASE, "data", "real", "images")   # 商品写真(B-7)
+
+_img_index = None  # 大文字小文字違いに対応するための {小文字ファイル名: 実パス} キャッシュ
+
+
+def image_path(fname):
+    """商品写真のパスを返す(無ければNone)。まず完全一致、ダメなら大文字小文字を無視して照合。"""
+    global _img_index
+    fname = os.path.basename(fname or "")
+    if not fname:
+        return None
+    p = os.path.join(IMAGES, fname)
+    if os.path.isfile(p):
+        return p
+    if _img_index is None:
+        _img_index = {}
+        if os.path.isdir(IMAGES):
+            for fn in os.listdir(IMAGES):
+                _img_index[fn.lower()] = os.path.join(IMAGES, fn)
+    return _img_index.get(fname.lower())
 
 sys.path.insert(0, os.path.dirname(__file__))
 import db_query  # noqa: E402
@@ -102,6 +122,15 @@ class Handler(BaseHTTPRequestHandler):
                 fname = os.path.basename(path)
                 fpath = os.path.join(ASSETS, fname)
                 if fname != path[len("/assets/"):] or not os.path.isfile(fpath):
+                    return self._send(404, json.dumps({"error": "not found"}).encode())
+                ctype = mimetypes.guess_type(fpath)[0] or "application/octet-stream"
+                with open(fpath, "rb") as f:
+                    return self._send(200, f.read(), ctype)
+            if path == "/product_image":
+                # 商品写真の配信(data/real/images/ 内のみ。ファイル名のみ受け付けフォルダ外は不可)
+                qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+                fpath = image_path((qs.get("file") or [""])[0])
+                if not fpath or not os.path.isfile(fpath):
                     return self._send(404, json.dumps({"error": "not found"}).encode())
                 ctype = mimetypes.guess_type(fpath)[0] or "application/octet-stream"
                 with open(fpath, "rb") as f:

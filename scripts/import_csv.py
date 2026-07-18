@@ -241,8 +241,8 @@ def main():
     skipped_del = 0
     ins_prod = """INSERT INTO products
       (product_key,product_no,name,info,category,supplier,cost_price,list_price,state,
-       location,center_stone,center_carat,color,clarity,cut,cert_no,is_glasses,registered_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+       location,center_stone,center_carat,color,clarity,cut,cert_no,is_glasses,registered_at,image_file)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     for r in rows("d_item"):
         pk = pk_of(r)
         if not pk or pk in pseen:
@@ -264,6 +264,7 @@ def main():
             m_ishi.get(s(r.get("striscode"))), s(r.get("curmainjuryo")),
             s(r.get("strcolcode")), s(r.get("strclacode")), s(r.get("strcutcode")),
             s(r.get("strkanbno")), is_glass, dt(r.get("dattoudate")),
+            os.path.basename((s(r.get("strpicfilename")) or "").replace("\\", "/")) or None,
         ))
         if len(buf) >= BATCH:
             cur.executemany(ins_prod, buf)

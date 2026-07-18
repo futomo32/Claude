@@ -29,6 +29,7 @@ EXPECTED_COLUMNS = [
     ("customers", "postal", "TEXT"),
     ("customers", "address2", "TEXT"),
     ("customers", "email", "TEXT"),
+    ("products", "image_file", "TEXT"),   # 商品写真(B-7)
 ]
 
 

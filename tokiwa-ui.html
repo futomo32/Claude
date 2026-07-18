@@ -643,6 +643,15 @@
   .doc-sheet .doc-bank { margin-top: 1.6em; border: 1.5px solid #000; padding: 0.7em 1em; display: inline-block; min-width: 70mm; }
   .doc-sheet .doc-bank .bk-title { font-weight: 700; font-size: 10.5pt; margin-bottom: 0.4em; }
   .doc-sheet .doc-bank .bk-line { font-size: 10pt; line-height: 1.9; }
+  /* 商品写真(B-7) */
+  .prod-thumb { width: 42px; height: 42px; object-fit: cover; border-radius: 5px; border: 1px solid var(--line); background: #fff; cursor: pointer; display: block; }
+  .prod-nothumb { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; border-radius: 5px; border: 1px dashed var(--line); color: var(--muted); font-size: 0.7em; }
+  .pm-thumb { width: 34px; height: 34px; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); background: #fff; }
+  .pd-photo { width: 100%; max-height: 48vh; object-fit: contain; background: #fbfbfb; border: 1px solid var(--line); border-radius: 8px; }
+  .pd-nophoto { display: flex; align-items: center; justify-content: center; height: 30vh; background: #fbfbfb; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); }
+  .pd-info { margin-top: 0.8rem; }
+  .pd-info .kv-row { display: flex; justify-content: space-between; padding: 0.35em 0; border-bottom: 1px solid var(--line); font-size: 0.92em; }
+  .pd-info .kv-row .k { color: var(--muted); }
 </style>
 
 <!-- ════ ログイン ════ -->
@@ -892,7 +901,7 @@
           <p id="prod-count" style="margin:0 0 0.5rem;color:var(--muted);font-size:0.82em"></p>
           <div class="table-scroll">
             <table class="data">
-              <thead><tr><th>商品番号</th><th>商品名</th><th>分類</th><th>中石</th><th class="r">上代</th><th>保管場所</th><th>状態</th></tr></thead>
+              <thead><tr><th>写真</th><th>商品番号</th><th>商品名</th><th>分類</th><th>中石</th><th class="r">上代</th><th>保管場所</th><th>状態</th></tr></thead>
               <tbody id="stock-tbody"></tbody>
             </table>
           </div>
@@ -1165,7 +1174,7 @@
         </div>
       </div>
       <div class="table-scroll" style="margin-top:0.8rem;max-height:50vh;overflow-y:auto">
-        <table class="data"><thead><tr><th>商品番号</th><th>商品名</th><th>分類</th><th class="r">上代</th><th>状態</th><th></th></tr></thead>
+        <table class="data"><thead><tr><th>写真</th><th>商品番号</th><th>商品名</th><th>分類</th><th class="r">上代</th><th>状態</th><th></th></tr></thead>
           <tbody id="pm-results"></tbody>
         </table>
       </div>
@@ -1173,6 +1182,23 @@
     </div>
     <div class="modal-foot">
       <button class="btn" onclick="closeProductPicker()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- 商品詳細(写真つき) モーダル -->
+<div class="modal-back" id="prod-detail-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pd-title">
+    <div class="modal-head">
+      <h3 id="pd-title">商品詳細</h3>
+      <button class="close" aria-label="閉じる" onclick="closeProductDetail()">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="pd-photo-wrap"></div>
+      <div class="pd-info" id="pd-info"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeProductDetail()">閉じる</button>
     </div>
   </div>
 </div>
@@ -1724,11 +1750,13 @@
     pmResults = hits || [];
     document.getElementById("pm-results").innerHTML = pmResults.length
       ? pmResults.map(function (p) {
-          return '<tr><td class="num">' + esc(dash(p[0])) + '</td><td>' + esc(dash(p[1])) + '</td><td>' + esc(dash(p[2])) +
+          var url = prodImgUrl(p[8]);
+          var thumb = url ? '<img class="pm-thumb" loading="lazy" src="' + esc(url) + '" onerror="this.style.display=\'none\'">' : '';
+          return '<tr><td>' + thumb + '</td><td class="num">' + esc(dash(p[0])) + '</td><td>' + esc(dash(p[1])) + '</td><td>' + esc(dash(p[2])) +
             '</td><td class="r num">' + (p[3] ? "¥" + num(p[3]) : "—") + '</td><td><span class="chip chip-green">在庫</span></td>' +
             '<td><button class="btn" data-pm="' + esc(p[0]) + '">追加</button></td></tr>';
         }).join("")
-      : '<tr><td colspan="6" style="color:var(--muted)">該当する在庫商品がありません</td></tr>';
+      : '<tr><td colspan="7" style="color:var(--muted)">該当する在庫商品がありません</td></tr>';
   }
   function renderPmResults(q) {
     var supp = (document.getElementById("pm-supplier") || {}).value || "";
@@ -1806,6 +1834,7 @@
     });
   }
   bindBackdropClose("prod-modal", closeProductPicker);
+  bindBackdropClose("prod-detail-modal", closeProductDetail);
   bindBackdropClose("alert-modal", alertCancel);
   bindBackdropClose("free-modal", closeFreePicker);
   bindBackdropClose("rx-modal", closeRxModal);
@@ -2565,16 +2594,40 @@
     prodRows = filtered.slice(0, append ? prodRows.length + prodPageSize : prodPageSize);
     paintProducts();
   }
+  function prodImgUrl(imageFile) {
+    return (API && imageFile) ? (API + "/product_image?file=" + encodeURIComponent(imageFile)) : null;
+  }
   function paintProducts() {
     var stateChip = { "在庫": "chip-green", "売上": "chip-plain", "受託": "chip-warn", "返品": "chip-danger" };
-    document.getElementById("stock-tbody").innerHTML = prodRows.map(function (p) {
-      return '<tr><td class="num">' + esc(dash(p[0])) + '</td><td>' + esc(dash(p[1])) + '</td><td>' + esc(dash(p[2])) + '</td><td class="num">' + esc(dash(p[6])) + '</td><td class="r num">' + (p[3] ? "¥" + num(p[3]) : "—") + '</td><td>' + esc(dash(p[5])) + '</td><td><span class="chip ' + (stateChip[p[4]] || "chip-plain") + '">' + esc(dash(p[4])) + '</span></td></tr>';
-    }).join("") || '<tr><td colspan="7" style="color:var(--muted)">該当する商品が見つかりません</td></tr>';
+    document.getElementById("stock-tbody").innerHTML = prodRows.map(function (p, i) {
+      var url = prodImgUrl(p[8]);
+      var thumb = url ? '<img class="prod-thumb" loading="lazy" src="' + esc(url) + '" onerror="this.style.display=\'none\'">' : '<span class="prod-nothumb">なし</span>';
+      return '<tr style="cursor:pointer" onclick="openProductDetail(' + i + ')"><td>' + thumb + '</td><td class="num">' + esc(dash(p[0])) + '</td><td>' + esc(dash(p[1])) + '</td><td>' + esc(dash(p[2])) + '</td><td class="num">' + esc(dash(p[6])) + '</td><td class="r num">' + (p[3] ? "¥" + num(p[3]) : "—") + '</td><td>' + esc(dash(p[5])) + '</td><td><span class="chip ' + (stateChip[p[4]] || "chip-plain") + '">' + esc(dash(p[4])) + '</span></td></tr>';
+    }).join("") || '<tr><td colspan="8" style="color:var(--muted)">該当する商品が見つかりません</td></tr>';
     document.getElementById("prod-count").textContent =
       "該当 " + prodTotal.toLocaleString() + "件(表示 " + prodRows.length.toLocaleString() + "件)";
     document.getElementById("prod-more").style.display = prodRows.length < prodTotal ? "" : "none";
   }
   function showMoreProducts() { loadProductsPage(true); }
+  // 商品行クリックで写真つき詳細を表示(B-7)
+  function openProductDetail(i) {
+    var p = prodRows[i];
+    if (!p) return;
+    document.getElementById("pd-title").textContent = (p[1] || "商品") + "（" + dash(p[0]) + "）";
+    var url = prodImgUrl(p[8]);
+    document.getElementById("pd-photo-wrap").innerHTML = url
+      ? '<img class="pd-photo" src="' + esc(url) + '" alt="' + esc(p[1] || "") + '"' +
+        ' onerror="this.style.display=\'none\';document.getElementById(\'pd-noimg\').style.display=\'flex\'">' +
+        '<div id="pd-noimg" class="pd-nophoto" style="display:none">写真ファイルが見つかりません</div>'
+      : '<div class="pd-nophoto">写真は登録されていません</div>';
+    var rows = [["商品番号", dash(p[0])], ["商品名", dash(p[1])], ["分類", dash(p[2])],
+      ["中石", dash(p[6])], ["上代", p[3] ? "¥" + num(p[3]) : "—"], ["保管場所", dash(p[5])], ["状態", dash(p[4])]];
+    document.getElementById("pd-info").innerHTML = rows.map(function (r) {
+      return '<div class="kv-row"><span class="k">' + esc(r[0]) + '</span><span class="v">' + esc(r[1]) + '</span></div>';
+    }).join("");
+    document.getElementById("prod-detail-modal").classList.add("show");
+  }
+  function closeProductDetail() { document.getElementById("prod-detail-modal").classList.remove("show"); }
 
   /* ── 仕入商品登録 ── */
   function updateNpRate() {

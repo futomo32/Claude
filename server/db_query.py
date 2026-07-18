@@ -122,13 +122,13 @@ def build_blob(con):
 
     products = []
     for r in cur.execute("""SELECT product_no,name,category,list_price,state,location,
-                                   center_stone,center_carat,product_key
+                                   center_stone,center_carat,product_key,image_file
                             FROM products ORDER BY product_no"""):
         stone = r["center_stone"] or ""
         if stone and r["center_carat"]:
             stone += f' {r["center_carat"]}ct'
         products.append([r["product_no"], r["name"], r["category"], r["list_price"],
-                         r["state"], r["location"], stone or None, r["product_key"]])
+                         r["state"], r["location"], stone or None, r["product_key"], r["image_file"]])
 
     repairs = []
     for r in cur.execute("""SELECT id,repair_no,customer_id,item_name,issue,estimate,
@@ -342,13 +342,13 @@ def search_products(con, q="", cat="", state="", supplier="", limit=50, offset=0
     total = con.execute("SELECT COUNT(*) FROM products" + wsql, args).fetchone()[0]
     rows = []
     for r in con.execute(
-            "SELECT product_no,name,category,list_price,state,location,center_stone,center_carat,product_key "
+            "SELECT product_no,name,category,list_price,state,location,center_stone,center_carat,product_key,image_file "
             "FROM products" + wsql + " ORDER BY product_no LIMIT ? OFFSET ?", args + [limit, offset]):
         stone = r["center_stone"] or ""
         if stone and r["center_carat"]:
             stone += f' {r["center_carat"]}ct'
         rows.append([r["product_no"], r["name"], r["category"], r["list_price"],
-                     r["state"], r["location"], stone or None, r["product_key"]])
+                     r["state"], r["location"], stone or None, r["product_key"], r["image_file"]])
     return {"rows": rows, "total": total}
 
 

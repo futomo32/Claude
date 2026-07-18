@@ -94,7 +94,8 @@ CREATE TABLE products (
   cut           TEXT,
   cert_no       TEXT,               -- 鑑別書no
   is_glasses    INTEGER NOT NULL DEFAULT 0, -- メガネ商品フラグ(1=メガネ)
-  registered_at TEXT
+  registered_at TEXT,
+  image_file    TEXT                -- 商品写真のファイル名(data/real/images/ 内。無ければNULL)
 );
 CREATE INDEX idx_products_no    ON products(product_no);
 CREATE INDEX idx_products_state ON products(state);
