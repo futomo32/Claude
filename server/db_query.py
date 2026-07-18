@@ -8,6 +8,18 @@ GLASS_PAT = re.compile(r"メガネ|眼鏡|レンズ|フレーム|ﾒｶﾞﾈ|�
 FRAME_PAT = re.compile(r"フレーム|ﾌﾚｰﾑ|frame", re.I)
 LENS_PAT = re.compile(r"レンズ|ﾚﾝｽﾞ|lens|非球面|累進", re.I)
 
+# 旧・宝飾ナビ由来のゴミ担当名(担当者フィールドにランク/DM/ライオンズ等を無理やり
+# 詰め込んだ複合タグ)を判定する。例:「Aランク：三輪」「Ｌ○○」「ライオンズ」。
+# レジ会計担当のワンタップ表示から外す/一括整理の対象にする。
+_JUNK_STAFF_PAT = re.compile(r"ランク|ライオンズ|Ｌｉｏｎｓ|Lions|ＤＭ|[：:]")
+
+
+def _is_junk_staff_name(name):
+    """担当者名が旧タグ(本物の店員でない)っぽいかを判定する。"""
+    if not name:
+        return False
+    return bool(_JUNK_STAFF_PAT.search(str(name)))
+
 
 def glass_kind(*texts):
     """フレーム/レンズの別を判定(分類名や品名から)"""
@@ -56,6 +68,19 @@ def ensure_schema(con):
                 changed = True
             except sqlite3.Error:
                 pass
+    # staff.is_register(レジ会計担当としてワンタップバーに出すか)。初回付与時は、
+    # 旧・宝飾ナビ由来のゴミ担当(「Aランク：三輪」等のランクタグ)を除いた本物だけを
+    # 1(表示)、ゴミは0(非表示)でシードする。以後はマスタ画面で個別に切替。
+    scols = cols("staff")
+    if scols and "is_register" not in scols:
+        try:
+            con.execute("ALTER TABLE staff ADD COLUMN is_register INTEGER DEFAULT 1")
+            for r in con.execute("SELECT staff_code, name FROM staff"):
+                if _is_junk_staff_name(r[1]):
+                    con.execute("UPDATE staff SET is_register=0 WHERE staff_code=?", (r[0],))
+            changed = True
+        except sqlite3.Error:
+            pass
     if changed:
         con.commit()
 
@@ -296,10 +321,17 @@ def build_blob_light(con):
     if not staff:
         staff = [r["staff_name"] for r in cur.execute(
             "SELECT DISTINCT staff_name FROM customers WHERE staff_name IS NOT NULL AND staff_name<>'' ORDER BY staff_name")]
+    # レジ会計担当のワンタップバーに出す担当者(is_register=1 の有効な人だけ)。
+    # フラグ列が無い/全部OFF等で空になる場合は staff 全体にフォールバック。
+    register_staff = [r["name"] for r in cur.execute(
+        "SELECT name FROM staff WHERE active=1 AND COALESCE(is_register,1)=1 ORDER BY name")]
+    if not register_staff:
+        register_staff = staff
 
     return dict(customers=customers, families=families, points=points,
                 urikake=urikake, urikakeHist=urikake_hist,
                 repairs=repairs, tenders=tenders, stockStats=stock_stats, staff=staff,
+                registerStaff=register_staff,
                 lite=True)  # lite=True で「明細は遅延取得」とUIに知らせる
 
 
@@ -685,8 +717,10 @@ def list_staff(con):
     umap = _staff_usage_map(con)
     con.row_factory = sqlite3.Row
     return [{"code": r["staff_code"], "name": r["name"], "active": bool(r["active"]),
-             "count": umap.get(r["name"], 0)}
-            for r in con.execute("SELECT staff_code,name,active FROM staff ORDER BY active DESC, name")]
+             "register": bool(r["is_register"]), "count": umap.get(r["name"], 0)}
+            for r in con.execute(
+                "SELECT staff_code,name,active,COALESCE(is_register,1) is_register "
+                "FROM staff ORDER BY active DESC, is_register DESC, name")]
 
 
 def save_staff(con, p):
@@ -701,19 +735,60 @@ def save_staff(con, p):
         cur.execute("DELETE FROM staff WHERE staff_code=?", (code,))
         con.commit()
         return {"deleted": code}
+    if p.get("action") == "cleanup":  # ゴミ担当(旧タグ)の一括整理
+        return purge_junk_staff(con)
+    # register(レジ会計担当としてワンタップバーに出すか)。payloadに含まれる時だけ更新
+    has_reg = "register" in p
+    register = 1 if p.get("register") else 0
     if not code:  # 新規
         if not name:
             raise ValueError("担当者名を入力してください")
         row = con.execute("SELECT MAX(CAST(staff_code AS INTEGER)) FROM staff WHERE staff_code GLOB '[0-9]*'").fetchone()
         code = str((row[0] or 0) + 1)
-        cur.execute("INSERT INTO staff(staff_code,name,active) VALUES (?,?,?)", (code, name, active))
+        reg_new = register if has_reg else 1  # 手動追加は既定でレジ表示ON
+        cur.execute("INSERT INTO staff(staff_code,name,active,is_register) VALUES (?,?,?,?)",
+                    (code, name, active, reg_new))
     else:  # 更新
         if name:
             cur.execute("UPDATE staff SET name=?, active=? WHERE staff_code=?", (name, active, code))
         else:
             cur.execute("UPDATE staff SET active=? WHERE staff_code=?", (active, code))
+        if has_reg:
+            cur.execute("UPDATE staff SET is_register=? WHERE staff_code=?", (register, code))
     con.commit()
     return {"code": code, "name": name, "active": bool(active)}
+
+
+def list_junk_staff(con):
+    """ゴミ担当(旧タグらしき担当者)を一覧。整理プレビュー用。使用件数と処理予定を付ける。"""
+    umap = _staff_usage_map(con)
+    con.row_factory = sqlite3.Row
+    out = []
+    for r in con.execute("SELECT staff_code,name,active FROM staff ORDER BY name"):
+        if _is_junk_staff_name(r["name"]):
+            cnt = umap.get(r["name"], 0)
+            out.append({"code": r["staff_code"], "name": r["name"], "count": cnt,
+                        # 使用0件は削除、使用ありは停止(データ参照を壊さない)
+                        "plan": "delete" if cnt == 0 else "deactivate"})
+    return out
+
+
+def purge_junk_staff(con):
+    """ゴミ担当(旧タグ)を一括整理。使用0件は削除、使用ありは停止＋レジ非表示にする
+    (実データの担当者名は残るので過去伝票の参照は壊れない)。件数を返す。"""
+    junk = list_junk_staff(con)
+    cur = con.cursor()
+    deleted, deactivated = [], []
+    for s in junk:
+        if s["plan"] == "delete":
+            cur.execute("DELETE FROM staff WHERE staff_code=?", (s["code"],))
+            deleted.append(s["name"])
+        else:
+            cur.execute("UPDATE staff SET active=0, is_register=0 WHERE staff_code=?", (s["code"],))
+            deactivated.append(s["name"])
+    con.commit()
+    return {"deleted": deleted, "deactivated": deactivated,
+            "count": len(deleted) + len(deactivated)}
 
 
 def sample_in_stock_key(con):

@@ -1282,14 +1282,15 @@
       <button class="close" aria-label="閉じる" onclick="closeStaffMaster()">×</button>
     </div>
     <div class="modal-body">
-      <p style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">担当者の追加・名称変更・利用停止ができます。ここの担当者が、レジ・修理・処方箋・日報・顧客などの担当者選択に反映されます(変更はその場で保存)。</p>
-      <div style="display:flex;gap:0.5em;margin-bottom:0.8rem">
-        <input id="staff-new-name" placeholder="新しい担当者名" style="flex:1">
+      <p style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">担当者の追加・名称変更・利用停止ができます。ここの担当者が、レジ・修理・処方箋・日報・顧客などの担当者選択に反映されます(変更はその場で保存)。<br><b>「レジ表示」</b>をONにした人だけ、レジの会計担当ワンタップに出ます。</p>
+      <div style="display:flex;gap:0.5em;margin-bottom:0.8rem;flex-wrap:wrap;align-items:center">
+        <input id="staff-new-name" placeholder="新しい担当者名" style="flex:1;min-width:10em">
         <button class="btn btn-primary" onclick="addStaff()">追加</button>
+        <button class="btn" onclick="cleanupJunkStaff()" title="「Aランク：三輪」等の旧タグをまとめて整理します">🧹 ゴミ担当を一括整理</button>
       </div>
       <div class="table-scroll" style="max-height:50vh;overflow-y:auto">
         <table class="data">
-          <thead><tr><th>担当者名</th><th class="r">使用件数</th><th>状態</th><th></th></tr></thead>
+          <thead><tr><th>担当者名</th><th class="r">使用件数</th><th>状態</th><th>レジ表示</th><th></th></tr></thead>
           <tbody id="staff-tbody"></tbody>
         </table>
       </div>
@@ -2947,7 +2948,9 @@
   function renderPosOperatorBar() {
     var bar = document.getElementById("pos-operator-bar");
     if (!bar) return;
-    var names = (D.staff && D.staff.length) ? D.staff.slice() : [];
+    // レジに出すのは「レジ表示ON」の担当者だけ(D.registerStaff)。旧タグは出さない。
+    var names = (D.registerStaff && D.registerStaff.length) ? D.registerStaff.slice()
+      : ((D.staff && D.staff.length) ? D.staff.slice() : []);
     if (!names.length) { var set = {}; D.customers.forEach(function (c) { if (c[4]) set[c[4]] = 1; }); names = Object.keys(set); }
     names.sort();
     posOpNames = names;
@@ -2974,12 +2977,12 @@
   function closeStaffMaster() { document.getElementById("staff-master-modal").classList.remove("show"); }
   function loadStaffMaster() {
     var tb = document.getElementById("staff-tbody");
-    if (!API) { tb.innerHTML = '<tr><td colspan="3" style="color:var(--muted)">担当者マスタはサーバー起動時に利用できます。</td></tr>'; return; }
-    tb.innerHTML = '<tr><td colspan="3" style="color:var(--muted)">読み込み中…</td></tr>';
+    if (!API) { tb.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">担当者マスタはサーバー起動時に利用できます。</td></tr>'; return; }
+    tb.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">読み込み中…</td></tr>';
     fetch(API + "/staff").then(function (r) { return r.json(); }).then(function (res) {
       staffMaster = res.staff || [];
       renderStaffMaster();
-    }).catch(function () { tb.innerHTML = '<tr><td colspan="3" style="color:var(--muted)">読み込みに失敗しました。</td></tr>'; });
+    }).catch(function () { tb.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">読み込みに失敗しました。</td></tr>'; });
   }
   function renderStaffMaster() {
     var tb = document.getElementById("staff-tbody");
@@ -2987,9 +2990,10 @@
       return '<tr><td><input value="' + esc(s.name) + '" onchange="renameStaff(' + i + ',this.value)"></td>' +
         '<td class="r num">' + num(s.count || 0) + '</td>' +
         '<td>' + (s.active ? '<span class="chip chip-green">有効</span>' : '<span class="chip chip-plain">停止中</span>') + '</td>' +
+        '<td><button class="btn' + (s.register ? ' btn-primary' : '') + '" onclick="toggleRegister(' + i + ')" title="レジの会計担当ワンタップに出す/出さない">' + (s.register ? "ON" : "OFF") + '</button></td>' +
         '<td><button class="btn" onclick="toggleStaff(' + i + ')">' + (s.active ? "利用停止" : "有効化") + '</button> ' +
         '<button class="btn" onclick="deleteStaff(' + i + ')">削除</button></td></tr>';
-    }).join("") : '<tr><td colspan="4" style="color:var(--muted)">担当者がいません。上で追加してください。</td></tr>';
+    }).join("") : '<tr><td colspan="5" style="color:var(--muted)">担当者がいません。上で追加してください。</td></tr>';
   }
   function deleteStaff(i) {
     var s = staffMaster[i]; if (!s) return;
@@ -3025,13 +3029,50 @@
   }
   function toggleStaff(i) {
     var s = staffMaster[i]; if (!s) return;
-    saveStaffRow({ code: s.code, name: s.name, active: s.active ? 0 : 1 });
+    saveStaffRow({ code: s.code, name: s.name, active: s.active ? 0 : 1, register: s.register ? 1 : 0 });
+  }
+  // レジ会計担当バーへの表示ON/OFF(名称・状態は変えず is_register だけ切替)
+  function toggleRegister(i) {
+    var s = staffMaster[i]; if (!s) return;
+    saveStaffRow({ code: s.code, register: s.register ? 0 : 1 });
+  }
+  // ゴミ担当(「Aランク：三輪」等の旧タグ)を一括整理。まず件数を確認してから実行
+  function cleanupJunkStaff() {
+    if (!API) return showToast("この機能はサーバー起動時に使えます。");
+    fetch(API + "/staff_junk").then(function (r) { return r.json(); }).then(function (res) {
+      var junk = res.junk || [];
+      if (!junk.length) return alertPopup("整理対象の旧タグ担当は見つかりませんでした。", { title: "一括整理", okText: "OK" });
+      var del = junk.filter(function (s) { return s.plan === "delete"; });
+      var deact = junk.filter(function (s) { return s.plan === "deactivate"; });
+      var sample = junk.slice(0, 8).map(function (s) { return s.name; }).join("、");
+      var msg = "旧タグらしき担当 " + junk.length + " 件を整理します。\n"
+        + "・未使用 " + del.length + " 件 → 削除\n"
+        + "・使用あり " + deact.length + " 件 → 利用停止＋レジ非表示(過去データの担当者名は残ります)\n\n"
+        + "例: " + sample + (junk.length > 8 ? " …ほか" + (junk.length - 8) + "件" : "");
+      alertPopup(msg, {
+        type: "warn", title: "ゴミ担当の一括整理", okText: "整理する", cancelText: "やめる", confirm: true,
+        onOk: function () {
+          fetch(API + "/staff", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "cleanup" })
+          }).then(function (r) { return r.json(); }).then(function (out) {
+            if (out.error) throw new Error(out.error);
+            loadStaffMaster();
+            refreshStaffFromServer();
+            showToast("整理しました(削除 " + (out.deleted || []).length + " / 停止 " + (out.deactivated || []).length + " 件)。");
+          }).catch(function (e) { showToast("整理に失敗: " + (e.message || e)); });
+        }
+      });
+    }).catch(function () { showToast("対象の取得に失敗しました。"); });
   }
   // 担当者マスタ変更後、D.staff を取り直して全プルダウンを更新(有効な担当者のみ)
   function refreshStaffFromServer() {
     if (!API) return;
     fetch(API + "/staff").then(function (r) { return r.json(); }).then(function (res) {
-      D.staff = (res.staff || []).filter(function (s) { return s.active; }).map(function (s) { return s.name; });
+      var all = res.staff || [];
+      D.staff = all.filter(function (s) { return s.active; }).map(function (s) { return s.name; });
+      // レジ会計担当バー用: 有効かつ「レジ表示ON」の人だけ
+      D.registerStaff = all.filter(function (s) { return s.active && s.register; }).map(function (s) { return s.name; });
       populateStaffDropdowns();
     }).catch(function () {});
   }
