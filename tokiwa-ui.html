@@ -612,7 +612,7 @@
     font-family: "游ゴシック", "Yu Gothic", sans-serif; font-size: 9.5pt; line-height: 1.5; color: #000;
   }
   .label-cell .lc-zip { font-size: 8.5pt; }
-  .label-cell .lc-name { font-size: 10.5pt; font-weight: 700; margin-top: 0.2em; }
+  .label-cell .lc-name { font-size: 10.5pt; font-weight: 700; margin-top: 0.2em; text-align: center; }
 
   /* ── 汎用帳票印刷(見積書・請求書・修理伝票。A4・保存なしのその場印刷) ── */
   .doc-print-root { display: none; }
@@ -882,6 +882,7 @@
             <div class="field"><label>商品番号・品名</label><input id="q-prod" placeholder="番号または品名の一部"></div>
             <div class="field"><label>分類</label><select id="q-cat"><option value="">すべて</option></select></div>
             <div class="field"><label>状態</label><select id="q-state"><option value="在庫">在庫</option><option value="">すべて</option><option value="売上">売上</option><option value="受託">受託</option><option value="返品">返品</option></select></div>
+            <div class="field"><label>仕入先</label><select id="q-supplier"><option value="">すべて</option></select></div>
             <button class="btn">棚卸モード</button>
           </div>
           <p id="prod-count" style="margin:0 0 0.5rem;color:var(--muted);font-size:0.82em"></p>
@@ -1105,8 +1106,13 @@
       <button class="close" aria-label="閉じる" onclick="closeProductPicker()">×</button>
     </div>
     <div class="modal-body">
-      <div class="field"><label>商品番号・品名で検索</label>
-        <input id="pm-search" placeholder="番号または品名(カタカナあいまい可)" autocomplete="off">
+      <div class="search-row">
+        <div class="field" style="flex:1.6"><label>商品番号・品名で検索</label>
+          <input id="pm-search" placeholder="番号または品名(カタカナあいまい可)" autocomplete="off">
+        </div>
+        <div class="field"><label>仕入先で絞り込み</label>
+          <select id="pm-supplier"><option value="">すべて</option></select>
+        </div>
       </div>
       <div class="table-scroll" style="margin-top:0.8rem;max-height:50vh;overflow-y:auto">
         <table class="data"><thead><tr><th>商品番号</th><th>商品名</th><th>分類</th><th class="r">上代</th><th>状態</th><th></th></tr></thead>
@@ -1452,6 +1458,13 @@
       b.classList.toggle("active", b.dataset.screen === navName);
     });
     document.getElementById("screen-title").textContent = screenTitles[name] || name;
+    // 画面に入るたびに最新化(いずれもサーバーへの軽い問い合わせ。表示ボタンを押さなくてよい)
+    try {
+      if (name === "home") renderHomeTiles();
+      else if (name === "reports") renderDailyReport();
+      else if (name === "repairs") renderRepairs();
+      else if (name === "products") renderProducts();
+    } catch (e) { /* 初期化前の呼び出しは無視 */ }
     window.scrollTo(0, 0);
   }
 
@@ -1556,8 +1569,10 @@
     closeFreePicker();
   }
   function addStockLine(p) {
-    // p = D.products row: [no, name, cat, list, state, location, stone]
-    posLines.push({ kind: "stock", key: p[0], no: p[0], name: p[1], info: p[6], list: p[3] || 0, amount: p[3] || 0 });
+    // p = 商品行: [商品番号, 品名, 分類, 上代, 状態, 置場, 石, 商品キー(内部)]
+    // ★在庫引落・購入履歴の紐付けは内部キー(p[7])で行う。商品番号(p[0])は表示・重複ありのため不可。
+    var pkey = (p[7] != null && p[7] !== "") ? p[7] : p[0];
+    posLines.push({ kind: "stock", key: pkey, no: p[0], name: p[1], info: p[6], list: p[3] || 0, amount: p[3] || 0 });
     renderPosLines();
   }
   function removePosLine(i) { posLines.splice(i, 1); renderPosLines(); }
@@ -1639,7 +1654,9 @@
 
   /* 商品ピッカー(在庫品) */
   function openProductPicker() {
+    fillPmSuppliers();
     document.getElementById("pm-search").value = "";
+    var sup = document.getElementById("pm-supplier"); if (sup) sup.value = "";
     renderPmResults("");
     document.getElementById("prod-modal").classList.add("show");
     document.getElementById("pm-search").focus();
@@ -1657,8 +1674,10 @@
       : '<tr><td colspan="6" style="color:var(--muted)">該当する在庫商品がありません</td></tr>';
   }
   function renderPmResults(q) {
+    var supp = (document.getElementById("pm-supplier") || {}).value || "";
     if (API) {  // サーバー検索(全21万件を持たずに在庫だけ絞り込む)
-      fetch(API + "/products?state=" + encodeURIComponent("在庫") + "&limit=40&q=" + encodeURIComponent(q || ""))
+      fetch(API + "/products?state=" + encodeURIComponent("在庫") + "&limit=40" +
+        "&q=" + encodeURIComponent(q || "") + "&supplier=" + encodeURIComponent(supp))
         .then(function (r) { return r.json(); })
         .then(function (res) { paintPmResults(res.rows || []); })
         .catch(function () { paintPmResults([]); });
@@ -1670,6 +1689,18 @@
       if (!q) return true;
       return String(p[0]).indexOf(q) >= 0 || normKana(p[1]).indexOf(nq) >= 0;
     }).slice(0, 40));
+  }
+  // ピッカーの仕入先プルダウンを一度だけ埋める(在庫画面と同じ一覧を使う)
+  var _pmSuppFilled = false;
+  function fillPmSuppliers() {
+    var sel = document.getElementById("pm-supplier");
+    if (!sel || _pmSuppFilled || !API) return;
+    _pmSuppFilled = true;
+    fetch(API + "/product_suppliers").then(function (r) { return r.json(); }).then(function (res) {
+      (res.suppliers || []).sort().forEach(function (s) {
+        var o = document.createElement("option"); o.value = s; o.textContent = s; sel.appendChild(o);
+      });
+    }).catch(function () { _pmSuppFilled = false; });
   }
 
   /* テンキー(モック: 預り金額 → 釣銭を計算) */
@@ -1698,6 +1729,7 @@
     refreshChange();
   });
   document.getElementById("pm-search").addEventListener("input", function () { renderPmResults(this.value.trim()); });
+  (function () { var s = document.getElementById("pm-supplier"); if (s) s.addEventListener("change", function () { renderPmResults((document.getElementById("pm-search").value || "").trim()); }); })();
   document.getElementById("pm-results").addEventListener("click", function (e) {
     var b = e.target.closest("[data-pm]");
     if (!b) return;
@@ -2452,9 +2484,11 @@
     var q = (document.getElementById("q-prod").value || "").trim();
     var cat = document.getElementById("q-cat").value;
     var state = document.getElementById("q-state").value;
+    var supp = (document.getElementById("q-supplier") || {}).value || "";
     if (API) {
       var url = API + "/products?limit=" + prodPageSize + "&offset=" + (append ? prodRows.length : 0) +
-        "&q=" + encodeURIComponent(q) + "&cat=" + encodeURIComponent(cat) + "&state=" + encodeURIComponent(state);
+        "&q=" + encodeURIComponent(q) + "&cat=" + encodeURIComponent(cat) + "&state=" + encodeURIComponent(state) +
+        "&supplier=" + encodeURIComponent(supp);
       fetch(url).then(function (r) { return r.json(); }).then(function (res) {
         prodTotal = res.total || 0;
         prodRows = append ? prodRows.concat(res.rows || []) : (res.rows || []);
@@ -2462,7 +2496,7 @@
       }).catch(function () { prodRows = append ? prodRows : []; prodTotal = prodRows.length; paintProducts(); });
       return;
     }
-    // 単体HTML(埋め込み)時のフォールバック
+    // 単体HTML(埋め込み)時のフォールバック(仕入先はサーバー時のみ絞り込み)
     var nq = normKana(q);
     var filtered = D.products.filter(function (p) {
       if (q && String(p[0]).indexOf(q) < 0 && normKana(p[1]).indexOf(nq) < 0) return false;
@@ -2804,26 +2838,24 @@
       done(maxid + 1, "R-" + String(maxid + 1).padStart(6, "0"));
     }
   }
-  function advanceRepairStatus(id) {
+  // 修理の進捗をドロップダウンで選んだ状態に更新する(前の状態にも戻せる。誤操作対策)。
+  function setRepairStatus(id, status) {
     var r = D.repairs.filter(function (x) { return x.id === id; })[0];
-    if (!r) return;
-    var idx = REPAIR_STATUSES.indexOf(r.status);
-    if (idx < 0 || idx >= REPAIR_STATUSES.length - 1) return;
-    var next = REPAIR_STATUSES[idx + 1];
+    if (!r || !status || status === r.status) return;
     function done(completedAt) {
-      r.status = next; r.completed_at = completedAt || null;
+      r.status = status; r.completed_at = completedAt || null;
       renderRepairs(); renderHomeTiles();
-      showToast(r.repair_no + " を「" + next + "」にしました。");
+      showToast(r.repair_no + " を「" + status + "」にしました。");
     }
     if (window.TOKIWA_API) {
       fetch(window.TOKIWA_API + "/repair_status", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: id, status: next })
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: id, status: status })
       }).then(function (res) { return res.json(); }).then(function (res) {
         if (res.error) throw new Error(res.error);
         done(res.completed_at);
       }).catch(function (e) { showToast("更新に失敗しました: " + e.message); });
     } else {
-      done(next === "引渡済み" ? TODAY_ISO : null);
+      done(status === "引渡済み" ? TODAY_ISO : null);
     }
   }
   function printRepairSlip(r) {
@@ -2850,9 +2882,13 @@
     var tb = document.getElementById("repair-tbody");
     tb.innerHTML = rows.length ? rows.map(function (r) {
       var c = findCust(r.customer_id);
-      var next = REPAIR_STATUSES[REPAIR_STATUSES.indexOf(r.status) + 1];
-      var actions = '<button class="btn" onclick="printRepairSlip(D.repairs.filter(function(x){return x.id===' + r.id + ';})[0])">伝票印刷</button>';
-      if (next) actions += ' <button class="btn btn-primary" onclick="advanceRepairStatus(' + r.id + ')">' + esc(next) + 'へ</button>';
+      // 進捗はドロップダウンで選んで「更新」。順送りだけでなく前の状態にも戻せる(押し間違い対策)
+      var opts = REPAIR_STATUSES.map(function (s) {
+        return '<option value="' + esc(s) + '"' + (s === r.status ? " selected" : "") + '>' + esc(s) + '</option>';
+      }).join("");
+      var actions = '<button class="btn" onclick="printRepairSlip(D.repairs.filter(function(x){return x.id===' + r.id + ';})[0])">伝票印刷</button>' +
+        ' <select id="rst-' + r.id + '" style="margin-left:0.3em">' + opts + '</select>' +
+        ' <button class="btn btn-primary" onclick="setRepairStatus(' + r.id + ',document.getElementById(\'rst-' + r.id + '\').value)">更新</button>';
       return '<tr><td class="num">' + esc(r.repair_no) + '</td><td>' + esc(c ? c[1] : r.customer_id) +
         '</td><td>' + esc(dash(r.item_name)) + '</td><td>' + esc(dash(r.issue)) +
         '</td><td class="num">' + esc(dash(r.received_at)) + '</td><td class="num">' + esc(dash(r.promised_at)) +
@@ -2888,9 +2924,19 @@
         catSel.appendChild(o);
       });
     }
-    if (API) {  // 分類一覧はサーバーから(全商品を持たないため)
+    var suppSel = document.getElementById("q-supplier");
+    function addSupps(list) {
+      list.sort().forEach(function (s) {
+        var o = document.createElement("option");
+        o.value = s; o.textContent = s;
+        if (suppSel) suppSel.appendChild(o);
+      });
+    }
+    if (API) {  // 分類・仕入先一覧はサーバーから(全商品を持たないため)
       fetch(API + "/product_categories").then(function (r) { return r.json(); })
         .then(function (res) { addCats(res.categories || []); }).catch(function () {});
+      fetch(API + "/product_suppliers").then(function (r) { return r.json(); })
+        .then(function (res) { addSupps(res.suppliers || []); }).catch(function () {});
     } else {
       var catSet = {};
       D.products.forEach(function (p) { if (p[2]) catSet[p[2]] = 1; });
@@ -2930,6 +2976,7 @@
     document.getElementById("q-prod").addEventListener("input", renderProducts);
     catSel.addEventListener("change", renderProducts);
     document.getElementById("q-state").addEventListener("change", renderProducts);
+    if (suppSel) suppSel.addEventListener("change", renderProducts);
     // 仕入登録フォーム: 日付デフォルト今日・掛率の自動計算
     document.getElementById("np-date").value = new Date().toISOString().slice(0, 10);
     ["np-cost", "np-list"].forEach(function (id) { document.getElementById(id).addEventListener("input", updateNpRate); });

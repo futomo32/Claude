@@ -122,13 +122,13 @@ def build_blob(con):
 
     products = []
     for r in cur.execute("""SELECT product_no,name,category,list_price,state,location,
-                                   center_stone,center_carat
+                                   center_stone,center_carat,product_key
                             FROM products ORDER BY product_no"""):
         stone = r["center_stone"] or ""
         if stone and r["center_carat"]:
             stone += f' {r["center_carat"]}ct'
         products.append([r["product_no"], r["name"], r["category"], r["list_price"],
-                         r["state"], r["location"], stone or None])
+                         r["state"], r["location"], stone or None, r["product_key"]])
 
     repairs = []
     for r in cur.execute("""SELECT id,repair_no,customer_id,item_name,issue,estimate,
@@ -317,9 +317,10 @@ def customer_detail(con, cid):
             "pointTx": point_tx, "approach": approach}
 
 
-def search_products(con, q="", cat="", state="", limit=50, offset=0):
+def search_products(con, q="", cat="", state="", supplier="", limit=50, offset=0):
     """商品検索(在庫一覧・レジの商品ピッカー用)。全商品(21万件)を送らずサーバーで絞り込む。
-    戻り値 {rows:[...], total:N}。rows は build_blob の products と同じ並び。"""
+    戻り値 {rows:[...], total:N}。rows は [商品番号,品名,分類,上代,状態,置場,石,商品キー]。
+    末尾の商品キー(product_key)はレジで在庫引落・購入履歴の紐付けに使う内部キー。"""
     con.row_factory = sqlite3.Row
     try:
         limit = max(1, min(int(limit), 500))
@@ -335,17 +336,19 @@ def search_products(con, q="", cat="", state="", limit=50, offset=0):
         where.append("category = ?"); args.append(cat)
     if state:
         where.append("state = ?"); args.append(state)
+    if supplier:
+        where.append("supplier = ?"); args.append(supplier)
     wsql = (" WHERE " + " AND ".join(where)) if where else ""
     total = con.execute("SELECT COUNT(*) FROM products" + wsql, args).fetchone()[0]
     rows = []
     for r in con.execute(
-            "SELECT product_no,name,category,list_price,state,location,center_stone,center_carat "
+            "SELECT product_no,name,category,list_price,state,location,center_stone,center_carat,product_key "
             "FROM products" + wsql + " ORDER BY product_no LIMIT ? OFFSET ?", args + [limit, offset]):
         stone = r["center_stone"] or ""
         if stone and r["center_carat"]:
             stone += f' {r["center_carat"]}ct'
         rows.append([r["product_no"], r["name"], r["category"], r["list_price"],
-                     r["state"], r["location"], stone or None])
+                     r["state"], r["location"], stone or None, r["product_key"]])
     return {"rows": rows, "total": total}
 
 
@@ -353,6 +356,12 @@ def product_categories(con):
     """商品分類の一覧(在庫一覧の絞り込みプルダウン用)。"""
     return [r[0] for r in con.execute(
         "SELECT DISTINCT category FROM products WHERE category IS NOT NULL AND category<>'' ORDER BY category")]
+
+
+def product_suppliers(con):
+    """仕入先の一覧(在庫一覧・レジの商品ピッカーの絞り込みプルダウン用)。"""
+    return [r[0] for r in con.execute(
+        "SELECT DISTINCT supplier FROM products WHERE supplier IS NOT NULL AND supplier<>'' ORDER BY supplier")]
 
 
 def daily_sales(con, date):
