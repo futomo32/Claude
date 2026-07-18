@@ -53,6 +53,7 @@ def connect():
     # 店内共有(複数PC同時アクセス)でも読み書きが衝突しにくいようWALモード
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA busy_timeout=5000")
+    db_query.ensure_schema(con)  # pull後にmigrate忘れでも動くよう不足列を自動補完
     return con
 
 

@@ -20,6 +20,34 @@ def glass_kind(*texts):
 
 
 
+def ensure_schema(con):
+    """後付けした列がDBに無ければ自動で足す(冪等)。pull直後にmigrate_dbを忘れても
+    サーバーが動くための保険。列不足でクエリが落ちて『在庫0件』等になるのを防ぐ。"""
+    def cols(t):
+        try:
+            return {r[1] for r in con.execute(f"PRAGMA table_info({t})")}
+        except sqlite3.Error:
+            return set()
+    adds = [
+        ("products", "image_file", "TEXT"),
+        ("customers", "tel2", "TEXT"), ("customers", "note", "TEXT"),
+        ("customers", "postal", "TEXT"), ("customers", "address2", "TEXT"),
+        ("customers", "email", "TEXT"),
+        ("customer_families", "linked_customer_id", "TEXT"),
+    ]
+    changed = False
+    for table, col, decl in adds:
+        c = cols(table)
+        if c and col not in c:
+            try:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+                changed = True
+            except sqlite3.Error:
+                pass
+    if changed:
+        con.commit()
+
+
 def build_blob(con):
     """全画面ぶんのデータを1つのdictにまとめて返す(埋め込み版と同一形状)。"""
     con.row_factory = sqlite3.Row
