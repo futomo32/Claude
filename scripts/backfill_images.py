@@ -52,7 +52,7 @@ def main():
         con.close()
         sys.exit("products.image_file 列がありません。先に scripts/migrate_db.py を実行してください。")
     n = upd = 0
-    for r in rows("d_item"):
+    for r in rows(CSVP):
         tc, kc = s(r.get("strsytencode")), s(r.get("lngsykey"))
         if not tc or not kc:
             continue
