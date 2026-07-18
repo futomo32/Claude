@@ -679,6 +679,7 @@
     <button class="nav-item" data-screen="customers"><span class="ic">👤</span>顧客管理</button>
     <button class="nav-item" data-screen="products"><span class="ic">◆</span>商品・在庫</button>
     <button class="nav-item" data-screen="repairs"><span class="ic">🔧</span>修理伝票</button>
+    <button class="nav-item" data-screen="estimate"><span class="ic">📄</span>見積・請求</button>
     <button class="nav-item" data-screen="reports"><span class="ic">▤</span>日報・帳票</button>
     <button class="nav-item" data-screen="settings"><span class="ic">⚙</span>設定・マスター</button>
     <div class="side-foot">
@@ -792,7 +793,6 @@
             <div class="pos-total-row"><span>釣銭</span><span class="v num" id="change">¥0</span></div>
           </div>
           <div id="pos-error" class="pos-error" style="display:none" role="alert"><span id="pos-error-msg"></span></div>
-          <button class="btn" style="width:100%;margin-bottom:0.6rem" onclick="printQuote()">見積書を印刷(保存はされません)</button>
           <div class="tenkey" aria-label="テンキー">
             <button onclick="key(7)">7</button><button onclick="key(8)">8</button><button onclick="key(9)">9</button>
             <button onclick="key(4)">4</button><button onclick="key(5)">5</button><button onclick="key(6)">6</button>
@@ -952,6 +952,36 @@
             <thead><tr><th>伝票番号</th><th>顧客</th><th>品物</th><th>症状</th><th>預かり日</th><th>引渡予定日</th><th class="r">概算金額</th><th>状態</th><th></th></tr></thead>
             <tbody id="repair-tbody"></tbody>
           </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 見積・請求(レジと独立。どの顧客・買い物でも発行可。保存なしのその場印刷) ── -->
+    <section class="content" data-screen="estimate">
+      <div class="card">
+        <p style="margin:0 0 0.8rem;color:var(--muted);font-size:0.9em">お客様名と品目を入れて、見積書または請求書をその場で印刷します(データは保存されません)。レジを通さずに発行できます。</p>
+        <div class="search-row">
+          <div class="field" style="flex:2"><label>宛名(お客様名)<span class="req">必須</span></label>
+            <input id="est-to" placeholder="例: 山田 太郎(登録の有無を問わず入力可)"></div>
+        </div>
+        <div class="section-title">品目を追加</div>
+        <div class="search-row" style="align-items:flex-end">
+          <div class="field" style="flex:2"><label>品名</label><input id="est-name-in" placeholder="品名(自由入力)"></div>
+          <div class="field"><label>金額(税込)</label><input id="est-amt-in" class="num" inputmode="numeric" placeholder="0"></div>
+          <button class="btn" onclick="estAddLine()">明細に追加</button>
+          <button class="btn" onclick="openProductPicker('est')">在庫商品から選ぶ</button>
+        </div>
+        <div class="table-scroll" style="margin-top:0.6rem">
+          <table class="data">
+            <thead><tr><th>品名</th><th class="r">金額</th><th></th></tr></thead>
+            <tbody id="est-tbody"></tbody>
+          </table>
+        </div>
+        <div class="pos-total-row grand" style="max-width:360px;margin-left:auto"><span>合計(税込)</span><span class="v num" id="est-total">¥0</span></div>
+        <div style="display:flex;gap:0.8rem;margin-top:1rem">
+          <button class="btn btn-primary" onclick="estDoc('quote')">見積書を印刷</button>
+          <button class="btn btn-primary" onclick="estDoc('invoice')">請求書を印刷</button>
+          <button class="btn" onclick="estClear()">クリア</button>
         </div>
       </div>
     </section>
@@ -1426,7 +1456,7 @@
   var screenTitles = {
     home: "ホーム", register: "レジ(売上登録)", customers: "顧客管理",
     "customer-detail": "顧客詳細", products: "商品・在庫", repairs: "修理伝票",
-    reports: "日報・帳票", settings: "設定・マスター"
+    estimate: "見積・請求", reports: "日報・帳票", settings: "設定・マスター"
   };
 
   // fetch失敗の理由を人が分かる言葉に変換(Load failed等=サーバー停止がほとんど)
@@ -1570,6 +1600,11 @@
   }
   function addStockLine(p) {
     // p = 商品行: [商品番号, 品名, 分類, 上代, 状態, 置場, 石, 商品キー(内部)]
+    if (pickerTarget === "est") {   // 見積・請求画面へ追加(明細は品名・金額のみ)
+      estLines.push({ name: p[1], amount: p[3] || 0 });
+      renderEstLines();
+      return;
+    }
     // ★在庫引落・購入履歴の紐付けは内部キー(p[7])で行う。商品番号(p[0])は表示・重複ありのため不可。
     var pkey = (p[7] != null && p[7] !== "") ? p[7] : p[0];
     posLines.push({ kind: "stock", key: pkey, no: p[0], name: p[1], info: p[6], list: p[3] || 0, amount: p[3] || 0 });
@@ -1653,7 +1688,9 @@
   }
 
   /* 商品ピッカー(在庫品) */
-  function openProductPicker() {
+  var pickerTarget = "pos";   // "pos"=レジ明細へ / "est"=見積・請求明細へ
+  function openProductPicker(target) {
+    pickerTarget = target === "est" ? "est" : "pos";
     fillPmSuppliers();
     document.getElementById("pm-search").value = "";
     var sup = document.getElementById("pm-supplier"); if (sup) sup.value = "";
@@ -3463,6 +3500,60 @@
       '<tr class="doc-total-row"><td colspan="2">ご請求金額合計</td><td class="r">¥' + num(total) + '</td></tr></tbody></table>' +
       '<p class="doc-note">お支払い期限: 発行日より14日以内にお願いいたします。</p>';
     printDocument(buildDocHtml("御 請 求 書", docNoStamp("I"), c ? c[1] : cid, body));
+  }
+
+  /* ── 見積・請求(独立画面): レジを通さず、どの顧客・買い物でも発行。保存はしない ── */
+  var estLines = [];
+  function renderEstLines() {
+    var tb = document.getElementById("est-tbody");
+    if (!tb) return;
+    tb.innerHTML = estLines.length ? estLines.map(function (l, i) {
+      return '<tr><td>' + esc(l.name) + '</td><td class="r num">¥' + num(l.amount || 0) + '</td>' +
+        '<td><button class="btn" onclick="estRemove(' + i + ')">削除</button></td></tr>';
+    }).join("") : '<tr><td colspan="3" style="color:var(--muted)">品目がありません。上で追加してください。</td></tr>';
+    var total = estLines.reduce(function (t, l) { return t + (l.amount || 0); }, 0);
+    document.getElementById("est-total").textContent = "¥" + num(total);
+  }
+  function estAddLine() {
+    var nm = document.getElementById("est-name-in").value.trim();
+    var amt = parseAmt(document.getElementById("est-amt-in").value);
+    if (!nm) return showToast("品名を入力してください");
+    estLines.push({ name: nm, amount: amt || 0 });
+    document.getElementById("est-name-in").value = "";
+    document.getElementById("est-amt-in").value = "";
+    renderEstLines();
+    document.getElementById("est-name-in").focus();
+  }
+  function estRemove(i) { estLines.splice(i, 1); renderEstLines(); }
+  function estClear() {
+    estLines = [];
+    document.getElementById("est-to").value = "";
+    document.getElementById("est-name-in").value = "";
+    document.getElementById("est-amt-in").value = "";
+    renderEstLines();
+  }
+  function estDoc(kind) {
+    var to = document.getElementById("est-to").value.trim();
+    if (!to) return showToast("宛名(お客様名)を入力してください");
+    if (!estLines.length) return showToast("品目がありません。追加してください");
+    var total = estLines.reduce(function (t, l) { return t + (l.amount || 0); }, 0);
+    var tax = Math.floor(total * 10 / 110);
+    var rows = estLines.map(function (l) {
+      return '<tr><td>' + esc(l.name) + '</td><td class="r">¥' + num(l.amount || 0) + '</td></tr>';
+    }).join("");
+    var title, note, prefix;
+    if (kind === "invoice") {
+      title = "御 請 求 書"; prefix = "I";
+      note = "お支払い期限: 発行日より14日以内にお願いいたします。";
+    } else {
+      title = "御 見 積 書"; prefix = "Q";
+      note = "有効期限: 発行日より30日間。上記金額にて承ります。";
+    }
+    var body = '<table class="doc-table"><thead><tr><th>品名</th><th class="r">金額</th></tr></thead><tbody>' + rows +
+      '<tr class="doc-total-row"><td>合計(税込)</td><td class="r">¥' + num(total) + '</td></tr>' +
+      '<tr><td>(内消費税)</td><td class="r">¥' + num(tax) + '</td></tr></tbody></table>' +
+      '<p class="doc-note">' + note + '</p>';
+    printDocument(buildDocHtml(title, docNoStamp(prefix), to, body));
   }
 
   function rxError(msg) { var e = document.getElementById("rx-error"); e.textContent = msg; e.style.display = "block"; }
