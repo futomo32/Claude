@@ -282,9 +282,16 @@ def build_blob_light(con):
                             ORDER BY s.sold_at DESC"""):
         tenders.append([r["sold_at"], r["method"], r["amount"], str(r["customer_id"])])
 
+    # 担当者(有効なもの)。各画面の担当者プルダウンをマスタ連動にするため。
+    # staffテーブルが空なら顧客の担当者名から拾ってフォールバック(サンプルDB等)
+    staff = [r["name"] for r in cur.execute("SELECT name FROM staff WHERE active=1 ORDER BY name")]
+    if not staff:
+        staff = [r["staff_name"] for r in cur.execute(
+            "SELECT DISTINCT staff_name FROM customers WHERE staff_name IS NOT NULL AND staff_name<>'' ORDER BY staff_name")]
+
     return dict(customers=customers, families=families, points=points,
                 urikake=urikake, urikakeHist=urikake_hist,
-                repairs=repairs, tenders=tenders, stockStats=stock_stats,
+                repairs=repairs, tenders=tenders, stockStats=stock_stats, staff=staff,
                 lite=True)  # lite=True で「明細は遅延取得」とUIに知らせる
 
 
@@ -553,6 +560,50 @@ def set_product_image(con, product_key, image_file):
     if cur.rowcount == 0:
         raise ValueError("対象の商品が見つかりません")
     return {"product_key": pk, "image_file": image_file}
+
+
+def sync_staff_from_names(con):
+    """記録に登場する担当者名で staff テーブルに無いものを取り込む(コードは自動採番)。
+    取込済みのstaffがある場合は既存を尊重し、名前が未登録のものだけ足す。"""
+    existing = {r[0] for r in con.execute("SELECT name FROM staff")}
+    row = con.execute("SELECT MAX(CAST(staff_code AS INTEGER)) FROM staff WHERE staff_code GLOB '[0-9]*'").fetchone()
+    nxt = (row[0] or 0) + 1
+    for r in con.execute("SELECT DISTINCT staff_name FROM customers WHERE staff_name IS NOT NULL AND staff_name<>''"):
+        nm = r[0]
+        if nm and nm not in existing:
+            con.execute("INSERT OR IGNORE INTO staff(staff_code,name,active) VALUES (?,?,1)", (str(nxt), nm))
+            existing.add(nm)
+            nxt += 1
+    con.commit()
+
+
+def list_staff(con):
+    """担当者マスタ一覧(担当者マスタ管理画面用)。code/name/active を返す。"""
+    sync_staff_from_names(con)
+    con.row_factory = sqlite3.Row
+    return [{"code": r["staff_code"], "name": r["name"], "active": bool(r["active"])}
+            for r in con.execute("SELECT staff_code,name,active FROM staff ORDER BY active DESC, name")]
+
+
+def save_staff(con, p):
+    """担当者の追加(code空)/更新(name・active)。"""
+    code = str(p.get("code") or "").strip()
+    name = str(p.get("name") or "").strip()
+    active = 1 if p.get("active", 1) else 0
+    cur = con.cursor()
+    if not code:  # 新規
+        if not name:
+            raise ValueError("担当者名を入力してください")
+        row = con.execute("SELECT MAX(CAST(staff_code AS INTEGER)) FROM staff WHERE staff_code GLOB '[0-9]*'").fetchone()
+        code = str((row[0] or 0) + 1)
+        cur.execute("INSERT INTO staff(staff_code,name,active) VALUES (?,?,?)", (code, name, active))
+    else:  # 更新
+        if name:
+            cur.execute("UPDATE staff SET name=?, active=? WHERE staff_code=?", (name, active, code))
+        else:
+            cur.execute("UPDATE staff SET active=? WHERE staff_code=?", (active, code))
+    con.commit()
+    return {"code": code, "name": name, "active": bool(active)}
 
 
 def sample_in_stock_key(con):
