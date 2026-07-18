@@ -150,13 +150,14 @@ def build_blob(con):
 
     products = []
     for r in cur.execute("""SELECT product_no,name,category,list_price,state,location,
-                                   center_stone,center_carat,product_key,image_file
+                                   center_stone,center_carat,product_key,image_file,cost_price,supplier
                             FROM products ORDER BY product_no"""):
         stone = r["center_stone"] or ""
         if stone and r["center_carat"]:
             stone += f' {r["center_carat"]}ct'
         products.append([r["product_no"], r["name"], r["category"], r["list_price"],
-                         r["state"], r["location"], stone or None, r["product_key"], r["image_file"]])
+                         r["state"], r["location"], stone or None, r["product_key"], r["image_file"],
+                         r["cost_price"], r["supplier"]])
 
     repairs = []
     for r in cur.execute("""SELECT id,repair_no,customer_id,item_name,issue,estimate,
@@ -345,10 +346,18 @@ def customer_detail(con, cid):
             "pointTx": point_tx, "approach": approach}
 
 
-def search_products(con, q="", cat="", state="", supplier="", limit=50, offset=0):
+# 在庫一覧の並び替えで指定できる列(キー→実カラム。ホワイトリストでSQLインジェクション防止)
+PRODUCT_SORT_COLS = {"no": "product_no", "name": "name", "cat": "category",
+                     "list": "list_price", "cost": "cost_price", "state": "state",
+                     "loc": "location", "supplier": "supplier"}
+
+
+def search_products(con, q="", cat="", state="", supplier="", sort="no", order="asc", limit=50, offset=0):
     """商品検索(在庫一覧・レジの商品ピッカー用)。全商品(21万件)を送らずサーバーで絞り込む。
-    戻り値 {rows:[...], total:N}。rows は [商品番号,品名,分類,上代,状態,置場,石,商品キー]。
-    末尾の商品キー(product_key)はレジで在庫引落・購入履歴の紐付けに使う内部キー。"""
+    戻り値 {rows:[...], total:N}。rows は
+      [商品番号,品名,分類,上代,状態,置場,石,商品キー,画像,下代,仕入先]。
+    末尾寄りの商品キー(product_key)はレジで在庫引落・購入履歴の紐付けに使う内部キー。
+    sort/order で並び替え(サーバー側。ページングと整合させるため)。"""
     con.row_factory = sqlite3.Row
     try:
         limit = max(1, min(int(limit), 500))
@@ -367,16 +376,21 @@ def search_products(con, q="", cat="", state="", supplier="", limit=50, offset=0
     if supplier:
         where.append("supplier = ?"); args.append(supplier)
     wsql = (" WHERE " + " AND ".join(where)) if where else ""
+    col = PRODUCT_SORT_COLS.get(sort, "product_no")
+    direction = "DESC" if str(order).lower() == "desc" else "ASC"
+    order_sql = f" ORDER BY {col} {direction}, product_no"  # col/directionは固定候補のみで安全
     total = con.execute("SELECT COUNT(*) FROM products" + wsql, args).fetchone()[0]
     rows = []
     for r in con.execute(
-            "SELECT product_no,name,category,list_price,state,location,center_stone,center_carat,product_key,image_file "
-            "FROM products" + wsql + " ORDER BY product_no LIMIT ? OFFSET ?", args + [limit, offset]):
+            "SELECT product_no,name,category,list_price,cost_price,state,location,"
+            "center_stone,center_carat,supplier,product_key,image_file "
+            "FROM products" + wsql + order_sql + " LIMIT ? OFFSET ?", args + [limit, offset]):
         stone = r["center_stone"] or ""
         if stone and r["center_carat"]:
             stone += f' {r["center_carat"]}ct'
         rows.append([r["product_no"], r["name"], r["category"], r["list_price"],
-                     r["state"], r["location"], stone or None, r["product_key"], r["image_file"]])
+                     r["state"], r["location"], stone or None, r["product_key"], r["image_file"],
+                     r["cost_price"], r["supplier"]])
     return {"rows": rows, "total": total}
 
 
