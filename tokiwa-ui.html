@@ -652,6 +652,10 @@
   .pd-info { margin-top: 0.8rem; }
   .pd-info .kv-row { display: flex; justify-content: space-between; padding: 0.35em 0; border-bottom: 1px solid var(--line); font-size: 0.92em; }
   .pd-info .kv-row .k { color: var(--muted); }
+  .op-bar { display: flex; flex-wrap: wrap; gap: 0.4em; align-items: center; }
+  .op-bar .op-btn { padding: 0.45em 1em; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); cursor: pointer; font: inherit; font-size: 0.92em; }
+  .op-bar .op-btn.sel { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
+  .op-bar .op-add { border-style: dashed; color: var(--muted); }
   th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
   th.sortable:hover { color: var(--accent); }
   th .ar { color: var(--accent); font-size: 0.85em; }
@@ -765,7 +769,9 @@
               <input id="pos-cust-input" placeholder="カタカナ・電話番号で検索" autocomplete="off">
               <div class="search-drop" id="pos-cust-drop"></div>
             </div>
-            <div class="field"><label>担当者<span class="req">必須</span></label><select id="pos-staff"></select></div>
+            <div class="field" style="flex:1.6"><label>会計担当(レジを打つ人)<span class="req">必須</span></label>
+              <div id="pos-operator-bar" class="op-bar"></div>
+            </div>
             <button class="btn" onclick="openCustModalForPos()">+ 新規顧客</button>
           </div>
           <div class="search-row" style="margin-top:0.2rem;align-items:center">
@@ -827,6 +833,14 @@
           <div class="field"><label>顧客名・カナ</label><input id="q-name" placeholder="ヤマダ(カタカナ・あいまい可)"></div>
           <div class="field"><label>電話番号</label><input id="q-tel" inputmode="tel" placeholder="一部でも可"></div>
           <div class="field"><label>担当者</label><select id="q-staff"><option value="">すべて</option></select></div>
+          <div class="field"><label>ランク</label><select id="q-cust-rank"><option value="">すべて</option></select></div>
+          <div class="field"><label>最終購入(DM抽出用)</label><select id="q-cust-lastbuy">
+            <option value="">すべて</option>
+            <option value="1">1年以上購入なし</option>
+            <option value="3">3年以上購入なし</option>
+            <option value="5">5年以上購入なし</option>
+            <option value="none">購入履歴なし</option>
+          </select></div>
           <button class="btn" id="test-cust-btn" style="display:none" onclick="showTestCustomers()">🧪 テスト顧客</button>
           <button class="btn btn-primary" onclick="openCustModal()">+ 新規顧客登録</button>
         </div>
@@ -2205,17 +2219,47 @@
     }
     paintCustomers();
   }
+  function yearsAgoIso(n) {
+    var d = new Date(); d.setFullYear(d.getFullYear() - n);
+    return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+  }
+  // 顧客ランクの選択肢を「顧客編集フォーム(cm-rank)」と「絞り込み(q-cust-rank)」に反映
+  function populateRankOptions(ranks) {
+    var cm = document.getElementById("cm-rank");
+    if (cm) { var cur = cm.value; cm.innerHTML = '<option value="">—</option>' + ranks.map(function (r) { return '<option>' + esc(r) + '</option>'; }).join(""); if (cur) cm.value = cur; }
+    var q = document.getElementById("q-cust-rank");
+    if (q) { var cq = q.value; q.innerHTML = '<option value="">すべて</option>' + ranks.map(function (r) { return '<option>' + esc(r) + '</option>'; }).join(""); if (cq) q.value = cq; }
+  }
+  function loadRankOptions() {
+    var set = {};
+    D.customers.forEach(function (c) { if (c[18]) set[c[18]] = 1; });  // 実データのランク
+    if (API) {
+      fetch(API + "/master?type=rank").then(function (r) { return r.json(); }).then(function (res) {
+        (res.items || []).forEach(function (it) { set[it.name] = 1; });
+        populateRankOptions(Object.keys(set).sort());
+      }).catch(function () { populateRankOptions(Object.keys(set).sort()); });
+    } else {
+      ["SA", "A", "B", "C", "VIP"].forEach(function (r) { set[r] = 1; });
+      populateRankOptions(Object.keys(set).sort());
+    }
+  }
   function renderCustomers() {
     var nameRaw = (document.getElementById("q-name").value || "").trim();
     var telRaw = (document.getElementById("q-tel").value || "").replace(/[^0-9]/g, "");
     var staff = document.getElementById("q-staff").value;
+    var rankF = (document.getElementById("q-cust-rank") || {}).value || "";
+    var lastF = (document.getElementById("q-cust-lastbuy") || {}).value || "";
     var nq = normKana(nameRaw);
-    custHasQuery = !!(nameRaw || telRaw || staff);
+    custHasQuery = !!(nameRaw || telRaw || staff || rankF || lastF);
     if (!custHasQuery) { custFiltered = []; custShown = 50; paintCustomers(); return; } // 初期は全件表示しない
+    var cutoff = (lastF && lastF !== "none") ? yearsAgoIso(parseInt(lastF, 10)) : null;
     custFiltered = D.customers.filter(function (c) {
       if (nq && normKana(c[1]).indexOf(nq) < 0 && normKana(c[2]).indexOf(nq) < 0 && String(c[0]) !== nameRaw) return false;
       if (telRaw && String(c[3]).replace(/[^0-9]/g, "").indexOf(telRaw) < 0) return false;
       if (staff && c[4] !== staff) return false;
+      if (rankF && c[18] !== rankF) return false;
+      if (lastF === "none") { if (c[13]) return false; }           // 購入履歴なしのみ
+      else if (cutoff) { if (c[13] && c[13] >= cutoff) return false; }  // 最近買っている人を除外(購入なしは残す)
       return true;
     });
     custShown = 50;
@@ -2868,6 +2912,8 @@
         var sel = document.getElementById("q-cat");
         if (sel) { sel.innerHTML = '<option value="">すべて</option>' + (res.categories || []).map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join(""); }
       }).catch(function () {});
+    } else if (t === "rank") {
+      loadRankOptions();  // 顧客ランクの選択肢を最新化
     }
   }
 
@@ -2894,7 +2940,31 @@
     fillStaffSelect("rx-handler", names, false, false);
     fillStaffSelect("rep-staff-handler", names, false, false);
     fillStaffSelect("np-staff", names, false, false);
-    fillStaffSelect("pos-staff", names, false, false);
+    renderPosOperatorBar();  // レジの会計担当ワンタップバーもマスタ連動
+  }
+  /* ── レジの「会計担当(レジを打つ人)」ワンタップ選択 ── */
+  var posOperator = null, posOpNames = [];
+  function renderPosOperatorBar() {
+    var bar = document.getElementById("pos-operator-bar");
+    if (!bar) return;
+    var names = (D.staff && D.staff.length) ? D.staff.slice() : [];
+    if (!names.length) { var set = {}; D.customers.forEach(function (c) { if (c[4]) set[c[4]] = 1; }); names = Object.keys(set); }
+    names.sort();
+    posOpNames = names;
+    if (!posOperator) { try { posOperator = localStorage.getItem("tokiwa_pos_operator") || null; } catch (e) {} }
+    if (posOperator && names.indexOf(posOperator) < 0) posOperator = null;  // 停止/削除された人は解除
+    var btns = names.map(function (n, i) {
+      return '<button type="button" class="op-btn' + (n === posOperator ? " sel" : "") + '" onclick="selectPosOperator(' + i + ')">' + esc(shortName(n)) + '</button>';
+    }).join("");
+    bar.innerHTML = btns + '<button type="button" class="op-btn op-add" onclick="openStaffMaster()" title="担当者マスタで追加・編集">＋担当者</button>';
+  }
+  function selectPosOperator(i) {
+    var name = posOpNames[i];
+    if (name == null) return;
+    posOperator = name;
+    try { localStorage.setItem("tokiwa_pos_operator", name); } catch (e) {}
+    renderPosOperatorBar();
+    if (typeof clearPosError === "function") clearPosError();
   }
   var staffMaster = [];
   function openStaffMaster() {
@@ -3516,6 +3586,9 @@
     renderDailyReport();
     ["q-name", "q-tel"].forEach(function (id) { document.getElementById(id).addEventListener("input", renderCustomers); });
     document.getElementById("q-staff").addEventListener("change", renderCustomers);
+    loadRankOptions();  // 顧客ランクの選択肢(マスタ＋実データ)を編集フォーム・絞り込みに反映
+    document.getElementById("q-cust-rank").addEventListener("change", renderCustomers);
+    document.getElementById("q-cust-lastbuy").addEventListener("change", renderCustomers);
     document.getElementById("q-prod").addEventListener("input", renderProducts);
     catSel.addEventListener("change", renderProducts);
     document.getElementById("q-state").addEventListener("change", renderProducts);
@@ -4229,6 +4302,9 @@
     if (!posLines.length) {
       posError("明細がありません。「商品番号で追加」または「番号なしで追加」で商品を追加してください。"); return false;
     }
+    if (!posOperator) {
+      posError("会計担当(レジを打つ人)を選んでください。"); return false;
+    }
     for (var i = 0; i < posLines.length; i++) {
       var ln = posLines[i];
       if (ln.kind === "free" && !ln.name) {
@@ -4278,7 +4354,7 @@
     var payLabel = currentPayments().map(function (p) { return p.method; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join("+") || "現金";
     var arr = D.sales[posCustomer[0]] = D.sales[posCustomer[0]] || [];
     currentSaleLines().forEach(function (l) {
-      arr.unshift([soldAt, l.name || l.free_name, l.spec_pending ? "仮登録 — 後日入力" : dash(l.info), l.amount, payLabel, "田中"]);
+      arr.unshift([soldAt, l.name || l.free_name, l.spec_pending ? "仮登録 — 後日入力" : dash(l.info), l.amount, payLabel, shortName(posOperator)]);
     });
     var nm = posCustomer[1];
     showToast(nm + "様の購入履歴に " + posLines.length + " 明細を登録しました(デモ)。顧客詳細で確認できます。");
@@ -4288,9 +4364,8 @@
   function liveCheckout(btn) {
     checkedOut = true;
     var cid = String(posCustomer[0]), nm = posCustomer[1];
-    var posStaff = (document.getElementById("pos-staff") || {}).value || "";
     var payload = {
-      customer_id: cid, staff_name: posStaff || "田中 一槻", lines: currentSaleLines(),
+      customer_id: cid, staff_name: posOperator || "", lines: currentSaleLines(),
       payments: currentPayments(), sold_at: currentSoldAt()
     };
     btn.textContent = "登録中…"; btn.disabled = true;
@@ -4304,7 +4379,7 @@
       var arr = D.sales[cid] = D.sales[cid] || [];
       payload.lines.slice().reverse().forEach(function (l) {
         arr.unshift([today, l.name || l.free_name,
-          l.spec_pending ? "仮登録 — 後日入力" : (l.info || ""), l.amount, data.pay_method, "田中"]);
+          l.spec_pending ? "仮登録 — 後日入力" : (l.info || ""), l.amount, data.pay_method, shortName(posOperator)]);
         totalAdd += l.amount || 0;
       });
       currentPayments().forEach(function (p) {

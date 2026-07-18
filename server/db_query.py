@@ -80,7 +80,7 @@ def build_blob(con):
 
     customers = []
     for r in cur.execute("""SELECT customer_id,name,kana,tel,staff_name,address,birthday,gender,wedding_day,
-                                   is_test,note,postal,address2,tel2,email
+                                   is_test,note,postal,address2,tel2,email,rank,dm_ok
                             FROM customers ORDER BY is_test DESC, CAST(customer_id AS INTEGER)"""):
         cid = r["customer_id"]
         customers.append([
@@ -89,6 +89,7 @@ def build_blob(con):
             r["is_test"], r["note"], last_buy.get(cid),   # 11=テスト印 12=用途 13=最終購入日
             r["postal"], r["address2"],                    # 14=郵便番号 15=建物名等
             r["tel2"], r["email"],                         # 16=携帯電話(TEL2) 17=eメール
+            r["rank"], r["dm_ok"],                         # 18=ランク 19=DM可否
         ])
 
     def group(sql, key_idx=0):
@@ -234,7 +235,7 @@ def build_blob_light(con):
 
     customers = []
     for r in cur.execute("""SELECT customer_id,name,kana,tel,staff_name,address,birthday,gender,wedding_day,
-                                   is_test,note,postal,address2,tel2,email
+                                   is_test,note,postal,address2,tel2,email,rank,dm_ok
                             FROM customers ORDER BY is_test DESC, CAST(customer_id AS INTEGER)"""):
         cid = r["customer_id"]
         customers.append([
@@ -242,6 +243,7 @@ def build_blob_light(con):
             r["birthday"], r["gender"], totals.get(cid, 0), y_cur.get(cid, 0), r["wedding_day"],
             r["is_test"], r["note"], last_buy.get(cid),
             r["postal"], r["address2"], r["tel2"], r["email"],
+            r["rank"], r["dm_ok"],   # 18=ランク 19=DM可否
         ])
 
     def group(sql, key_idx=0):
@@ -575,6 +577,8 @@ MASTERS = {
     "location":   {"label": "保管場所",   "table": "products",      "col": "location"},
     "pay_method": {"label": "支払方法",   "table": "sale_payments", "col": "method",
                    "seed": ["現金", "クレジット", "PayPay", "掛売", "分割"]},
+    "rank":       {"label": "顧客ランク", "table": "customers",     "col": "rank",
+                   "seed": ["SA", "A", "B", "C", "VIP"]},
 }
 
 
