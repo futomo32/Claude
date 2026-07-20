@@ -517,20 +517,37 @@ def set_supplier_genre(con, name, genre):
     return {"name": name, "genre": genre}
 
 
+def sale_kind4(is_glasses, category, place):
+    """売上を4分類(催事/メガネ/時計/店頭)に振り分ける(B-9)。
+    優先順: (1)催事=購入場所が店頭以外 → (2)メガネ=is_glasses → (3)時計=分類に「時計」
+    → (4)店頭=残り。店の目視集計に合わせ、催事(店外イベント)を最優先で切り出す。
+    ※分類ルールは実データの購入場所コードの実態を見て今後調整可。"""
+    pl = str(place or "").strip()
+    if pl and pl not in ("店頭", "本店", "01", "0", "店内"):
+        return "催事"
+    if is_glasses:
+        return "メガネ"
+    if "時計" in str(category or ""):
+        return "時計"
+    return "店頭"
+
+
 def daily_sales(con, date):
     """指定日のレジ売上明細(日報・ホームタイル用)。全売上をブラウザに持たずサーバーで集計。"""
     con.row_factory = sqlite3.Row
     out = []
     for r in con.execute("""
         SELECT s.customer_id cid, c.name cname,
-               COALESCE(l.free_name, p.name) item, l.info, l.amount, s.pay_method, s.staff_name
+               COALESCE(l.free_name, p.name) item, l.info, l.amount, s.pay_method, s.staff_name,
+               p.is_glasses ig, p.category cat, s.place place
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         LEFT JOIN customers c ON c.customer_id = s.customer_id
         WHERE s.sold_at = ?""", (str(date),)):
         out.append({"cid": r["cid"], "name": r["cname"] or r["cid"], "item": r["item"],
                     "info": r["info"], "amount": r["amount"] or 0,
-                    "pay": r["pay_method"] or "現金", "staff": r["staff_name"]})
+                    "pay": r["pay_method"] or "現金", "staff": r["staff_name"],
+                    "kind4": sale_kind4(r["ig"], r["cat"], r["place"])})
     return out
 
 
@@ -545,14 +562,16 @@ def slip_lines(con, frm, to, staff=""):
     out = []
     for r in con.execute("""
         SELECT s.sold_at, s.customer_id cid, c.name cname,
-               COALESCE(l.free_name, p.name) item, l.amount, s.pay_method, s.staff_name
+               COALESCE(l.free_name, p.name) item, l.amount, s.pay_method, s.staff_name,
+               p.is_glasses ig, p.category cat, s.place place
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         LEFT JOIN customers c ON c.customer_id = s.customer_id
         WHERE s.sold_at >= ? AND s.sold_at <= ?""" + staffsql + """
         ORDER BY s.sold_at""", args):
         out.append({"date": r["sold_at"], "name": r["cname"] or r["cid"], "item": r["item"],
-                    "amount": r["amount"] or 0, "pay": r["pay_method"] or "", "staff": r["staff_name"]})
+                    "amount": r["amount"] or 0, "pay": r["pay_method"] or "", "staff": r["staff_name"],
+                    "kind4": sale_kind4(r["ig"], r["cat"], r["place"])})
     return out
 
 
@@ -675,7 +694,14 @@ def delete_photo_pool_row(con, pool_id):
 # ※table/col はここの固定値のみ(ユーザー入力ではない)なのでSQL的に安全。
 MASTERS = {
     "category":   {"label": "商品分類",   "table": "products",      "col": "category"},
+    "brand":      {"label": "ブランド",   "table": "products",      "col": "brand"},
+    "stone":      {"label": "石種",       "table": "products",      "col": "center_stone"},
+    # 地金は商品に専用の列がまだ無いのでスタンドアロンのリスト(seedのみ・使用件数は0)。
+    # 商品に地金列を足したら table/col を付ければ使用件数・改名追随が有効になる。
+    "metal":      {"label": "地金",       "seed": ["Pt900", "Pt950", "K18", "K18YG", "K18WG",
+                                                   "K18PG", "K24", "K14", "SV925"]},
     "location":   {"label": "保管場所",   "table": "products",      "col": "location"},
+    "motive":     {"label": "購入動機",   "table": "sales_slips",   "col": "motive"},
     "pay_method": {"label": "支払方法",   "table": "sale_payments", "col": "method",
                    "seed": ["現金", "クレジット", "PayPay", "掛売", "分割"]},
     "rank":       {"label": "顧客ランク", "table": "customers",     "col": "rank",
@@ -696,35 +722,39 @@ def _master_cfg(mtype):
 
 
 def sync_master(con, mtype):
-    """既存データ(＋seed)に登場する値をマスタに取り込む(未登録のみ)。"""
+    """既存データ(＋seed)に登場する値をマスタに取り込む(未登録のみ)。
+    table/col が無いマスタ(地金など)は seed のみ取り込む。"""
     cfg = _master_cfg(mtype)
     for nm in cfg.get("seed", []):
         con.execute("INSERT OR IGNORE INTO master_items(master_type,name) VALUES (?,?)", (mtype, nm))
-    t, c = cfg["table"], cfg["col"]
-    con.execute(f"""INSERT OR IGNORE INTO master_items(master_type,name)
-                    SELECT ?, {c} FROM {t} WHERE {c} IS NOT NULL AND {c}<>'' GROUP BY {c}""", (mtype,))
+    t, c = cfg.get("table"), cfg.get("col")
+    if t and c:
+        con.execute(f"""INSERT OR IGNORE INTO master_items(master_type,name)
+                        SELECT ?, {c} FROM {t} WHERE {c} IS NOT NULL AND {c}<>'' GROUP BY {c}""", (mtype,))
     con.commit()
 
 
 def list_master_items(con, mtype):
-    """マスタの項目一覧＋各項目の使用件数(削除時の警告に使う)。"""
+    """マスタの項目一覧＋各項目の使用件数(削除時の警告に使う)。
+    table/col が無いマスタは使用件数を常に0で返す。"""
     cfg = _master_cfg(mtype)
     sync_master(con, mtype)
-    t, c = cfg["table"], cfg["col"]
+    t, c = cfg.get("table"), cfg.get("col")
     items = []
     for r in con.execute("SELECT name FROM master_items WHERE master_type=? ORDER BY name", (mtype,)):
-        cnt = con.execute(f"SELECT COUNT(*) FROM {t} WHERE {c}=?", (r[0],)).fetchone()[0]
+        cnt = con.execute(f"SELECT COUNT(*) FROM {t} WHERE {c}=?", (r[0],)).fetchone()[0] if (t and c) else 0
         items.append({"name": r[0], "count": cnt})
     return {"type": mtype, "label": cfg["label"], "items": items}
 
 
 def save_master_item(con, p):
-    """マスタ項目の 追加/改名/削除。改名時は実データの該当列も追随して置換する。"""
+    """マスタ項目の 追加/改名/削除。改名時は実データの該当列も追随して置換する
+    (table/col が無いマスタはマスタ一覧のみ更新)。"""
     mtype = p.get("type")
     cfg = _master_cfg(mtype)
     action = p.get("action")
     name = str(p.get("name") or "").strip()
-    t, c = cfg["table"], cfg["col"]
+    t, c = cfg.get("table"), cfg.get("col")
     cur = con.cursor()
     if action == "add":
         if not name:
@@ -737,7 +767,8 @@ def save_master_item(con, p):
         if new != name:
             cur.execute("INSERT OR IGNORE INTO master_items(master_type,name) VALUES (?,?)", (mtype, new))
             cur.execute("DELETE FROM master_items WHERE master_type=? AND name=?", (mtype, name))
-            cur.execute(f"UPDATE {t} SET {c}=? WHERE {c}=?", (new, name))  # 実データも追随
+            if t and c:
+                cur.execute(f"UPDATE {t} SET {c}=? WHERE {c}=?", (new, name))  # 実データも追随
     elif action == "delete":
         cur.execute("DELETE FROM master_items WHERE master_type=? AND name=?", (mtype, name))
         # ※実データの値は残す(表示はできる)。マスタのプルダウン候補から消えるだけ。
