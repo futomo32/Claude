@@ -1220,7 +1220,8 @@
     <!-- ── 設定 ── -->
     <section class="content" data-screen="settings">
       <div class="settings-grid">
-        <div class="card" style="cursor:pointer" onclick="openMasterHub()"><h3>マスタ管理</h3><p>マスタは全てここから。担当者・仕入先・商品分類・ブランド・石種・地金・購入動機・保管場所・支払方法・顧客ランク・地区の管理と、顧客ランク更新まで1画面で開けます。</p></div>
+        <div class="card" style="cursor:pointer" onclick="openMasterHub()"><h3>マスタ管理</h3><p>マスタは全てここから。担当者・仕入先・商品分類・ブランド・石種・地金・購入動機・保管場所・支払方法・顧客ランク・地区を1画面で管理できます。</p></div>
+        <div class="card" style="cursor:pointer" onclick="openRankUpdate()"><h3>顧客ランク更新</h3><p>合計購入額の基準で顧客ランクを再計算(全/宝飾/メガネ別にプレビュー→一括更新)。ランク基準(金額の区切り)もこの画面で設定できます。</p></div>
         <div class="card"><h3>スタッフと権限</h3><p>ユーザーの追加、レジ操作・帳票出力・マスター編集の権限設定。</p></div>
         <div class="card"><h3>ポイント設定</h3><p>還元率、有効期限、ランク別優待の設定。</p></div>
         <div class="card"><h3>オフライン同期</h3><p>通信障害時の一時保存と自動再送の設定。未送信キューの確認・手動送信もこちら。</p></div>
@@ -1393,7 +1394,6 @@
       <div style="display:flex;gap:0.4em;flex-wrap:wrap;margin-bottom:0.8rem">
         <button class="btn" onclick="closeMasterHub();openStaffMaster()">👤 担当者マスタ</button>
         <button class="btn" onclick="closeMasterHub();openSupplierMaster()">🏭 仕入先マスタ</button>
-        <button class="btn" onclick="closeMasterHub();openRankUpdate()">⭐ 顧客ランク更新</button>
       </div>
       <div class="field" style="margin-bottom:0.6rem">
         <label>マスタを選択(商品分類・ブランド・石種・地金・購入動機・保管場所・支払方法・顧客ランク・地区)</label>
@@ -1437,7 +1437,7 @@
         </table>
       </div>
     </div>
-    <div class="modal-foot"><button class="btn" onclick="closeStaffMaster()">閉じる</button></div>
+    <div class="modal-foot"><button class="btn" onclick="closeStaffMaster();openMasterHub()">← マスタ管理へ戻る</button><button class="btn" onclick="closeStaffMaster()">閉じる</button></div>
   </div>
 </div>
 
@@ -1462,7 +1462,7 @@
         </table>
       </div>
     </div>
-    <div class="modal-foot"><button class="btn" onclick="closeSupplierMaster()">閉じる</button></div>
+    <div class="modal-foot"><button class="btn" onclick="closeSupplierMaster();openMasterHub()">← マスタ管理へ戻る</button><button class="btn" onclick="closeSupplierMaster()">閉じる</button></div>
   </div>
 </div>
 
@@ -1501,6 +1501,21 @@
         <div class="field" style="flex:none"><label>対象</label><select id="ru-kind"><option value="">全て(全購入)</option><option value="宝飾">宝飾(メガネ以外)</option><option value="メガネ">メガネ</option></select></div>
         <button class="btn btn-primary" onclick="rankPreview()" style="margin-top:1.1em">プレビュー</button>
         <button class="btn" id="ru-apply" style="margin-top:1.1em;display:none" onclick="rankApply()">この内容で更新</button>
+        <button class="btn" onclick="toggleRankRules()" style="margin-top:1.1em;margin-left:auto">⚙ ランク基準を設定</button>
+      </div>
+      <!-- ランク基準(条件)の設定 -->
+      <div id="ru-rules-editor" style="display:none;border:1px solid var(--line);border-radius:8px;padding:0.7rem;margin-bottom:0.6rem;background:#fafafa">
+        <p style="margin:0 0 0.5rem;color:var(--muted);font-size:0.82em">合計購入額が「下限金額」以上の顧客に、そのランク名を付けます(上から順に判定)。金額の大きい行から並べてください。</p>
+        <div class="table-scroll" style="max-height:32vh;overflow-y:auto">
+          <table class="data">
+            <thead><tr><th class="r">下限金額(以上)</th><th>ランク名</th><th></th></tr></thead>
+            <tbody id="ru-rules-tbody"></tbody>
+          </table>
+        </div>
+        <div style="display:flex;gap:0.5em;margin-top:0.5rem">
+          <button class="btn" onclick="addRankRuleRow()">＋ 行を追加</button>
+          <button class="btn btn-primary" onclick="saveRankRules()">基準を保存</button>
+        </div>
       </div>
       <div id="ru-rules" style="color:var(--muted);font-size:0.8em;margin-bottom:0.5rem"></div>
       <p id="ru-summary" style="margin:0 0 0.5rem;font-weight:700"></p>
@@ -1591,6 +1606,27 @@
     <div class="modal-foot">
       <button class="btn" onclick="closeCashModal()">キャンセル</button>
       <button class="btn btn-primary" id="cash-submit-btn" onclick="submitCashMovement()">記録する</button>
+    </div>
+  </div>
+</div>
+
+<!-- 売掛を追加 モーダル(既存客の過去分の売掛を手動登録) -->
+<div class="modal-back" id="addrecv-modal">
+  <div class="modal" style="width:min(440px,100%)" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h3>売掛を追加</h3>
+      <button class="close" aria-label="閉じる" onclick="closeAddReceivable()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">レジ会計を経由しない売掛(過去分の未回収など)をこの顧客に登録します。あとで「入金する」で回収できます。</p>
+      <div class="field"><label>商品名・内容(任意)</label><input id="ar-name" placeholder="例: 修理代 / K18ネックレス"></div>
+      <div class="field"><label>売掛金額</label><input class="num" id="ar-amount" inputmode="numeric" placeholder="0"></div>
+      <div class="field"><label>発生日(買上日)</label><input type="date" id="ar-date"></div>
+      <p id="ar-error" style="display:none;color:var(--danger);font-size:0.85em;margin:0.4em 0 0"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeAddReceivable()">キャンセル</button>
+      <button class="btn btn-primary" id="ar-submit-btn" onclick="submitAddReceivable()">追加する</button>
     </div>
   </div>
 </div>
@@ -2171,6 +2207,7 @@
   bindBackdropClose("photo-pool-modal", closePhotoPool);
   bindBackdropClose("rank-update-modal", closeRankUpdate);
   bindBackdropClose("cash-modal", closeCashModal);
+  bindBackdropClose("addrecv-modal", closeAddReceivable);
   bindBackdropClose("master-hub-modal", closeMasterHub);
   bindBackdropClose("alert-modal", alertCancel);
   bindBackdropClose("free-modal", closeFreePicker);
@@ -2913,9 +2950,49 @@
     document.getElementById("ru-apply").style.display = "none";
     document.getElementById("ru-summary").textContent = "";
     document.getElementById("ru-rules").textContent = "";
+    document.getElementById("ru-rules-editor").style.display = "none";
     document.getElementById("ru-tbody").innerHTML = '<tr><td colspan="4" style="color:var(--muted)">「プレビュー」を押すと、ランクが変わる顧客の一覧が出ます。</td></tr>';
+    loadRankRules();
   }
   function closeRankUpdate() { document.getElementById("rank-update-modal").classList.remove("show"); }
+  /* ── ランク基準(条件)の設定 ── */
+  var rankRules = [];
+  function toggleRankRules() {
+    var ed = document.getElementById("ru-rules-editor");
+    ed.style.display = (ed.style.display === "none") ? "block" : "none";
+  }
+  function loadRankRules() {
+    fetch(API + "/rank_rules").then(function (r) { return r.json(); }).then(function (res) {
+      rankRules = (res.rules || []).map(function (x) { return [x[0], x[1]]; });
+      renderRankRules();
+    }).catch(function () {});
+  }
+  function renderRankRules() {
+    var tb = document.getElementById("ru-rules-tbody");
+    tb.innerHTML = rankRules.map(function (r, i) {
+      return '<tr><td class="r"><input class="num" style="width:9em" value="' + esc(String(r[0])) + '" onchange="rankRuleEdit(' + i + ',0,this.value)"></td>' +
+        '<td><input style="width:6em" value="' + esc(String(r[1])) + '" onchange="rankRuleEdit(' + i + ',1,this.value)"></td>' +
+        '<td><button class="btn" onclick="removeRankRuleRow(' + i + ')">削除</button></td></tr>';
+    }).join("") || '<tr><td colspan="3" style="color:var(--muted)">行を追加してください。</td></tr>';
+  }
+  function rankRuleEdit(i, col, val) {
+    if (!rankRules[i]) return;
+    rankRules[i][col] = (col === 0) ? (parseInt(zen2han(val).replace(/[^0-9]/g, ""), 10) || 0) : val;
+  }
+  function addRankRuleRow() { rankRules.push([0, ""]); renderRankRules(); }
+  function removeRankRuleRow(i) { rankRules.splice(i, 1); renderRankRules(); }
+  function saveRankRules() {
+    var valid = rankRules.filter(function (r) { return String(r[1]).trim() !== ""; });
+    if (!valid.length) return showToast("金額とランク名を入力してください。");
+    fetch(API + "/rank_rules", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rules: valid })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (res.error) throw new Error(res.error);
+      rankRules = (res.rules || []).map(function (x) { return [x[0], x[1]]; });
+      renderRankRules();
+      showToast("ランク基準を保存しました。プレビューで反映を確認できます。");
+    }).catch(function (e) { showToast("保存に失敗: " + (e.message || e)); });
+  }
   function rankPreview() {
     if (!API) return;
     var kind = document.getElementById("ru-kind").value;
@@ -2963,9 +3040,9 @@
     // uk行: [id, 商品名, 買上日, 頭金, 残高, 最終入金日]
     var balance = uk.reduce(function (t, u) { return t + (parseInt(u[4], 10) || 0); }, 0);
     var html = '<div class="tiles report-tiles"><div class="tile"><div class="t-label">売掛残高</div><div class="t-value num"' + (balance > 0 ? ' style="color:var(--danger)"' : "") + '>¥' + num(balance) + '</div><div class="t-sub num">売掛 ' + uk.length + '件</div></div></div>';
-    if (balance > 0) {
-      html += '<div style="margin:0.6rem 0"><button class="btn" onclick="printInvoice(\'' + esc(id) + '\')">請求書を印刷</button></div>';
-    }
+    html += '<div style="margin:0.6rem 0;display:flex;gap:0.5em;flex-wrap:wrap">' +
+      '<button class="btn" onclick="openAddReceivable(\'' + esc(id) + '\')">＋ 売掛を追加</button>' +
+      (balance > 0 ? '<button class="btn" onclick="printInvoice(\'' + esc(id) + '\')">請求書を印刷</button>' : "") + '</div>';
     if (uk.length) {
       html += '<div class="section-title">売掛明細</div><div class="table-scroll"><table class="data"><thead><tr><th>商品名</th><th>買上日</th><th class="r">頭金</th><th class="r">残高</th><th></th></tr></thead><tbody>' +
         uk.map(function (u) {
@@ -2986,6 +3063,45 @@
       html += '<p style="margin:0;color:var(--muted);font-size:0.9em">売掛・入金の記録はありません。</p>';
     }
     document.getElementById("c-pay").innerHTML = html;
+  }
+  /* ── 売掛を手動追加(既存客の過去分など) ── */
+  var addRecvCid = null;
+  function openAddReceivable(cid) {
+    if (!API) return showToast("売掛の追加はサーバー起動時に使えます。");
+    addRecvCid = String(cid);
+    document.getElementById("ar-name").value = "";
+    document.getElementById("ar-amount").value = "";
+    document.getElementById("ar-date").value = TODAY_ISO;
+    document.getElementById("ar-error").style.display = "none";
+    document.getElementById("addrecv-modal").classList.add("show");
+  }
+  function closeAddReceivable() { document.getElementById("addrecv-modal").classList.remove("show"); addRecvCid = null; }
+  function submitAddReceivable() {
+    if (!addRecvCid) return;
+    var err = document.getElementById("ar-error");
+    var amt = parseInt(zen2han(document.getElementById("ar-amount").value).replace(/[^0-9]/g, ""), 10) || 0;
+    if (amt <= 0) { err.textContent = "売掛金額を入力してください。"; err.style.display = "block"; return; }
+    err.style.display = "none";
+    var cid = addRecvCid;
+    var payload = {
+      customer_id: cid, amount: amt,
+      product_name: document.getElementById("ar-name").value.trim() || null,
+      bought_at: document.getElementById("ar-date").value || TODAY_ISO
+    };
+    var btn = document.getElementById("ar-submit-btn");
+    btn.disabled = true; btn.textContent = "追加中…";
+    fetch(API + "/receivable_add", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    }).then(function (r) { return r.json(); }).then(function (rv) {
+      btn.disabled = false; btn.textContent = "追加する";
+      if (rv.error) throw new Error(rv.error);
+      (D.urikake[cid] = D.urikake[cid] || []).push([rv.id, rv.product_name, rv.bought_at, rv.down_payment, rv.balance, rv.last_paid_at]);
+      (D.urikakeHist[cid] = D.urikakeHist[cid] || []).unshift([rv.bought_at, "掛売", rv.product_name, rv.balance, null]);
+      closeAddReceivable();
+      var c = findCust(cid); if (c) renderPay(c);
+      renderPosReceivable();
+      showToast("売掛 ¥" + num(rv.balance) + " を追加しました。");
+    }).catch(function (e) { btn.disabled = false; btn.textContent = "追加する"; err.textContent = "追加に失敗しました: " + (e.message || e); err.style.display = "block"; });
   }
   // レジで顧客を選んだ時、売掛残高があれば入金パネルを表示(現金授受→ドロワーがレジで完結)
   function renderPosReceivable() {

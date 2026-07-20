@@ -63,6 +63,11 @@ def ensure_schema(con):
         staff_name  TEXT,
         occurred_at TEXT                 -- 発生日 YYYY-MM-DD
     )""")
+    # アプリ設定(キー・バリュー)。顧客ランク基準などをJSONで保存する。
+    con.execute("""CREATE TABLE IF NOT EXISTS app_settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT
+    )""")
 
     def cols(t):
         try:
@@ -393,9 +398,15 @@ def customer_detail(con, cid):
     cur = con.cursor()
     cid = str(cid)
 
+    # 品名: 処方箋(メガネ)が紐づく明細は、処方箋のレンズ名/フレーム名を優先して表示する。
+    # (レジで「メガネレンズ」等の仮名で会計→処方箋で正式名に直しても購入一覧に反映される。
+    #  移行データのように過去に紐付いた分もこの表示で正しい名前になる)
     sales = [list(r) for r in cur.execute("""
-        SELECT s.sold_at, COALESCE(l.free_name, p.name), l.info,
-               l.amount, s.pay_method, s.staff_name, p.product_no, l.line_id, s.slip_id
+        SELECT s.sold_at,
+               COALESCE((SELECT COALESCE(NULLIF(rx.lens_name,''), NULLIF(rx.frame_name,''))
+                         FROM prescriptions rx WHERE rx.sale_line_id = l.line_id LIMIT 1),
+                        l.free_name, p.name) AS disp_name,
+               l.info, l.amount, s.pay_method, s.staff_name, p.product_no, l.line_id, s.slip_id
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         WHERE s.customer_id = ?
@@ -664,21 +675,57 @@ def prescription_search(con, frm="", to="", purpose="", misassign_only=False):
     return out
 
 
-# 顧客ランクの基準(B-5)。宝飾ナビの合計金額ランク(1が最上位)に準拠。
-# (下限金額, ランク名) を上から判定。基準を変えたい場合はここを編集(将来は設定画面でマスタ化)。
+# 顧客ランクの既定基準(B-5)。宝飾ナビの合計金額ランク(1が最上位)に準拠。
+# (下限金額, ランク名) を上から判定。設定画面で変更した場合は app_settings に保存される。
 RANK_RULES = [
     (1000000, "1"), (500000, "2"), (300000, "3"), (200000, "4"),
     (100000, "5"), (50000, "6"), (9800, "7"), (1, "8"), (0, "9"),
 ]
 
 
-def rank_for_amount(total):
+def get_rank_rules(con):
+    """顧客ランク基準を返す([[下限金額,ランク名],...]・下限の降順)。未設定なら既定値。"""
+    row = con.execute("SELECT value FROM app_settings WHERE key='rank_rules'").fetchone()
+    if row and row[0]:
+        try:
+            rules = [[int(r[0]), str(r[1])] for r in json.loads(row[0]) if str(r[1]).strip() != ""]
+            if rules:
+                rules.sort(key=lambda x: x[0], reverse=True)
+                return rules
+        except (ValueError, TypeError, IndexError):
+            pass
+    return [[lo, lab] for lo, lab in RANK_RULES]
+
+
+def set_rank_rules(con, rules):
+    """顧客ランク基準を保存する。rules=[[下限金額,ランク名],...]。"""
+    clean = []
+    for r in (rules or []):
+        try:
+            lo = int(str(r[0]).replace(",", ""))
+        except (ValueError, TypeError, IndexError):
+            continue
+        lab = str(r[1]).strip() if len(r) > 1 else ""
+        if lab != "":
+            clean.append([lo, lab])
+    if not clean:
+        raise ValueError("有効な基準がありません(金額とランク名を入力してください)")
+    clean.sort(key=lambda x: x[0], reverse=True)
+    con.execute("INSERT INTO app_settings(key,value) VALUES('rank_rules',?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (json.dumps(clean, ensure_ascii=False),))
+    con.commit()
+    return {"rules": clean}
+
+
+def rank_for_amount(total, rules=None):
     """合計購入額から基準に沿ったランク名を返す。"""
     t = total or 0
-    for lo, label in RANK_RULES:
+    rules = rules if rules is not None else [list(x) for x in RANK_RULES]
+    for lo, label in rules:
         if t >= lo:
             return label
-    return RANK_RULES[-1][1]
+    return rules[-1][1] if rules else ""
 
 
 def compute_rank_updates(con, kind=""):
@@ -686,6 +733,7 @@ def compute_rank_updates(con, kind=""):
       kind: ""=全て / "宝飾" / "メガネ"。集計対象外・検証ペルソナ・取消明細は対象外。
     戻り値: {rules:[[下限,ランク]...], updates:[{customer_id,name,old,new,total}], total_customers:N}"""
     con.row_factory = sqlite3.Row
+    rules = get_rank_rules(con)
     where = ["s.customer_id IS NOT NULL", "l.amount IS NOT NULL",
              "COALESCE(l.voided,0)=0", "COALESCE(s.voided,0)=0"]
     if kind == "メガネ":
@@ -705,12 +753,12 @@ def compute_rank_updates(con, kind=""):
         n += 1
         cid = r["customer_id"]
         total = totals.get(cid, 0) or 0
-        newr = rank_for_amount(total)
+        newr = rank_for_amount(total, rules)
         if (r["rank"] or "") != newr:
             updates.append({"customer_id": cid, "name": r["name"] or cid,
                             "old": r["rank"], "new": newr, "total": total})
     updates.sort(key=lambda u: u["total"], reverse=True)
-    return {"rules": RANK_RULES, "updates": updates, "total_customers": n}
+    return {"rules": rules, "updates": updates, "total_customers": n}
 
 
 def apply_rank_updates(con, kind=""):
@@ -1337,6 +1385,31 @@ def add_receivable_payment(con, p):
                 (cid, "入金", paid_at, None, None, amount, p.get("note")))
     con.commit()
     return {"receivable_id": receivable_id, "new_balance": new_balance, "paid_at": paid_at, "amount": amount}
+
+
+def add_receivable(con, p):
+    """既存顧客に売掛(未回収残高)を手動で追加する。レジ会計を経由しない過去分の登録用。
+    payload: {customer_id, product_name, amount, bought_at}"""
+    cid = str(p.get("customer_id") or "").strip()
+    if not cid:
+        raise ValueError("顧客が指定されていません")
+    try:
+        amount = int(str(p.get("amount")).replace(",", ""))
+    except (TypeError, ValueError):
+        raise ValueError("金額を数字で入力してください")
+    if amount <= 0:
+        raise ValueError("売掛金額を正しく入力してください")
+    bought_at = p.get("bought_at") or datetime.date.today().isoformat()
+    name = p.get("product_name") or None
+    cur = con.cursor()
+    cur.execute("""INSERT INTO receivables(customer_id,product_name,bought_at,down_payment,balance,last_paid_at)
+                   VALUES (?,?,?,?,?,?)""", (cid, name, bought_at, 0, amount, None))
+    rid = cur.lastrowid
+    cur.execute("""INSERT INTO receivable_entries(customer_id,entry_type,entry_date,product_name,amount,paid)
+                   VALUES (?,?,?,?,?,?)""", (cid, "掛売", bought_at, name, amount, None))
+    con.commit()
+    return {"id": rid, "customer_id": cid, "product_name": name, "bought_at": bought_at,
+            "down_payment": 0, "balance": amount, "last_paid_at": None}
 
 
 def add_cash_movement(con, p):
