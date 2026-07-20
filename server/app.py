@@ -183,7 +183,7 @@ class Handler(BaseHTTPRequestHandler):
                     elif path == "/api/products":
                         result = db_query.search_products(
                             con, q1("q"), q1("cat"), q1("state"), q1("supplier"), q1("genre"),
-                            q1("sort", "no"), q1("order", "asc"),
+                            q1("sort", "no"), q1("order", "desc"),
                             q1("limit", "50"), q1("offset", "0"))
                     elif path == "/api/product_categories":
                         result = {"categories": db_query.product_categories(con)}

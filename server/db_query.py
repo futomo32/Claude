@@ -474,7 +474,7 @@ PRODUCT_SORT_COLS = {"no": "product_no", "name": "name", "cat": "category",
                      "loc": "location", "supplier": "supplier"}
 
 
-def search_products(con, q="", cat="", state="", supplier="", genre="", sort="no", order="asc", limit=50, offset=0):
+def search_products(con, q="", cat="", state="", supplier="", genre="", sort="no", order="desc", limit=50, offset=0):
     """商品検索(在庫一覧・レジの商品ピッカー用)。全商品(21万件)を送らずサーバーで絞り込む。
     戻り値 {rows:[...], total:N}。rows は
       [商品番号,品名,分類,上代,状態,置場,石,商品キー,画像,下代,仕入先]。
