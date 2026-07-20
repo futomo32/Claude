@@ -800,6 +800,7 @@
           <div style="margin-top:0.7rem;display:flex;gap:0.6rem;flex-wrap:wrap">
             <button class="btn" onclick="openProductPicker()">＋ 商品番号で追加(在庫品)</button>
             <button class="btn" onclick="openFreePicker()">＋ 番号なしで追加(レンズ・修理・電池など)</button>
+            <button class="btn" onclick="openCashModal()" title="代引手数料・収入印紙・両替・経費など、買い物と無関係な現金の出入り">💴 レジ入出金</button>
           </div>
           <p style="margin:0.6rem 0 0;font-size:0.78em;color:var(--muted)">会計確定と同時に、全明細を顧客の購入履歴へ自動記録し、在庫品は在庫から引き落とします。</p>
           <div class="search-row" style="margin-top:1rem">
@@ -1572,6 +1573,28 @@
   </div>
 </div>
 
+<!-- レジ入出金 モーダル(代引手数料・収入印紙・両替・経費など) -->
+<div class="modal-back" id="cash-modal">
+  <div class="modal" style="width:min(440px,100%)" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h3>レジ入出金</h3>
+      <button class="close" aria-label="閉じる" onclick="closeCashModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">代引手数料・収入印紙・両替・経費など、買い物と無関係な現金の出入りを記録します。<b>出金はマイナス</b>で入力してください。</p>
+      <div class="field"><label>区分</label><select id="cash-category"><option>経費</option><option>両替</option><option>代引手数料</option><option>収入印紙</option><option>その他</option></select></div>
+      <div class="field"><label>金額(出金はマイナス)</label><input class="num" id="cash-amount" inputmode="numeric" placeholder="例: -110"></div>
+      <div class="field"><label>日付</label><input type="date" id="cash-date"></div>
+      <div class="field"><label>メモ</label><input id="cash-note" placeholder="任意(例: 代引き ○○様)"></div>
+      <p id="cash-error" style="display:none;color:var(--danger);font-size:0.85em;margin:0.4em 0 0"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeCashModal()">キャンセル</button>
+      <button class="btn btn-primary" id="cash-submit-btn" onclick="submitCashMovement()">記録する</button>
+    </div>
+  </div>
+</div>
+
 <!-- 家族を追加 モーダル(A: 自由入力 / B: 登録済み顧客とリンク) -->
 <div class="modal-back" id="family-modal">
   <div class="modal" style="width:min(520px,100%)" role="dialog" aria-modal="true">
@@ -2147,6 +2170,7 @@
   bindBackdropClose("staff-master-modal", closeStaffMaster);
   bindBackdropClose("photo-pool-modal", closePhotoPool);
   bindBackdropClose("rank-update-modal", closeRankUpdate);
+  bindBackdropClose("cash-modal", closeCashModal);
   bindBackdropClose("master-hub-modal", closeMasterHub);
   bindBackdropClose("alert-modal", alertCancel);
   bindBackdropClose("free-modal", closeFreePicker);
@@ -2174,6 +2198,7 @@
   D.products = D.products || [];
   D.repairs = D.repairs || [];
   D.tenders = D.tenders || [];
+  D.cashMovements = D.cashMovements || [];
   var API = window.TOKIWA_API || null;         // サーバー経由か(nullなら単体HTML=全データ埋め込み)
   var _loadedDetail = {};                        // 顧客詳細を取得済みの顧客ID
   // 顧客詳細(売上/処方箋/ポイント履歴等)を必要時に取得してから cb を呼ぶ。
@@ -2994,6 +3019,44 @@
   function closePayModal() {
     document.getElementById("pay-modal").classList.remove("show");
     payTarget = null;
+  }
+  /* ── レジ入出金(代引手数料・収入印紙・両替・経費など) ── */
+  function openCashModal() {
+    if (!API) return showToast("レジ入出金はサーバー起動時に使えます。");
+    document.getElementById("cash-category").selectedIndex = 0;
+    document.getElementById("cash-amount").value = "";
+    document.getElementById("cash-date").value = TODAY_ISO;
+    document.getElementById("cash-note").value = "";
+    document.getElementById("cash-error").style.display = "none";
+    document.getElementById("cash-modal").classList.add("show");
+  }
+  function closeCashModal() { document.getElementById("cash-modal").classList.remove("show"); }
+  function submitCashMovement() {
+    var err = document.getElementById("cash-error");
+    // 出金はマイナスなので符号を保持して数値化
+    var raw = zen2han(document.getElementById("cash-amount").value).replace(/[^0-9-]/g, "");
+    var amt = parseInt(raw, 10);
+    if (!amt) { err.textContent = "金額を入力してください(出金はマイナス)。"; err.style.display = "block"; return; }
+    err.style.display = "none";
+    var payload = {
+      category: document.getElementById("cash-category").value,
+      amount: amt,
+      occurred_at: document.getElementById("cash-date").value || TODAY_ISO,
+      note: document.getElementById("cash-note").value.trim() || null,
+      staff_name: posOperator || null
+    };
+    var btn = document.getElementById("cash-submit-btn");
+    btn.disabled = true; btn.textContent = "記録中…";
+    fetch(API + "/cash_movement", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      btn.disabled = false; btn.textContent = "記録する";
+      if (res.error) throw new Error(res.error);
+      (D.cashMovements = D.cashMovements || []).unshift(res);  // 日報・ホーム集計に即時反映
+      closeCashModal();
+      renderHomeTiles();
+      showToast("レジ入出金 " + (res.amount >= 0 ? "+¥" + num(res.amount) : "-¥" + num(-res.amount)) + "(" + res.category + ")を記録しました。");
+    }).catch(function (e) { btn.disabled = false; btn.textContent = "記録する"; err.textContent = "記録に失敗しました: " + (e.message || e); err.style.display = "block"; });
   }
   function submitReceivablePayment() {
     if (!payTarget) return;
@@ -4101,7 +4164,12 @@
     return (D.tenders || []).filter(function (t) { return t[0] === dateStr; })
       .map(function (t) { return { method: t[1], amount: t[2] || 0, cid: t[3] }; });
   }
-  function dailyTilesHtml(lines, payments, tenders) {
+  // その日のレジ入出金(代引手数料・両替・経費等)。occurred_atの日付部分で絞る
+  function dailyCash(dateStr) {
+    return (D.cashMovements || []).filter(function (m) { return String(m.occurred_at || "").slice(0, 10) === dateStr; });
+  }
+  function dailyTilesHtml(lines, payments, tenders, cashMoves) {
+    cashMoves = cashMoves || [];
     var salesTotal = lines.reduce(function (t, l) { return t + l.amount; }, 0);
     // 「掛売」の内訳は本日はまだ未回収(お金は入っていない)ため、レジの入出金合計からは除外する
     var settled = tenders.filter(function (t) { return t.method !== "掛売"; });
@@ -4111,6 +4179,7 @@
     settled.forEach(function (t) { byPay[t.method] = (byPay[t.method] || 0) + t.amount; });
     var settledTotal = settled.reduce(function (t, x) { return t + x.amount; }, 0);
     var payTotal = payments.reduce(function (t, p) { return t + p.amount; }, 0);
+    var cashTotal = cashMoves.reduce(function (t, m) { return t + (m.amount || 0); }, 0);  // レジ入出金(±)
     var tax = Math.floor(salesTotal * 10 / 110);
     var tiles = '<div class="tile"><div class="t-label">売上(税込)</div><div class="t-value num">¥' + num(salesTotal) +
       '</div><div class="t-sub num">' + lines.length + '件 / 消費税 ¥' + num(tax) + '</div></div>';
@@ -4124,8 +4193,12 @@
     }
     tiles += '<div class="tile"><div class="t-label">売掛入金</div><div class="t-value num">¥' + num(payTotal) +
       '</div><div class="t-sub num">' + payments.length + '件</div></div>';
-    tiles += '<div class="tile"><div class="t-label">入出金合計</div><div class="t-value num">¥' + num(settledTotal + payTotal) +
-      '</div><div class="t-sub num">' + (settled.length + payments.length) + '件</div></div>';
+    if (cashMoves.length) {
+      tiles += '<div class="tile"><div class="t-label">レジ入出金</div><div class="t-value num">' + (cashTotal < 0 ? "-¥" + num(-cashTotal) : "¥" + num(cashTotal)) +
+        '</div><div class="t-sub num">' + cashMoves.length + '件</div></div>';
+    }
+    tiles += '<div class="tile"><div class="t-label">入出金合計</div><div class="t-value num">¥' + num(settledTotal + payTotal + cashTotal) +
+      '</div><div class="t-sub num">' + (settled.length + payments.length + cashMoves.length) + '件</div></div>';
     return tiles;
   }
   function renderHomeTiles() {
@@ -4134,7 +4207,7 @@
       var pickups = (D.repairs || []).filter(function (r) {
         return r.promised_at === TODAY_ISO && r.status !== "引渡済み";
       });
-      document.getElementById("home-tiles").innerHTML = dailyTilesHtml(lines, payments, tenders) +
+      document.getElementById("home-tiles").innerHTML = dailyTilesHtml(lines, payments, tenders, dailyCash(TODAY_ISO)) +
         '<div class="tile"><div class="t-label">本日の引渡予定</div><div class="t-value num">' + pickups.length +
         '<small>件</small></div><div class="t-sub">修理のお預かり品(未引渡)</div></div>';
     });
@@ -4145,12 +4218,14 @@
     getDailySales(date, function (lines) { renderDailyReportWith(date, lines); });
   }
   function renderDailyReportWith(date, lines) {
-    var payments = dailyPayments(date), tenders = dailyTenders(date);
-    document.getElementById("rep-daily-tiles").innerHTML = dailyTilesHtml(lines, payments, tenders);
+    var payments = dailyPayments(date), tenders = dailyTenders(date), cashMoves = dailyCash(date);
+    document.getElementById("rep-daily-tiles").innerHTML = dailyTilesHtml(lines, payments, tenders, cashMoves);
     var rows = lines.map(function (l) {
       return { name: l.name, kind: "レジ売上", content: l.item, amount: l.amount, staff: l.staff };
     }).concat(payments.map(function (p) {
       return { name: p.name, kind: "売掛入金", content: p.note || "", amount: p.amount, staff: "" };
+    })).concat(cashMoves.map(function (m) {
+      return { name: "(レジ入出金)", kind: m.category || "入出金", content: m.note || "", amount: m.amount, staff: m.staff_name || "" };
     }));
     var tb = document.getElementById("rep-daily-tbody");
     if (rows.length) {
@@ -4172,6 +4247,7 @@
       var rows = [["日付", "顧客", "区分", "内容", "金額", "支払", "担当者"]];
       lines.forEach(function (l) { rows.push([date, l.name, "レジ売上", l.item || "", l.amount, l.pay, shortName(l.staff) || ""]); });
       payments.forEach(function (p) { rows.push([date, p.name, "売掛入金", p.note || "", p.amount, "", ""]); });
+      dailyCash(date).forEach(function (m) { rows.push([date, "(レジ入出金)", m.category || "入出金", m.note || "", m.amount, "", shortName(m.staff_name) || ""]); });
       downloadCsv("日報_" + date + ".csv", rows);
     });
   }

@@ -160,6 +160,16 @@ CREATE TABLE sale_payments (
 );
 CREATE INDEX idx_sale_payments_slip ON sale_payments(slip_id);
 
+-- レジ入出金(顧客と無関係な現金の出入り: 代引手数料・収入印紙・両替・経費等)
+CREATE TABLE cash_movements (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  category    TEXT,               -- 経費/両替/代引手数料/収入印紙/その他
+  amount      INTEGER NOT NULL,   -- +入金 / -出金
+  note        TEXT,
+  staff_name  TEXT,
+  occurred_at TEXT
+);
+
 -- ── 売掛 ──────────────────────────────────
 CREATE TABLE receivables (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,

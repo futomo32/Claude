@@ -53,6 +53,16 @@ def ensure_schema(con):
         filename    TEXT NOT NULL,
         uploaded_at TEXT
     )""")
+    # レジ入出金: 顧客の買い物と無関係な現金の出入り(代引手数料・収入印紙・両替・経費等)。
+    # amountは +入金 / -出金。日報のレジ締め金額・入出金合計に反映する。顧客IDは持たない。
+    con.execute("""CREATE TABLE IF NOT EXISTS cash_movements (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        category    TEXT,                -- 区分(経費/両替/代引手数料/収入印紙/その他)
+        amount      INTEGER NOT NULL,    -- +入金 / -出金
+        note        TEXT,
+        staff_name  TEXT,
+        occurred_at TEXT                 -- 発生日 YYYY-MM-DD
+    )""")
 
     def cols(t):
         try:
@@ -352,6 +362,7 @@ def build_blob_light(con):
                 urikake=urikake, urikakeHist=urikake_hist,
                 repairs=repairs, tenders=tenders, stockStats=stock_stats, staff=staff,
                 registerStaff=register_staff, staffCodes=staff_codes,
+                cashMovements=list_cash_movements(con),
                 lite=True)  # lite=True で「明細は遅延取得」とUIに知らせる
 
 
@@ -1326,6 +1337,38 @@ def add_receivable_payment(con, p):
                 (cid, "入金", paid_at, None, None, amount, p.get("note")))
     con.commit()
     return {"receivable_id": receivable_id, "new_balance": new_balance, "paid_at": paid_at, "amount": amount}
+
+
+def add_cash_movement(con, p):
+    """レジ入出金(代引手数料・収入印紙・両替・経費等)を記録する。amountは +入金 / -出金。"""
+    try:
+        amount = int(str(p.get("amount")).replace(",", ""))
+    except (TypeError, ValueError):
+        raise ValueError("金額を数字で入力してください")
+    if amount == 0:
+        raise ValueError("金額を入力してください(出金はマイナス)")
+    occurred_at = p.get("occurred_at") or datetime.date.today().isoformat()
+    cur = con.cursor()
+    cur.execute("""INSERT INTO cash_movements(category,amount,note,staff_name,occurred_at)
+                   VALUES (?,?,?,?,?)""",
+                (p.get("category") or "その他", amount, p.get("note"), p.get("staff_name"), occurred_at))
+    con.commit()
+    return {"id": cur.lastrowid, "category": p.get("category") or "その他", "amount": amount,
+            "note": p.get("note"), "staff_name": p.get("staff_name"), "occurred_at": occurred_at}
+
+
+def list_cash_movements(con, limit=500):
+    """レジ入出金の一覧(新しい順)。画面の日報・ホーム集計に使う。"""
+    con.row_factory = sqlite3.Row
+    try:
+        limit = max(1, min(int(limit), 2000))
+    except (TypeError, ValueError):
+        limit = 500
+    return [{"id": r["id"], "category": r["category"], "amount": r["amount"], "note": r["note"],
+             "staff_name": r["staff_name"], "occurred_at": r["occurred_at"]}
+            for r in con.execute(
+                "SELECT id,category,amount,note,staff_name,occurred_at FROM cash_movements "
+                "ORDER BY occurred_at DESC, id DESC LIMIT ?", (limit,))]
 
 
 def checkout(con, payload):

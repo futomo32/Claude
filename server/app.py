@@ -271,6 +271,11 @@ class Handler(BaseHTTPRequestHandler):
                 result = db_query.apply_rank_updates(con, payload.get("kind") or "")
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/cash_movement":
+                con = connect()
+                result = db_query.add_cash_movement(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/customer":
                 con = connect()
                 result = db_query.upsert_customer(con, payload)
