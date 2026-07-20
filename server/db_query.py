@@ -1236,12 +1236,23 @@ def add_prescription(con, p):
             "naked_both", "naked_r", "naked_l", "corrected_both", "corrected_r", "corrected_l",
             "handler", "rx_date")
     vals = [v(c) for c in cols]
+    slid = n_int("sale_line_id")
+
+    def _sync_sale_line_name():
+        # 処方箋で品名(レンズ/フレーム)を直したら、紐づく購入明細(番号なし行)の表示名も
+        # 合わせて更新する。これで購入一覧の品名も処方箋の修正が反映される。
+        # 在庫品(product_key有り)の名前は商品側が正なので触らない(番号なし行のみ)。
+        disp = v("lens_name") or v("frame_name")
+        if slid and disp:
+            cur.execute("UPDATE sale_lines SET free_name=? WHERE line_id=? AND product_key IS NULL",
+                        (disp, slid))
 
     rx_id = n_int("id")
     if rx_id:  # 編集(既存を更新)
         setclause = ",".join(f"{c}=?" for c in cols) + ",lens_price=?,frame_price=?,total_sell=?,sale_line_id=?"
         cur.execute(f"UPDATE prescriptions SET {setclause} WHERE id=?",
-                    vals + [lens_price, frame_price, total, n_int("sale_line_id"), rx_id])
+                    vals + [lens_price, frame_price, total, slid, rx_id])
+        _sync_sale_line_name()
         con.commit()
         row = con.execute("SELECT rx_no FROM prescriptions WHERE id=?", (rx_id,)).fetchone()
         return {"id": rx_id, "rx_no": row[0] if row else None, "total": total}
@@ -1251,7 +1262,8 @@ def add_prescription(con, p):
     cur.execute(f"""INSERT INTO prescriptions
         (customer_id,rx_no,{",".join(cols)},lens_price,frame_price,total_sell,sale_line_id,jewelry_misassign)
         VALUES (?,?,{",".join("?" * len(cols))},?,?,?,?,0)""",
-        [str(p.get("customer_id")), rx_no] + vals + [lens_price, frame_price, total, n_int("sale_line_id")])
+        [str(p.get("customer_id")), rx_no] + vals + [lens_price, frame_price, total, slid])
+    _sync_sale_line_name()
     con.commit()
     return {"id": cur.lastrowid, "rx_no": rx_no, "total": total}
 

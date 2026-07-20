@@ -793,7 +793,7 @@
           <div id="pos-receivable"></div>
           <div class="table-scroll">
             <table class="data">
-              <thead><tr><th>区分</th><th>商品番号</th><th>商品名</th><th>商品情報</th><th class="r">定価</th><th class="r">買上金額</th><th class="r">割引率</th><th></th></tr></thead>
+              <thead><tr><th>商品番号</th><th>商品名</th><th>商品情報</th><th class="r">定価</th><th class="r">買上金額</th><th class="r">割引率</th><th></th></tr></thead>
               <tbody id="pos-lines"></tbody>
             </table>
           </div>
@@ -1915,19 +1915,16 @@
   function renderPosLines() {
     var tb = document.getElementById("pos-lines");
     if (!posLines.length) {
-      tb.innerHTML = '<tr><td colspan="8" style="color:var(--muted);text-align:center;padding:1.4rem">' +
+      tb.innerHTML = '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:1.4rem">' +
         '明細がありません。下の「商品番号で追加」「番号なしで追加」から明細を追加してください。</td></tr>';
       recalcPos();
       return;
     }
     tb.innerHTML = posLines.map(function (ln, i) {
-      var badge = ln.kind === "stock"
-        ? '<span class="chip chip-green">在庫品</span>'
-        : '<span class="chip chip-plain">番号なし</span>';
       var nameCell = ln.kind === "stock" ? esc(ln.name)
         : '<input value="' + esc(ln.name || "") + '" placeholder="品名(例: 修理・電池)" oninput="posEdit(' + i + ',\'name\',this.value)" style="width:12em">';
       var infoCell = ln.kind === "stock" ? esc(dash(ln.info)) : "—";
-      return '<tr><td>' + badge + '</td><td class="num">' + esc(dash(ln.no)) + '</td><td>' + nameCell +
+      return '<tr><td class="num">' + esc(dash(ln.no)) + '</td><td>' + nameCell +
         '</td><td>' + infoCell + '</td><td class="r num">' + (ln.list ? ln.list.toLocaleString() : "—") +
         '</td><td class="r"><input class="amount-input num" id="amt-' + i + '" value="' + (ln.amount || 0).toLocaleString() +
         '" inputmode="numeric" oninput="posAmt(' + i + ',this)" aria-label="買上金額"></td>' +
@@ -5092,6 +5089,15 @@
       } else { arr.unshift(e); }
       if (payload.sale_line_id && D.rxCandidates && D.rxCandidates[cid]) {
         D.rxCandidates[cid] = D.rxCandidates[cid].filter(function (y) { return String(y[0]) !== String(payload.sale_line_id); });
+      }
+      // 処方箋で品名を直したら、紐づく購入明細(番号なし行)の表示名も合わせて更新
+      // (サーバー側はfree_nameを更新済み。ここではローカルの購入履歴キャッシュも直す)
+      if (payload.sale_line_id && D.sales && D.sales[cid]) {
+        var disp = payload.lens_name || payload.frame_name;
+        if (disp) D.sales[cid].forEach(function (s) {
+          if (String(s[7]) === String(payload.sale_line_id) && !s[6]) s[1] = disp;  // s[6]=商品番号(番号なしはnull)
+        });
+        renderHistory(findCust(cid));
       }
       closeRxModal();
       renderGlasses(findCust(cid));
