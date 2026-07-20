@@ -375,6 +375,10 @@
   .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
   .tabpane { display: none; }
   .tabpane.active { display: block; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg-btn { border: 0; background: var(--surface); padding: 0.4em 0.9em; cursor: pointer; font: inherit; font-size: 0.9em; color: var(--ink); }
+  .seg-btn + .seg-btn { border-left: 1px solid var(--line); }
+  .seg-btn.active { background: var(--accent); color: #fff; font-weight: 700; }
 
   /* ── 顧客 ── */
   .search-row { display: flex; gap: 0.7rem; flex-wrap: wrap; align-items: end; margin-bottom: 1rem; }
@@ -1024,7 +1028,13 @@
 
       <div class="tabpane" id="p-purchase">
         <div class="card">
-          <h3>仕入商品登録</h3>
+          <div style="display:flex;align-items:center;gap:0.8em;flex-wrap:wrap;margin-bottom:0.6rem">
+            <h3 style="margin:0">仕入商品登録</h3>
+            <div class="seg" role="group" aria-label="登録種別">
+              <button type="button" class="seg-btn active" id="np-type-gem" onclick="setPurchaseType('gem')">宝石</button>
+              <button type="button" class="seg-btn" id="np-type-other" onclick="setPurchaseType('other')">宝石以外(メガネ・時計等)</button>
+            </div>
+          </div>
           <div class="kv">
             <div class="field"><label>商品番号(空欄で自動)</label><input class="num" id="np-no" placeholder="自動採番"></div>
             <div class="field"><label>仕入先</label><select id="np-supplier"><option value="">選択…</option></select></div>
@@ -1037,21 +1047,24 @@
             <div class="field"><label>地金</label><input id="np-metal" list="metal-datalist" placeholder="例: Pt900"></div>
             <datalist id="metal-datalist"></datalist>
           </div>
-          <div class="section-title">宝飾情報</div>
-          <div class="kv">
-            <div class="field"><label>中石(石種)</label><input id="np-stone" placeholder="例: サファイア"></div>
-            <div class="field"><label>中石重量(ct)</label><input class="num" id="np-carat" inputmode="decimal" placeholder="0.00"></div>
-            <div class="field"><label>脇石</label><input id="np-side" placeholder="例: ダイヤ 0.12ct"></div>
-            <div class="field"><label>カラー</label><select id="np-color"><option value="">—</option><option>D</option><option>E</option><option>F</option><option>G</option><option>H</option></select></div>
-            <div class="field"><label>クラリティ</label><select id="np-clarity"><option value="">—</option><option>FL</option><option>VVS1</option><option>VVS2</option><option>VS1</option><option>VS2</option><option>SI1</option></select></div>
-            <div class="field"><label>カット</label><select id="np-cut"><option value="">—</option><option>3EX</option><option>EX</option><option>VG</option><option>G</option></select></div>
-            <div class="field"><label>鑑定書No</label><input class="num" id="np-cert"></div>
+          <div id="np-gem-section">
+            <div class="section-title">宝飾情報</div>
+            <div class="kv">
+              <div class="field"><label>中石(石種)</label><input id="np-stone" placeholder="例: サファイア"></div>
+              <div class="field"><label>中石重量(ct)</label><input class="num" id="np-carat" inputmode="decimal" placeholder="0.00"></div>
+              <div class="field"><label>脇石</label><input id="np-side" placeholder="例: ダイヤ 0.12ct"></div>
+              <div class="field"><label>カラー</label><select id="np-color"><option value="">—</option><option>D</option><option>E</option><option>F</option><option>G</option><option>H</option></select></div>
+              <div class="field"><label>クラリティ</label><select id="np-clarity"><option value="">—</option><option>FL</option><option>VVS1</option><option>VVS2</option><option>VS1</option><option>VS2</option><option>SI1</option></select></div>
+              <div class="field"><label>カット</label><select id="np-cut"><option value="">—</option><option>3EX</option><option>EX</option><option>VG</option><option>G</option></select></div>
+              <div class="field"><label>鑑定書No</label><input class="num" id="np-cert"></div>
+            </div>
           </div>
           <div class="section-title">価格・店舗</div>
           <div class="kv">
-            <div class="field"><label>仕入単価</label><input class="num" id="np-cost" inputmode="numeric" placeholder="0"></div>
-            <div class="field"><label>上代(定価)</label><input class="num" id="np-list" inputmode="numeric" placeholder="0"></div>
+            <div class="field"><label>仕入単価(税別)</label><input class="num" id="np-cost" inputmode="numeric" placeholder="0"></div>
+            <div class="field"><label>上代・定価(税込)</label><input class="num" id="np-list" inputmode="numeric" placeholder="0"></div>
             <div class="field"><label>掛率</label><input class="num" id="np-rate" placeholder="自動計算" readonly></div>
+            <div class="field"><label>折数</label><input class="num" id="np-ori" readonly></div>
             <div class="field"><label>店舗</label><select id="np-loc"><option>本店</option></select></div>
           </div>
           <div class="field" style="margin-top:0.6rem"><label>商品写真(任意)</label>
@@ -3867,10 +3880,22 @@
   })();
 
   /* ── 仕入商品登録 ── */
+  var NP_TAX = 0.10;  // 消費税率(当面10%固定)
   function updateNpRate() {
     var cost = parseInt(zen2han(document.getElementById("np-cost").value).replace(/[^0-9]/g, ""), 10);
     var list = parseInt(zen2han(document.getElementById("np-list").value).replace(/[^0-9]/g, ""), 10);
-    document.getElementById("np-rate").value = (cost && list) ? (cost / list * 100).toFixed(1) + "%" : "";
+    // 掛率 = 仕入単価(税込換算) ÷ 上代(税込) × 100。仕入は税別入力なので税込に換算して比較
+    document.getElementById("np-rate").value = (cost && list) ? (cost * (1 + NP_TAX) / list * 100).toFixed(1) + "%" : "";
+    // 折数 = 上代(定価)の半額(店独自の参考値。DBには保存しない・説明文言は付けない)
+    document.getElementById("np-ori").value = list ? "¥" + num(Math.round(list / 2)) : "";
+  }
+  // 仕入登録の種別切替(宝石 / 宝石以外)。宝石以外は宝飾情報の入力欄を隠す
+  var npType = "gem";
+  function setPurchaseType(t) {
+    npType = t;
+    document.getElementById("np-type-gem").classList.toggle("active", t === "gem");
+    document.getElementById("np-type-other").classList.toggle("active", t === "other");
+    document.getElementById("np-gem-section").style.display = (t === "other") ? "none" : "";
   }
   // 仕入登録フォームで選んだ写真(リサイズ済みJPEG dataURL)。登録成功後に新商品へ紐付ける
   var npPhotoData = null;
@@ -3891,12 +3916,13 @@
     });
   })();
   function resetProductForm() {
-    ["np-no", "np-name", "np-brand", "np-metal", "np-stone", "np-carat", "np-side", "np-cert", "np-cost", "np-list", "np-rate"].forEach(function (id) {
+    ["np-no", "np-name", "np-brand", "np-metal", "np-stone", "np-carat", "np-side", "np-cert", "np-cost", "np-list", "np-rate", "np-ori"].forEach(function (id) {
       document.getElementById(id).value = "";
     });
     ["np-supplier", "np-color", "np-clarity", "np-cut", "np-loc"].forEach(function (id) { document.getElementById(id).selectedIndex = 0; });
     document.getElementById("np-date").value = new Date().toISOString().slice(0, 10);
     document.getElementById("np-error").style.display = "none";
+    setPurchaseType("gem");  // 種別を宝石に戻す
     npPhotoData = null;
     npPoolId = null;
     document.getElementById("np-photo-name").textContent = "";
@@ -3920,7 +3946,8 @@
       var v = zen2han(document.getElementById(id).value).replace(/[^0-9]/g, "");
       return v ? parseInt(v, 10) : null;
     };
-    var side = document.getElementById("np-side").value.trim();
+    var gem = (npType !== "other");  // 宝石以外は宝飾情報を送らない
+    var side = gem ? document.getElementById("np-side").value.trim() : "";
     var staff = document.getElementById("np-staff").value;
     var payload = {
       product_no: zen2han(document.getElementById("np-no").value).trim(),
@@ -3932,12 +3959,12 @@
       cost_price: numval("np-cost"),
       list_price: numval("np-list"),
       location: document.getElementById("np-loc").value,
-      center_stone: document.getElementById("np-stone").value.trim(),
-      center_carat: zen2han(document.getElementById("np-carat").value).trim(),
-      color: document.getElementById("np-color").value,
-      clarity: document.getElementById("np-clarity").value,
-      cut: document.getElementById("np-cut").value,
-      cert_no: zen2han(document.getElementById("np-cert").value).trim(),
+      center_stone: gem ? document.getElementById("np-stone").value.trim() : "",
+      center_carat: gem ? zen2han(document.getElementById("np-carat").value).trim() : "",
+      color: gem ? document.getElementById("np-color").value : "",
+      clarity: gem ? document.getElementById("np-clarity").value : "",
+      cut: gem ? document.getElementById("np-cut").value : "",
+      cert_no: gem ? zen2han(document.getElementById("np-cert").value).trim() : "",
       info: (side ? "脇石:" + side + " " : "") + (staff ? "仕入担当:" + staff : ""),
       registered_at: document.getElementById("np-date").value
     };
