@@ -91,6 +91,7 @@ def ensure_schema(con):
         ("products", "brand", "TEXT"),
         ("products", "metal", "TEXT"),
         ("sale_lines", "voided", "INTEGER DEFAULT 0"),
+        ("sale_lines", "voided_at", "TEXT"),
         ("sales_slips", "voided", "INTEGER DEFAULT 0"),
         ("customers", "district", "TEXT"),
         ("customers", "exclude_stats", "INTEGER DEFAULT 0"),
@@ -426,6 +427,17 @@ def customer_detail(con, cid):
               AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0
         ORDER BY s.sold_at DESC""", (cid,))]
 
+    # 取消(返品)済みの明細。監査ログとして「取消済みも表示」トグルON時のみ画面に出す。
+    # 形状は sales と同じ並び＋末尾に取消日(voided_at)。
+    sales_voided = [list(r) for r in cur.execute("""
+        SELECT s.sold_at, COALESCE(l.free_name, p.name) AS disp_name,
+               l.info, l.amount, s.pay_method, s.staff_name, p.product_no, l.line_id, s.slip_id,
+               l.voided_at
+        FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
+        LEFT JOIN products p ON l.product_key = p.product_key
+        WHERE s.customer_id = ? AND (COALESCE(l.voided,0)=1 OR COALESCE(s.voided,0)=1)
+        ORDER BY s.sold_at DESC""", (cid,))]
+
     point_tx = [list(r) for r in cur.execute("""
         SELECT occurred_at, tx_type, add_points, use_points, balance
         FROM point_transactions WHERE customer_id = ? ORDER BY occurred_at DESC""", (cid,))]
@@ -452,7 +464,7 @@ def customer_detail(con, cid):
         if is_glass and r["line_id"] not in linked:
             rx_candidates.append([r["line_id"], r["sold_at"], nm, r["amount"], glass_kind(r["cat"], nm)])
 
-    return {"sales": sales, "rx": rx, "rxCandidates": rx_candidates,
+    return {"sales": sales, "salesVoided": sales_voided, "rx": rx, "rxCandidates": rx_candidates,
             "pointTx": point_tx, "approach": approach}
 
 
@@ -1578,7 +1590,8 @@ def void_sale_line(con, line_id):
     if row[0]:
         return {"line_id": line_id, "already": True}
     _restock_line(con, line_id)
-    con.execute("UPDATE sale_lines SET voided=1 WHERE line_id=?", (line_id,))
+    today = datetime.date.today().isoformat()
+    con.execute("UPDATE sale_lines SET voided=1, voided_at=? WHERE line_id=?", (today, line_id))
     con.commit()
     return {"line_id": line_id, "voided": True}
 
@@ -1592,7 +1605,8 @@ def void_sale_slip(con, slip_id):
         raise ValueError("対象の伝票が見つかりません")
     for lr in con.execute("SELECT line_id FROM sale_lines WHERE slip_id=? AND COALESCE(voided,0)=0", (slip_id,)):
         _restock_line(con, lr[0])
-    con.execute("UPDATE sale_lines SET voided=1 WHERE slip_id=?", (slip_id,))
+    today = datetime.date.today().isoformat()
+    con.execute("UPDATE sale_lines SET voided=1, voided_at=? WHERE slip_id=?", (today, slip_id))
     con.execute("UPDATE sales_slips SET voided=1 WHERE slip_id=?", (slip_id,))
     con.commit()
     return {"slip_id": slip_id, "voided": True}

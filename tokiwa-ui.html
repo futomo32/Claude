@@ -2246,6 +2246,7 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         D.sales[id] = d.sales || []; D.rx[id] = d.rx || [];
+        (D.salesVoided = D.salesVoided || {})[id] = d.salesVoided || [];  // 取消済み明細(監査ログ)
         D.rxCandidates[id] = d.rxCandidates || []; D.pointTx[id] = d.pointTx || [];
         D.approach[id] = d.approach || [];
         _loadedDetail[id] = true; cb();
@@ -2260,6 +2261,7 @@
   if (!D.repairs) D.repairs = [];
   if (!D.tenders) D.tenders = [];
   if (!D.rxCandidates) D.rxCandidates = {};
+  if (!D.salesVoided) D.salesVoided = {};
   // customers: [id, 名前, カナ, TEL, 担当, 住所, 生年月日, 性別, 累計, 2026年度, 結婚記念日]
   // sales[id]: [日付, 商品名, 商品情報, 金額, 支払, 担当]
   // products: [番号, 名称, 分類, 上代, 状態, 保管場所, 中石]
@@ -2886,6 +2888,11 @@
       applyLocal();
     }
   }
+  var histShowVoided = false;  // 購入履歴で取消済みも表示するか(監査ログ。既定OFF)
+  function toggleHistVoided(id) {
+    histShowVoided = !histShowVoided;
+    var c = findCust(id); if (c) renderHistory(c);
+  }
   function renderHistory(c) {
     var id = String(c[0]);
     var sales = D.sales[id] || [];
@@ -2894,8 +2901,12 @@
       '<div class="tile"><div class="t-label">累計購入額</div><div class="t-value num">¥' + num(c[8]) + '</div></div>' +
       '<div class="tile"><div class="t-label">購入明細数</div><div class="t-value num">' + sales.length.toLocaleString() + '<small>件</small></div></div>' +
       '<div class="tile"><div class="t-label">' + esc(CUR_YEAR_LABEL) + '</div><div class="t-value num">¥' + num(c[9]) + '</div></div></div>';
-    if (sales.length) {
-      html += '<p style="margin:0 0 0.4rem;color:var(--muted);font-size:0.8em">※商品名をダブルクリックすると、その商品の情報・写真を表示します(在庫商品のみ)。返品・訂正は右の「取消」から(取消済みは一覧に表示されません)。</p>' +
+    var voided = (D.salesVoided && D.salesVoided[id]) || [];
+    if (sales.length || voided.length) {
+      var toggle = voided.length
+        ? '<label style="float:right;font-size:0.82em;color:var(--muted);font-weight:400;cursor:pointer"><input type="checkbox" id="hist-show-voided" ' + (histShowVoided ? "checked" : "") + ' onchange="toggleHistVoided(\'' + esc(id) + '\')"> 取消済みも表示(' + voided.length + '件)</label>'
+        : '';
+      html += '<p style="margin:0 0 0.4rem;color:var(--muted);font-size:0.8em">※商品名をダブルクリックすると、その商品の情報・写真を表示します(在庫商品のみ)。返品・訂正は右の「取消」から。' + toggle + '</p>' +
         '<div class="table-scroll"><table class="data"><thead><tr><th>買上日</th><th>商品名</th><th>商品情報</th><th class="r">購入金額</th><th>支払</th><th>担当</th><th></th></tr></thead><tbody>' +
         sales.map(function (s) {
           var nm = String(s[1] == null ? "" : s[1]);
@@ -2908,7 +2919,14 @@
             ? '<button class="btn" style="color:var(--danger);padding:0.2em 0.6em" onclick="voidSaleLine(' + s[7] + ',' + (parseInt(s[3], 10) || 0) + ',\'' + esc(id) + '\')">取消</button>'
             : '';
           return '<tr><td class="num">' + esc(s[0]) + '</td><td' + attr + '>' + nameCell + '</td><td>' + esc(dash(s[2])) + '</td><td class="r num">' + amount + '</td><td>' + esc(dash(s[4])) + '</td><td>' + esc(shortName(s[5])) + '</td><td>' + voidCell + '</td></tr>';
-        }).join("") + '</tbody></table></div>';
+        }).join("") +
+        // 取消済み明細(監査ログ)。トグルON時のみ、グレー＋打ち消し線＋取消バッジで表示
+        (histShowVoided ? voided.map(function (s) {
+          return '<tr style="color:var(--muted);text-decoration:line-through;background:#fafafa"><td class="num">' + esc(s[0]) +
+            '</td><td>' + esc(dash(s[1])) + ' <span class="chip chip-danger" style="text-decoration:none">取消' + (s[9] ? " " + esc(s[9]) : "") + '</span></td><td>' + esc(dash(s[2])) +
+            '</td><td class="r num">¥' + num(s[3]) + '</td><td>' + esc(dash(s[4])) + '</td><td>' + esc(shortName(s[5])) + '</td><td></td></tr>';
+        }).join("") : "") +
+        '</tbody></table></div>';
     } else {
       html += '<p style="margin:0;color:var(--muted);font-size:0.9em">購入履歴はありません。</p>';
     }
