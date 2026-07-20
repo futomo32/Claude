@@ -19,6 +19,9 @@ import sys
 
 csv.field_size_limit(10 * 1024 * 1024)
 
+# メガネ商品の判定パターン(全角・半角そろえて網羅)。分類名・商品名の両方に使う。
+GLASS_PAT = re.compile(r"メガネ|眼鏡|レンズ|フレーム|ﾒｶﾞﾈ|ﾒｶﾞﾈ|ﾚﾝｽﾞ|ﾌﾚｰﾑ|ｶﾞﾝｷｮｳ")
+
 BASE = os.path.join(os.path.dirname(__file__), "..")
 SCHEMA = os.path.join(BASE, "db", "schema.sql")
 DB = os.path.join(BASE, "db", "tokiwa.db")
@@ -265,8 +268,9 @@ def main():
         cat = m_dbun.get(s(r.get("strdbuncode")))
         name = s(r.get("strsyname")) or ""
         prod_names[pk] = name
-        is_glass = 1 if (cat and re.search(r"メガネ|眼鏡|レンズ|フレーム", cat)) or \
-                        re.search(r"メガネ|眼鏡|ﾒｶﾞﾈ|ﾚﾝｽﾞ|ﾌﾚｰﾑ", name) else 0
+        # メガネ商品の判定は分類名・商品名の両方を、全角/半角そろえた同一パターンで拾う。
+        # (全角「レンズ」等が半角パターンから漏れて宝飾誤登録に化ける不具合を防ぐ)
+        is_glass = 1 if re.search(GLASS_PAT, (cat or "") + " " + name) else 0
         prod_is_glass[pk] = is_glass
         buf.append((
             pk, s(r.get("strsyno")), name, s(r.get("strsyinfo")), cat,

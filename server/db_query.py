@@ -4,9 +4,21 @@ UIの描画コードを変えずに済むよう、埋め込み版と同じ配列
 """
 import json, re, sqlite3, datetime
 
-GLASS_PAT = re.compile(r"メガネ|眼鏡|レンズ|フレーム|ﾒｶﾞﾈ|ﾚﾝｽﾞ")
+GLASS_PAT = re.compile(r"メガネ|眼鏡|レンズ|フレーム|ﾒｶﾞﾈ|ﾚﾝｽﾞ|ﾌﾚｰﾑ")
 FRAME_PAT = re.compile(r"フレーム|ﾌﾚｰﾑ|frame", re.I)
 LENS_PAT = re.compile(r"レンズ|ﾚﾝｽﾞ|lens|非球面|累進", re.I)
+
+
+def _rx_misassign(stored_flag, lens_name, frame_name):
+    """処方箋の宝飾誤登録フラグを表示用に補正する(②即効の補正)。
+    レンズ名/フレーム名に「メガネ・眼鏡・レンズ・フレーム」を含むものは正当なメガネ品なので
+    誤登録扱いにしない(取込時の判定漏れ=全角レンズ等による誤検知を、再取込前でも消す)。"""
+    if not stored_flag:
+        return False
+    for nm in (lens_name, frame_name):
+        if nm and GLASS_PAT.search(str(nm)):
+            return False
+    return True
 
 # 旧・宝飾ナビ由来のゴミ担当名(担当者フィールドにランク/DM/ライオンズ等を無理やり
 # 詰め込んだ複合タグ)を判定する。例:「Aランク：三輪」「Ｌ○○」「ライオンズ」。
@@ -377,7 +389,8 @@ def _rx_row(r):
         "id": r["id"], "rx_no": r["rx_no"], "purpose": r["purpose"],
         "lens_name": r["lens_name"], "frame_name": r["frame_name"],
         "lens_price": r["lens_price"], "frame_price": r["frame_price"], "total": r["total_sell"],
-        "misassign": bool(r["jewelry_misassign"]), "sale_line_id": r["sale_line_id"],
+        "misassign": _rx_misassign(r["jewelry_misassign"], r["lens_name"], r["frame_name"]),
+        "sale_line_id": r["sale_line_id"],
         "sph_r": r["sph_r"], "sph_l": r["sph_l"], "cyl_r": r["cyl_r"], "cyl_l": r["cyl_l"],
         "ax_r": r["ax_r"], "ax_l": r["ax_l"], "pri_r": r["pri_r"], "pri_l": r["pri_l"],
         "base_r": r["base_r"], "base_l": r["base_l"],
@@ -668,10 +681,13 @@ def prescription_search(con, frm="", to="", purpose="", misassign_only=False):
                rx.lens_name, rx.frame_name, rx.total_sell, rx.handler, rx.jewelry_misassign mis
         FROM prescriptions rx LEFT JOIN customers c ON c.customer_id = rx.customer_id
         WHERE """ + " AND ".join(where) + " ORDER BY rx.rx_date DESC, rx.id DESC LIMIT 500", args):
+        mis = _rx_misassign(r["mis"], r["lens_name"], r["frame_name"])
+        if misassign_only and not mis:
+            continue  # 名称がメガネ品(誤検知)の行は「誤登録のみ」から除外
         out.append({"id": r["id"], "customer_id": r["cid"], "customer": r["cname"] or r["cid"],
                     "rx_no": r["rx_no"], "rx_date": r["rx_date"], "purpose": r["purpose"],
                     "lens_name": r["lens_name"], "frame_name": r["frame_name"],
-                    "total": r["total_sell"], "handler": r["handler"], "misassign": bool(r["mis"])})
+                    "total": r["total_sell"], "handler": r["handler"], "misassign": mis})
     return out
 
 
