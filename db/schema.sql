@@ -82,6 +82,7 @@ CREATE TABLE products (
   name          TEXT,
   info          TEXT,
   category      TEXT,               -- 大分類名
+  brand         TEXT,               -- ブランド
   supplier      TEXT,
   cost_price    INTEGER,            -- 仕入単価
   list_price    INTEGER,            -- 上代価格

@@ -837,7 +837,7 @@
         <div class="search-row">
           <div class="field"><label>顧客名・カナ</label><input id="q-name" placeholder="ヤマダ(カタカナ・あいまい可)"></div>
           <div class="field"><label>電話番号</label><input id="q-tel" inputmode="tel" placeholder="一部でも可"></div>
-          <div class="field"><label>担当者</label><div style="display:flex;gap:0.3em"><select id="q-staff"><option value="">すべて</option></select><input type="number" id="q-staff-code" class="num" placeholder="番号" style="width:4.5em;flex:none" title="担当者番号で選択"></div></div>
+          <div class="field"><label>担当者</label><div style="display:flex;gap:0.3em"><input type="number" id="q-staff-code" class="num" placeholder="番号" style="width:4.5em;flex:none" title="担当者番号で選択"><select id="q-staff"><option value="">すべて</option></select></div></div>
           <div class="field"><label>ランク</label><select id="q-cust-rank"><option value="">すべて</option></select></div>
           <div class="field"><label>最終購入(DM抽出用)</label><select id="q-cust-lastbuy">
             <option value="">すべて</option>
@@ -934,7 +934,6 @@
                 <th class="r sortable" onclick="sortProducts('list')">上代<span class="ar" data-ar="list"></span></th>
                 <th class="r sortable" onclick="sortProducts('cost')">下代<span class="ar" data-ar="cost"></span></th>
                 <th class="sortable" onclick="sortProducts('supplier')">仕入先<span class="ar" data-ar="supplier"></span></th>
-                <th class="sortable" onclick="sortProducts('loc')">保管場所<span class="ar" data-ar="loc"></span></th>
                 <th class="sortable" onclick="sortProducts('state')">状態<span class="ar" data-ar="state"></span></th>
               </tr></thead>
               <tbody id="stock-tbody"></tbody>
@@ -949,12 +948,13 @@
           <h3>仕入商品登録</h3>
           <div class="kv">
             <div class="field"><label>商品番号(空欄で自動)</label><input class="num" id="np-no" placeholder="自動採番"></div>
-            <div class="field"><label>仕入先</label><input id="np-supplier" list="supplier-datalist" placeholder="仕入先マスタから選択 or 新規入力"></div>
-            <datalist id="supplier-datalist"></datalist>
+            <div class="field"><label>仕入先</label><select id="np-supplier"><option value="">選択…</option></select></div>
             <div class="field"><label>伝票日付</label><input type="date" id="np-date"></div>
-            <div class="field"><label>仕入担当</label><div style="display:flex;gap:0.3em"><select id="np-staff"><option>田中 一槻</option><option>三輪 祐加</option></select><input type="number" id="np-staff-code" class="num" placeholder="番号" style="width:4.5em;flex:none" title="担当者番号で選択"></div></div>
+            <div class="field"><label>仕入担当</label><div style="display:flex;gap:0.3em"><input type="number" id="np-staff-code" class="num" placeholder="番号" style="width:4.5em;flex:none" title="担当者番号で選択"><select id="np-staff"><option>田中 一槻</option><option>三輪 祐加</option></select></div></div>
             <div class="field"><label>商品名 <span style="color:var(--danger)">必須</span></label><input id="np-name" placeholder="例: Pt900 サファイアリング"></div>
             <div class="field"><label>商品分類</label><select id="np-cat"><option>リング</option><option>ネックレス</option><option>ピアス</option><option>ブレスレット</option><option>時計</option><option>メガネフレーム</option><option>メガネレンズ</option><option>その他</option></select></div>
+            <div class="field"><label>ブランド</label><input id="np-brand" list="brand-datalist" placeholder="例: カルティエ"></div>
+            <datalist id="brand-datalist"></datalist>
           </div>
           <div class="section-title">宝飾情報</div>
           <div class="kv">
@@ -966,12 +966,12 @@
             <div class="field"><label>カット</label><select id="np-cut"><option value="">—</option><option>3EX</option><option>EX</option><option>VG</option><option>G</option></select></div>
             <div class="field"><label>鑑定書No</label><input class="num" id="np-cert"></div>
           </div>
-          <div class="section-title">価格・保管</div>
+          <div class="section-title">価格・店舗</div>
           <div class="kv">
             <div class="field"><label>仕入単価</label><input class="num" id="np-cost" inputmode="numeric" placeholder="0"></div>
             <div class="field"><label>上代(定価)</label><input class="num" id="np-list" inputmode="numeric" placeholder="0"></div>
             <div class="field"><label>掛率</label><input class="num" id="np-rate" placeholder="自動計算" readonly></div>
-            <div class="field"><label>保管場所</label><select id="np-loc"><option>金庫</option><option>ショーケースA</option><option>バックヤード</option></select></div>
+            <div class="field"><label>店舗</label><select id="np-loc"><option>本店</option></select></div>
           </div>
           <div class="field" style="margin-top:0.6rem"><label>商品写真(任意)</label>
             <div style="display:flex;align-items:center;gap:0.6em;flex-wrap:wrap">
@@ -1092,7 +1092,7 @@
             <div class="field"><label>期間(自)</label><input type="date" id="rep-from"></div>
             <div class="field"><label>期間(至)</label><input type="date" id="rep-to"></div>
             <div class="field"><label>店舗</label><select><option>01 本店</option><option>全店別</option></select></div>
-            <div class="field"><label>担当者</label><div style="display:flex;gap:0.3em"><select id="rep-staff"><option value="">全担当</option></select><input type="number" id="rep-staff-code" class="num" placeholder="番号" style="width:4.5em;flex:none" title="担当者番号で選択"></div></div>
+            <div class="field"><label>担当者</label><div style="display:flex;gap:0.3em"><input type="number" id="rep-staff-code" class="num" placeholder="番号" style="width:4.5em;flex:none" title="担当者番号で選択"><select id="rep-staff"><option value="">全担当</option></select></div></div>
             <div class="field"><label>仕入先</label><select><option>全仕入先</option><option>甲府宝飾(株)</option></select></div>
             <div class="field"><label>印刷順序</label><select><option>伝票順</option><option>担当者・伝票順</option></select></div>
           </div>
@@ -1151,7 +1151,7 @@
         <div class="field"><label>フリガナ</label><input id="cm-kana" placeholder="ヤマダ ハナコ(全角カナ)"></div>
         <div class="field"><label>電話<span class="req">必須</span></label><input id="cm-tel" class="han-num" inputmode="tel" placeholder="090-1234-5678"></div>
         <div class="field"><label>携帯電話</label><input id="cm-tel2" class="han-num" inputmode="tel" placeholder="090-1234-5678"></div>
-        <div class="field"><label>担当者<span class="req">必須</span></label><div style="display:flex;gap:0.3em"><select id="cm-staff"><option value="">選択…</option></select><input type="number" id="cm-staff-code" class="num" placeholder="番号" style="width:4.5em;flex:none" title="担当者番号で選択"></div></div>
+        <div class="field"><label>担当者<span class="req">必須</span></label><div style="display:flex;gap:0.3em"><input type="number" id="cm-staff-code" class="num" placeholder="番号" style="width:4.5em;flex:none" title="担当者番号で選択"><select id="cm-staff"><option value="">選択…</option></select></div></div>
         <div class="field"><label>性別</label><select id="cm-gender"><option value="">—</option><option>女</option><option>男</option></select></div>
         <div class="field"><label>Eメール</label><input id="cm-email" inputmode="email"></div>
       </div>
@@ -1258,10 +1258,11 @@
           <div class="field"><label>商品番号</label><input id="pe-no"></div>
           <div class="field"><label>商品名 <span style="color:var(--danger)">必須</span></label><input id="pe-name"></div>
           <div class="field"><label>商品分類</label><select id="pe-cat"><option value="">—</option><option>リング</option><option>ネックレス</option><option>ピアス</option><option>ブレスレット</option><option>時計</option><option>メガネフレーム</option><option>メガネレンズ</option><option>その他</option></select></div>
-          <div class="field"><label>仕入先</label><input id="pe-supplier" list="supplier-datalist"></div>
+          <div class="field"><label>ブランド</label><input id="pe-brand" list="brand-datalist"></div>
+          <div class="field"><label>仕入先</label><select id="pe-supplier"><option value="">選択…</option></select></div>
           <div class="field"><label>仕入単価(下代)</label><input class="num" id="pe-cost" inputmode="numeric"></div>
           <div class="field"><label>上代(定価)</label><input class="num" id="pe-list" inputmode="numeric"></div>
-          <div class="field"><label>保管場所</label><select id="pe-loc"><option value="">—</option><option>金庫</option><option>ショーケースA</option><option>バックヤード</option></select></div>
+          <div class="field"><label>店舗</label><select id="pe-loc"><option value="">—</option><option>本店</option></select></div>
           <div class="field"><label>中石(石種)</label><input id="pe-stone"></div>
           <div class="field"><label>中石重量(ct)</label><input class="num" id="pe-carat" inputmode="decimal"></div>
           <div class="field"><label>カラー</label><select id="pe-color"><option value="">—</option><option>D</option><option>E</option><option>F</option><option>G</option><option>H</option></select></div>
@@ -1347,7 +1348,12 @@
       <p style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">各仕入先に商品ジャンルを設定すると、在庫一覧の「仕入先ジャンル」で絞り込めます。変更はその場で保存されます。</p>
       <div class="table-scroll" style="max-height:55vh;overflow-y:auto">
         <table class="data">
-          <thead><tr><th>仕入先</th><th class="r">商品数</th><th>ジャンル</th></tr></thead>
+          <thead><tr>
+            <th class="sortable" onclick="sortSupplierMaster('name')">仕入先<span class="ar" data-sar="name"></span></th>
+            <th class="r sortable" onclick="sortSupplierMaster('count')">商品数<span class="ar" data-sar="count"></span></th>
+            <th class="r sortable" onclick="sortSupplierMaster('stock')">在庫数<span class="ar" data-sar="stock"></span></th>
+            <th>ジャンル</th>
+          </tr></thead>
           <tbody id="sm-tbody"></tbody>
         </table>
       </div>
@@ -1502,7 +1508,7 @@
       <div class="kv">
         <div class="field"><label>用途</label><select id="rx-purpose"><option>遠近両用</option><option>中近(室内用)</option><option>遠用</option><option>近用</option></select></div>
         <div class="field"><label>処方日</label><input id="rx-date" class="han-num" placeholder="2026-07-11"></div>
-        <div class="field"><label>対応者</label><div style="display:flex;gap:0.3em"><select id="rx-handler"></select><input type="number" id="rx-handler-code" class="num" placeholder="番号" style="width:4.5em;flex:none" title="担当者番号で選択"></div></div>
+        <div class="field"><label>対応者</label><div style="display:flex;gap:0.3em"><input type="number" id="rx-handler-code" class="num" placeholder="番号" style="width:4.5em;flex:none" title="担当者番号で選択"><select id="rx-handler"></select></div></div>
       </div>
 
       <div class="section-title">購入データと紐付け(任意)</div>
@@ -1612,7 +1618,7 @@
         <div class="field"><label>概算金額</label><input id="rep-estimate" class="num han-num" inputmode="numeric" value="0"></div>
         <div class="field"><label>預かり日</label><input type="date" id="rep-received"></div>
         <div class="field"><label>引渡予定日</label><input type="date" id="rep-promised"></div>
-        <div class="field"><label>担当者</label><div style="display:flex;gap:0.3em"><select id="rep-staff-handler"></select><input type="number" id="rep-staff-handler-code" class="num" placeholder="番号" style="width:4.5em;flex:none" title="担当者番号で選択"></div></div>
+        <div class="field"><label>担当者</label><div style="display:flex;gap:0.3em"><input type="number" id="rep-staff-handler-code" class="num" placeholder="番号" style="width:4.5em;flex:none" title="担当者番号で選択"><select id="rep-staff-handler"></select></div></div>
       </div>
       <div class="field"><label>備考</label><input id="rep-note"></div>
       <p id="repair-error" style="color:var(--danger);font-size:0.85em;margin:0.8rem 0 0;display:none"></p>
@@ -2849,8 +2855,8 @@
     document.getElementById("stock-tbody").innerHTML = prodRows.map(function (p, i) {
       var url = prodImgUrl(p[8]);
       var thumb = url ? '<img class="prod-thumb" loading="lazy" src="' + esc(url) + '" onerror="imgFallback(this)">' : '<span class="prod-nothumb">なし</span>';
-      return '<tr style="cursor:pointer" onclick="openProductDetail(' + i + ')"><td>' + thumb + '</td><td class="num">' + esc(dash(p[0])) + '</td><td>' + esc(dash(p[1])) + '</td><td>' + esc(dash(p[2])) + '</td><td class="num">' + esc(dash(p[6])) + '</td><td class="r num">' + (p[3] ? "¥" + num(p[3]) : "—") + '</td><td class="r num">' + (p[9] ? "¥" + num(p[9]) : "—") + '</td><td>' + esc(dash(p[10])) + '</td><td>' + esc(dash(p[5])) + '</td><td><span class="chip ' + (stateChip[p[4]] || "chip-plain") + '">' + esc(dash(p[4])) + '</span></td></tr>';
-    }).join("") || '<tr><td colspan="10" style="color:var(--muted)">該当する商品が見つかりません</td></tr>';
+      return '<tr style="cursor:pointer" onclick="openProductDetail(' + i + ')"><td>' + thumb + '</td><td class="num">' + esc(dash(p[0])) + '</td><td>' + esc(dash(p[1])) + '</td><td>' + esc(dash(p[2])) + '</td><td class="num">' + esc(dash(p[6])) + '</td><td class="r num">' + (p[3] ? "¥" + num(p[3]) : "—") + '</td><td class="r num">' + (p[9] ? "¥" + num(p[9]) : "—") + '</td><td>' + esc(dash(p[10])) + '</td><td><span class="chip ' + (stateChip[p[4]] || "chip-plain") + '">' + esc(dash(p[4])) + '</span></td></tr>';
+    }).join("") || '<tr><td colspan="9" style="color:var(--muted)">該当する商品が見つかりません</td></tr>';
     document.getElementById("prod-count").textContent =
       "該当 " + prodTotal.toLocaleString() + "件(表示 " + prodRows.length.toLocaleString() + "件)";
     document.getElementById("prod-more").style.display = prodRows.length < prodTotal ? "" : "none";
@@ -2886,7 +2892,8 @@
         '<div id="pd-noimg" class="pd-nophoto" style="display:none">写真ファイルが見つかりません</div>'
       : '<div class="pd-nophoto">写真は登録されていません</div>';
     var rows = [["商品番号", dash(p[0])], ["商品名", dash(p[1])], ["分類", dash(p[2])],
-      ["中石", dash(p[6])], ["下代", p[9] ? "¥" + num(p[9]) : "—"], ["上代", p[3] ? "¥" + num(p[3]) : "—"],
+      ["ブランド", dash(p[11])], ["中石", dash(p[6])],
+      ["下代", p[9] ? "¥" + num(p[9]) : "—"], ["上代", p[3] ? "¥" + num(p[3]) : "—"],
       ["仕入先", dash(p[10])], ["状態", dash(p[4])]];
     document.getElementById("pd-info").innerHTML = rows.map(function (r) {
       return '<div class="kv-row"><span class="k">' + esc(r[0]) + '</span><span class="v">' + esc(r[1]) + '</span></div>';
@@ -2926,7 +2933,8 @@
       document.getElementById("pe-no").value = pr.product_no || "";
       document.getElementById("pe-name").value = pr.name || "";
       _setSelectPreserving("pe-cat", pr.category);
-      document.getElementById("pe-supplier").value = pr.supplier || "";
+      document.getElementById("pe-brand").value = pr.brand || "";
+      _setSelectPreserving("pe-supplier", pr.supplier);
       document.getElementById("pe-cost").value = pr.cost_price || "";
       document.getElementById("pe-list").value = pr.list_price || "";
       _setSelectPreserving("pe-loc", pr.location);
@@ -2962,6 +2970,7 @@
       product_no: zen2han(document.getElementById("pe-no").value).trim(),
       name: name,
       category: document.getElementById("pe-cat").value.trim(),
+      brand: document.getElementById("pe-brand").value.trim(),
       supplier: document.getElementById("pe-supplier").value.trim(),
       cost_price: numval("pe-cost"),
       list_price: numval("pe-list"),
@@ -2985,7 +2994,7 @@
       if (stone && pr.center_carat) stone += " " + pr.center_carat + "ct";
       pdProduct[0] = pr.product_no; pdProduct[1] = pr.name; pdProduct[2] = pr.category;
       pdProduct[3] = pr.list_price; pdProduct[5] = pr.location; pdProduct[6] = stone || null;
-      pdProduct[9] = pr.cost_price; pdProduct[10] = pr.supplier;
+      pdProduct[9] = pr.cost_price; pdProduct[10] = pr.supplier; pdProduct[11] = pr.brand;
       openProductDetailRow(pdProduct);  // 表示を最新化(閲覧モードに戻る)
       paintProducts();
       showToast("修正しました。");
@@ -3155,7 +3164,8 @@
     if (!posOperator) { try { posOperator = localStorage.getItem("tokiwa_pos_operator") || null; } catch (e) {} }
     if (posOperator && names.indexOf(posOperator) < 0) posOperator = null;  // 停止/削除された人は解除
     var btns = names.map(function (n, i) {
-      return '<button type="button" class="op-btn' + (n === posOperator ? " sel" : "") + '" onclick="selectPosOperator(' + i + ')">' + esc(shortName(n)) + '</button>';
+      // 苗字が同じ担当者を区別できるよう、レジ表示はフルネーム(姓名)で出す
+      return '<button type="button" class="op-btn' + (n === posOperator ? " sel" : "") + '" onclick="selectPosOperator(' + i + ')">' + esc(n) + '</button>';
     }).join("");
     bar.innerHTML = btns + '<button type="button" class="op-btn op-add" onclick="openStaffMaster()" title="担当者マスタで追加・編集">＋担当者</button>';
   }
@@ -3288,32 +3298,68 @@
   function closeSupplierMaster() { document.getElementById("supplier-master-modal").classList.remove("show"); }
   function loadSupplierMaster() {
     var tb = document.getElementById("sm-tbody");
-    if (!API) { tb.innerHTML = '<tr><td colspan="3" style="color:var(--muted)">仕入先マスタはサーバー起動時に利用できます。</td></tr>'; return; }
-    tb.innerHTML = '<tr><td colspan="3" style="color:var(--muted)">読み込み中…</td></tr>';
+    if (!API) { tb.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">仕入先マスタはサーバー起動時に利用できます。</td></tr>'; return; }
+    tb.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">読み込み中…</td></tr>';
     fetch(API + "/supplier_master").then(function (r) { return r.json(); }).then(function (res) {
       smSuppliers = res.suppliers || [];
       renderSupplierMaster();
-    }).catch(function () { tb.innerHTML = '<tr><td colspan="3" style="color:var(--muted)">読み込みに失敗しました。</td></tr>'; });
+    }).catch(function () { tb.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">読み込みに失敗しました。</td></tr>'; });
   }
-  // 仕入登録・商品修正の「仕入先」入力欄(datalist)を仕入先マスタから埋める。
-  // 未登録の新しい仕入先名はそのまま自由入力可(次回同期で自動的にマスタへ取り込まれる)。
-  function populateSupplierDatalist() {
+  // 仕入登録・商品修正の「仕入先」プルダウンを仕入先マスタ(DB)から埋める。
+  // 手入力によるデータのばらつきを防ぐため、選択式(select)にしている。
+  // 選択中の値は保持し、既存データが候補に無い値でも消えないように一時追加する。
+  function populateSupplierSelects() {
     if (!API) return;
     fetch(API + "/supplier_master").then(function (r) { return r.json(); }).then(function (res) {
       var names = (res.suppliers || []).map(function (s) { return s.name; }).filter(Boolean).sort();
-      var dl = document.getElementById("supplier-datalist");
-      if (dl) dl.innerHTML = names.map(function (n) { return '<option value="' + esc(n) + '">'; }).join("");
+      ["np-supplier", "pe-supplier"].forEach(function (id) {
+        var sel = document.getElementById(id);
+        if (!sel) return;
+        var cur = sel.value;
+        sel.innerHTML = '<option value="">選択…</option>' +
+          names.map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join("");
+        if (cur) _setSelectPreserving(id, cur);
+      });
     }).catch(function () {});
+  }
+  // 登録・修正の「ブランド」入力候補(datalist)を、既存商品のブランド一覧から埋める。
+  // ブランドは専用マスタが未整備のため、当面は入力候補つきの自由入力にする。
+  function populateBrandDatalist() {
+    if (!API) return;
+    fetch(API + "/product_brands").then(function (r) { return r.json(); }).then(function (res) {
+      var brands = (res.brands || []).filter(Boolean);
+      var dl = document.getElementById("brand-datalist");
+      if (dl) dl.innerHTML = brands.map(function (n) { return '<option value="' + esc(n) + '">'; }).join("");
+    }).catch(function () {});
+  }
+  var smSort = "name", smOrder = "asc";
+  function sortSupplierMaster(key) {
+    if (smSort === key) { smOrder = (smOrder === "asc") ? "desc" : "asc"; }
+    else { smSort = key; smOrder = (key === "name") ? "asc" : "desc"; }  // 数値列は初回降順が自然
+    renderSupplierMaster();
   }
   function renderSupplierMaster() {
     var tb = document.getElementById("sm-tbody");
+    var dir = (smOrder === "desc") ? -1 : 1;
+    smSuppliers.sort(function (a, b) {
+      var va, vb;
+      if (smSort === "name") { va = a.name || ""; vb = b.name || ""; return va.localeCompare(vb, "ja") * dir; }
+      va = (smSort === "stock") ? (a.stock || 0) : (a.count || 0);
+      vb = (smSort === "stock") ? (b.stock || 0) : (b.count || 0);
+      return (va - vb) * dir;
+    });
     tb.innerHTML = smSuppliers.length ? smSuppliers.map(function (s, i) {
       var opts = '<option value="">未設定</option>' + SUPPLIER_GENRES.map(function (g) {
         return '<option value="' + esc(g) + '"' + (s.genre === g ? " selected" : "") + '>' + esc(g) + '</option>';
       }).join("");
       return '<tr><td>' + esc(dash(s.name)) + '</td><td class="r num">' + num(s.count || 0) + '</td>' +
+        '<td class="r num">' + num(s.stock || 0) + '</td>' +
         '<td><select onchange="setSupplierGenre(' + i + ',this.value)">' + opts + '</select></td></tr>';
-    }).join("") : '<tr><td colspan="3" style="color:var(--muted)">仕入先がありません。</td></tr>';
+    }).join("") : '<tr><td colspan="4" style="color:var(--muted)">仕入先がありません。</td></tr>';
+    // 並び替え矢印(▲▼)を表示
+    document.querySelectorAll('#supplier-master-modal [data-sar]').forEach(function (el) {
+      el.textContent = (el.getAttribute("data-sar") === smSort) ? (smOrder === "asc" ? " ▲" : " ▼") : "";
+    });
   }
   function setSupplierGenre(i, genre) {
     var s = smSuppliers[i];
@@ -3528,10 +3574,10 @@
     });
   })();
   function resetProductForm() {
-    ["np-no", "np-name", "np-stone", "np-carat", "np-side", "np-cert", "np-cost", "np-list", "np-rate"].forEach(function (id) {
+    ["np-no", "np-name", "np-brand", "np-stone", "np-carat", "np-side", "np-cert", "np-cost", "np-list", "np-rate"].forEach(function (id) {
       document.getElementById(id).value = "";
     });
-    ["np-supplier", "np-color", "np-clarity", "np-cut"].forEach(function (id) { document.getElementById(id).selectedIndex = 0; });
+    ["np-supplier", "np-color", "np-clarity", "np-cut", "np-loc"].forEach(function (id) { document.getElementById(id).selectedIndex = 0; });
     document.getElementById("np-date").value = new Date().toISOString().slice(0, 10);
     document.getElementById("np-error").style.display = "none";
     npPhotoData = null;
@@ -3563,6 +3609,7 @@
       product_no: zen2han(document.getElementById("np-no").value).trim(),
       name: name,
       category: document.getElementById("np-cat").value,
+      brand: document.getElementById("np-brand").value.trim(),
       supplier: document.getElementById("np-supplier").value,
       cost_price: numval("np-cost"),
       list_price: numval("np-list"),
@@ -3585,7 +3632,7 @@
       document.querySelector('[data-tabgroup="prod"] [data-tab="p-stock"]').click();
       document.getElementById("q-prod").value = row[0];
       renderProducts();
-      populateSupplierDatalist();  // 新しい仕入先名を入力していた場合、次回の入力候補に反映
+      populateBrandDatalist();  // 新しいブランド名を入力していた場合、次回の入力候補に反映
     };
     btn.disabled = true;
     if (window.TOKIWA_API) {
@@ -3932,7 +3979,8 @@
   /* ── 初期化 ── */
   (function initData() {
     populateStaffDropdowns();  // 担当者マスタ(D.staff)から各画面のプルダウンを埋める
-    populateSupplierDatalist();  // 仕入登録・商品修正の仕入先入力を仕入先マスタから埋める
+    populateSupplierSelects();  // 仕入登録・商品修正の仕入先プルダウンを仕入先マスタから埋める
+    populateBrandDatalist();  // 登録・修正のブランド入力候補を埋める
     // 担当者を番号でも選べるように(既存のプルダウンはそのまま。番号欄は各画面に1つずつ)
     [["q-staff-code", "q-staff"], ["rep-staff-code", "rep-staff"], ["cm-staff-code", "cm-staff"],
      ["rx-handler-code", "rx-handler"], ["rep-staff-handler-code", "rep-staff-handler"],

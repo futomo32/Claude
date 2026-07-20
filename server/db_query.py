@@ -61,6 +61,7 @@ def ensure_schema(con):
             return set()
     adds = [
         ("products", "image_file", "TEXT"),
+        ("products", "brand", "TEXT"),
         ("customers", "tel2", "TEXT"), ("customers", "note", "TEXT"),
         ("customers", "postal", "TEXT"), ("customers", "address2", "TEXT"),
         ("customers", "email", "TEXT"),
@@ -448,14 +449,14 @@ def search_products(con, q="", cat="", state="", supplier="", genre="", sort="no
     rows = []
     for r in con.execute(
             "SELECT product_no,name,category,list_price,cost_price,state,location,"
-            "center_stone,center_carat,supplier,product_key,image_file "
+            "center_stone,center_carat,supplier,product_key,image_file,brand "
             "FROM products" + wsql + order_sql + " LIMIT ? OFFSET ?", args + [limit, offset]):
         stone = r["center_stone"] or ""
         if stone and r["center_carat"]:
             stone += f' {r["center_carat"]}ct'
         rows.append([r["product_no"], r["name"], r["category"], r["list_price"],
                      r["state"], r["location"], stone or None, r["product_key"], r["image_file"],
-                     r["cost_price"], r["supplier"]])
+                     r["cost_price"], r["supplier"], r["brand"]])  # [11]=ブランド
     return {"rows": rows, "total": total}
 
 
@@ -483,15 +484,23 @@ def sync_supplier_master(con):
 
 
 def list_supplier_master(con):
-    """仕入先マスタ一覧(分類割り当て画面用)。名前・ジャンル・商品件数を返す。"""
+    """仕入先マスタ一覧(分類割り当て画面用)。名前・ジャンル・商品件数・在庫数を返す。
+    在庫数は state='在庫' の商品のみを数える(現在店頭にある枠)。並び替えはUI側で行う。"""
     sync_supplier_master(con)
     con.row_factory = sqlite3.Row
     rows = []
     for r in con.execute("""SELECT m.name, m.genre,
-                                   (SELECT COUNT(*) FROM products p WHERE p.supplier = m.name) cnt
+                                   (SELECT COUNT(*) FROM products p WHERE p.supplier = m.name) cnt,
+                                   (SELECT COUNT(*) FROM products p WHERE p.supplier = m.name AND p.state='在庫') stock
                             FROM supplier_master m ORDER BY m.name"""):
-        rows.append({"name": r["name"], "genre": r["genre"], "count": r["cnt"]})
+        rows.append({"name": r["name"], "genre": r["genre"], "count": r["cnt"], "stock": r["stock"]})
     return rows
+
+
+def product_brands(con):
+    """商品に登場するブランド名の一覧(登録・修正フォームの入力候補用)。"""
+    return [r[0] for r in con.execute(
+        "SELECT DISTINCT brand FROM products WHERE brand IS NOT NULL AND brand<>'' ORDER BY brand")]
 
 
 def set_supplier_genre(con, name, genre):
@@ -927,7 +936,7 @@ def add_family(con, p):
     return {"customer_id": cid, "ok": True}
 
 
-PRODUCT_FIELDS = ("product_no", "name", "category", "supplier", "cost_price",
+PRODUCT_FIELDS = ("product_no", "name", "category", "brand", "supplier", "cost_price",
                   "list_price", "location", "center_stone", "center_carat",
                   "color", "clarity", "cut", "cert_no", "info")
 
@@ -976,7 +985,7 @@ def get_product(con, product_key):
         raise ValueError("商品が指定されていません")
     con.row_factory = sqlite3.Row
     r = con.execute(
-        "SELECT product_key,product_no,name,category,supplier,cost_price,list_price,location,"
+        "SELECT product_key,product_no,name,category,brand,supplier,cost_price,list_price,location,"
         "center_stone,center_carat,color,clarity,cut,cert_no,info,state,image_file "
         "FROM products WHERE product_key=?", (pk,)).fetchone()
     if not r:

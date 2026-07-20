@@ -165,7 +165,7 @@ class Handler(BaseHTTPRequestHandler):
                 con.close()
                 return self._send(200, json.dumps(blob, ensure_ascii=False).encode("utf-8"))
             if path in ("/api/customer_detail", "/api/products", "/api/product_categories",
-                        "/api/product_suppliers", "/api/supplier_master", "/api/staff",
+                        "/api/product_suppliers", "/api/product_brands", "/api/supplier_master", "/api/staff",
                         "/api/staff_junk", "/api/masters", "/api/master", "/api/photo_pool",
                         "/api/product", "/api/daily_sales", "/api/slip_lines", "/api/documents"):
                 qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
@@ -187,6 +187,8 @@ class Handler(BaseHTTPRequestHandler):
                         result = {"categories": db_query.product_categories(con)}
                     elif path == "/api/product_suppliers":
                         result = {"suppliers": db_query.product_suppliers(con)}
+                    elif path == "/api/product_brands":
+                        result = {"brands": db_query.product_brands(con)}
                     elif path == "/api/supplier_master":
                         result = {"suppliers": db_query.list_supplier_master(con)}
                     elif path == "/api/staff":
