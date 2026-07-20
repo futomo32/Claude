@@ -72,6 +72,16 @@ def s(v):
     return t or None
 
 
+def pick(r, *keys):
+    """複数の候補列名から最初に値のある列を返す(宝飾ナビの列名ゆらぎ吸収用)。
+    例: 商品のブランドコード列名がstrbrcode/strbrandcodeのどちらか不明な場合に両方試す。"""
+    for k in keys:
+        v = s(r.get(k))
+        if v:
+            return v
+    return None
+
+
 def n(v):
     try:
         return int(float(str(v).replace(",", "")))
@@ -187,7 +197,8 @@ def main():
             s(r.get("strkojyu1")), s(r.get("strkojyu2")),
             SEX.get(s(r.get("strsexkbn")), s(r.get("strsexkbn"))),
             dt(r.get("datbirthday")), dt(r.get("datwedddate")),
-            s(r.get("strrank")), DM.get(s(r.get("strdmkbn")), s(r.get("strdmkbn"))),
+            s(r.get("strrank")), m_tiku.get(pick(r, "strtikucode", "strtiku", "strchikucode")),  # 地区(m_tiku)
+            DM.get(s(r.get("strdmkbn")), s(r.get("strdmkbn"))),
             s(r.get("strpcmail")) or s(r.get("strkeitaimail")),
             s(r.get("lngfinsize1")), PIERCE.get(s(r.get("strpiasukbn")), s(r.get("strpiasukbn"))),
             tan, m_tan.get(tan), s(r.get("strkanritenpo")) or s(r.get("strkotencode")),
@@ -195,8 +206,8 @@ def main():
         ))
     cur.executemany("""INSERT INTO customers
       (customer_id,name,kana,tel,tel2,postal,address,address2,gender,birthday,wedding_day,
-       rank,dm_ok,email,ring_size,pierce,staff_code,staff_name,store_code,registered_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", cust)
+       rank,district,dm_ok,email,ring_size,pierce,staff_code,staff_name,store_code,registered_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", cust)
     log["customers"] = len(cust)
 
     # 顧客メモ(d_user_memo: memo01〜10) ──
@@ -240,9 +251,9 @@ def main():
                     del_nos.add(v)
     skipped_del = 0
     ins_prod = """INSERT INTO products
-      (product_key,product_no,name,info,category,supplier,cost_price,list_price,state,
+      (product_key,product_no,name,info,category,brand,metal,supplier,cost_price,list_price,state,
        location,center_stone,center_carat,color,clarity,cut,cert_no,is_glasses,registered_at,image_file)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     for r in rows("d_item"):
         pk = pk_of(r)
         if not pk or pk in pseen:
@@ -259,6 +270,8 @@ def main():
         prod_is_glass[pk] = is_glass
         buf.append((
             pk, s(r.get("strsyno")), name, s(r.get("strsyinfo")), cat,
+            m_brand.get(pick(r, "strbrcode", "strbrandcode", "strbrand")),   # ブランド(m_brand)
+            m_jigane.get(pick(r, "strjicode", "strjiganecode", "strjigane")),  # 地金(m_jigane)
             m_sir.get(s(r.get("strsirsakicode"))), n(r.get("curorokin")), n(r.get("curkoukin")),
             STATE.get(s(r.get("strjotaikbn")), s(r.get("strjotaikbn"))), s(r.get("strhotencode")),
             m_ishi.get(s(r.get("striscode"))), s(r.get("curmainjuryo")),

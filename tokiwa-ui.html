@@ -956,6 +956,8 @@
             <div class="field"><label>商品分類</label><select id="np-cat"><option>リング</option><option>ネックレス</option><option>ピアス</option><option>ブレスレット</option><option>時計</option><option>メガネフレーム</option><option>メガネレンズ</option><option>その他</option></select></div>
             <div class="field"><label>ブランド</label><input id="np-brand" list="brand-datalist" placeholder="例: カルティエ"></div>
             <datalist id="brand-datalist"></datalist>
+            <div class="field"><label>地金</label><input id="np-metal" list="metal-datalist" placeholder="例: Pt900"></div>
+            <datalist id="metal-datalist"></datalist>
           </div>
           <div class="section-title">宝飾情報</div>
           <div class="kv">
@@ -1189,6 +1191,7 @@
         <div class="field" style="grid-column:span 2"><label>住所1(都道府県・市区町村・番地)</label><input id="cm-address"></div>
         <div class="field"><label>住所2(建物名・部屋番号)</label><input id="cm-address2" placeholder="コーポ〇〇 101号室"></div>
         <div class="field"><label>顧客ランク</label><select id="cm-rank"><option value="">—</option><option>S</option><option>A</option><option>B</option><option>C</option></select></div>
+        <div class="field"><label>地区</label><input id="cm-district" list="district-datalist" placeholder="例: 松本市"><datalist id="district-datalist"></datalist></div>
         <div class="field"><label>DM送付</label><select id="cm-dm"><option value="">—</option><option>可</option><option>不可</option></select></div>
         <div class="field"><label>リングサイズ</label><input id="cm-ring" placeholder="9号"></div>
         <div class="field"><label>ピアス穴</label><select id="cm-pierce"><option value="">—</option><option>あり</option><option>なし</option></select></div>
@@ -1260,6 +1263,7 @@
           <div class="field"><label>商品名 <span style="color:var(--danger)">必須</span></label><input id="pe-name"></div>
           <div class="field"><label>商品分類</label><select id="pe-cat"><option value="">—</option><option>リング</option><option>ネックレス</option><option>ピアス</option><option>ブレスレット</option><option>時計</option><option>メガネフレーム</option><option>メガネレンズ</option><option>その他</option></select></div>
           <div class="field"><label>ブランド</label><input id="pe-brand" list="brand-datalist"></div>
+          <div class="field"><label>地金</label><input id="pe-metal" list="metal-datalist"></div>
           <div class="field"><label>仕入先</label><select id="pe-supplier"><option value="">選択…</option></select></div>
           <div class="field"><label>仕入単価(下代)</label><input class="num" id="pe-cost" inputmode="numeric"></div>
           <div class="field"><label>上代(定価)</label><input class="num" id="pe-list" inputmode="numeric"></div>
@@ -2146,7 +2150,7 @@
     var m = String(s).match(/(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
     return m ? m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2) : "";
   }
-  var CM_FIELDS = ["cm-name", "cm-kana", "cm-gender", "cm-tel", "cm-tel2", "cm-email", "cm-postal", "cm-address", "cm-address2", "cm-rank", "cm-dm", "cm-staff", "cm-ring", "cm-pierce", "cm-note"];
+  var CM_FIELDS = ["cm-name", "cm-kana", "cm-gender", "cm-tel", "cm-tel2", "cm-email", "cm-postal", "cm-address", "cm-address2", "cm-rank", "cm-district", "cm-dm", "cm-staff", "cm-ring", "cm-pierce", "cm-note"];
   var custModalContext = null;   // 'pos' のときは保存後にレジへ戻して選択
   function openCustModalForPos() { custModalContext = "pos"; openCustModal(); }
   function openCustModal(id) {
@@ -2172,6 +2176,9 @@
         document.getElementById("cm-address").value = f[5] || "";
         document.getElementById("cm-address2").value = f[15] || "";
         document.getElementById("cm-staff").value = f[4] || "";
+        document.getElementById("cm-district").value = f[20] || "";
+        document.getElementById("cm-rank").value = f[18] || "";   // 既存ランクを保持(空欄で保存して消えるのを防止)
+        document.getElementById("cm-dm").value = f[19] || "";     // 既存DM区分を保持
       }
     }
     document.getElementById("cm-error").style.display = "none";
@@ -2227,7 +2234,7 @@
       customer_id: g("cm-id"), name: g("cm-name"), kana: kana, gender: g("cm-gender"),
       birthday: birth.iso, wedding_day: wed.iso, tel: tel, tel2: zen2han(g("cm-tel2")), email: g("cm-email"),
       postal: zen2han(g("cm-postal")), address: g("cm-address"), address2: g("cm-address2"),
-      rank: g("cm-rank"), dm_ok: g("cm-dm"), staff_name: g("cm-staff"),
+      rank: g("cm-rank"), district: g("cm-district"), dm_ok: g("cm-dm"), staff_name: g("cm-staff"),
       ring_size: g("cm-ring"), pierce: g("cm-pierce"), note: g("cm-note")
     };
     var btn = document.getElementById("cm-save");
@@ -2236,7 +2243,8 @@
       var row = [cid, payload.name, payload.kana, payload.tel, payload.staff_name, payload.address,
                  payload.birthday, payload.gender, 0, 0, payload.wedding_day,
                  0, payload.note || null, null, payload.postal, payload.address2,
-                 payload.tel2 || null, payload.email || null];
+                 payload.tel2 || null, payload.email || null,
+                 payload.rank || null, payload.dm_ok || null, payload.district || null];  // 18=ランク 19=DM 20=地区
       var idx = -1, i;
       for (i = 0; i < D.customers.length; i++) if (String(D.customers[i][0]) === String(cid)) { idx = i; break; }
       if (idx >= 0) { row[8] = D.customers[idx][8]; row[9] = D.customers[idx][9]; row[13] = D.customers[idx][13]; D.customers[idx] = row; }
@@ -2903,7 +2911,7 @@
         '<div id="pd-noimg" class="pd-nophoto" style="display:none">写真ファイルが見つかりません</div>'
       : '<div class="pd-nophoto">写真は登録されていません</div>';
     var rows = [["商品番号", dash(p[0])], ["商品名", dash(p[1])], ["分類", dash(p[2])],
-      ["ブランド", dash(p[11])], ["中石", dash(p[6])],
+      ["ブランド", dash(p[11])], ["地金", dash(p[12])], ["中石", dash(p[6])],
       ["下代", p[9] ? "¥" + num(p[9]) : "—"], ["上代", p[3] ? "¥" + num(p[3]) : "—"],
       ["仕入先", dash(p[10])], ["状態", dash(p[4])]];
     document.getElementById("pd-info").innerHTML = rows.map(function (r) {
@@ -2945,6 +2953,7 @@
       document.getElementById("pe-name").value = pr.name || "";
       _setSelectPreserving("pe-cat", pr.category);
       document.getElementById("pe-brand").value = pr.brand || "";
+      document.getElementById("pe-metal").value = pr.metal || "";
       _setSelectPreserving("pe-supplier", pr.supplier);
       document.getElementById("pe-cost").value = pr.cost_price || "";
       document.getElementById("pe-list").value = pr.list_price || "";
@@ -2982,6 +2991,7 @@
       name: name,
       category: document.getElementById("pe-cat").value.trim(),
       brand: document.getElementById("pe-brand").value.trim(),
+      metal: document.getElementById("pe-metal").value.trim(),
       supplier: document.getElementById("pe-supplier").value.trim(),
       cost_price: numval("pe-cost"),
       list_price: numval("pe-list"),
@@ -3005,7 +3015,7 @@
       if (stone && pr.center_carat) stone += " " + pr.center_carat + "ct";
       pdProduct[0] = pr.product_no; pdProduct[1] = pr.name; pdProduct[2] = pr.category;
       pdProduct[3] = pr.list_price; pdProduct[5] = pr.location; pdProduct[6] = stone || null;
-      pdProduct[9] = pr.cost_price; pdProduct[10] = pr.supplier; pdProduct[11] = pr.brand;
+      pdProduct[9] = pr.cost_price; pdProduct[10] = pr.supplier; pdProduct[11] = pr.brand; pdProduct[12] = pr.metal;
       openProductDetailRow(pdProduct);  // 表示を最新化(閲覧モードに戻る)
       paintProducts();
       showToast("修正しました。");
@@ -3343,6 +3353,24 @@
       if (dl) dl.innerHTML = brands.map(function (n) { return '<option value="' + esc(n) + '">'; }).join("");
     }).catch(function () {});
   }
+  // 登録・修正の「地金」入力候補(datalist)を、地金マスタ(seed＋実データ)から埋める
+  function populateMetalDatalist() {
+    if (!API) return;
+    fetch(API + "/master?type=metal").then(function (r) { return r.json(); }).then(function (res) {
+      var items = (res.items || []).map(function (i) { return i.name; }).filter(Boolean);
+      var dl = document.getElementById("metal-datalist");
+      if (dl) dl.innerHTML = items.map(function (n) { return '<option value="' + esc(n) + '">'; }).join("");
+    }).catch(function () {});
+  }
+  // 顧客編集の「地区」入力候補(datalist)を、地区マスタ(移行データ)から埋める
+  function populateDistrictDatalist() {
+    if (!API) return;
+    fetch(API + "/master?type=district").then(function (r) { return r.json(); }).then(function (res) {
+      var items = (res.items || []).map(function (i) { return i.name; }).filter(Boolean);
+      var dl = document.getElementById("district-datalist");
+      if (dl) dl.innerHTML = items.map(function (n) { return '<option value="' + esc(n) + '">'; }).join("");
+    }).catch(function () {});
+  }
   var smSort = "name", smOrder = "asc";
   function sortSupplierMaster(key) {
     if (smSort === key) { smOrder = (smOrder === "asc") ? "desc" : "asc"; }
@@ -3585,7 +3613,7 @@
     });
   })();
   function resetProductForm() {
-    ["np-no", "np-name", "np-brand", "np-stone", "np-carat", "np-side", "np-cert", "np-cost", "np-list", "np-rate"].forEach(function (id) {
+    ["np-no", "np-name", "np-brand", "np-metal", "np-stone", "np-carat", "np-side", "np-cert", "np-cost", "np-list", "np-rate"].forEach(function (id) {
       document.getElementById(id).value = "";
     });
     ["np-supplier", "np-color", "np-clarity", "np-cut", "np-loc"].forEach(function (id) { document.getElementById(id).selectedIndex = 0; });
@@ -3621,6 +3649,7 @@
       name: name,
       category: document.getElementById("np-cat").value,
       brand: document.getElementById("np-brand").value.trim(),
+      metal: document.getElementById("np-metal").value.trim(),
       supplier: document.getElementById("np-supplier").value,
       cost_price: numval("np-cost"),
       list_price: numval("np-list"),
@@ -3998,6 +4027,8 @@
     populateStaffDropdowns();  // 担当者マスタ(D.staff)から各画面のプルダウンを埋める
     populateSupplierSelects();  // 仕入登録・商品修正の仕入先プルダウンを仕入先マスタから埋める
     populateBrandDatalist();  // 登録・修正のブランド入力候補を埋める
+    populateMetalDatalist();  // 登録・修正の地金入力候補(地金マスタ)を埋める
+    populateDistrictDatalist();  // 顧客編集の地区入力候補(地区マスタ)を埋める
     // 担当者を番号でも選べるように(既存のプルダウンはそのまま。番号欄は各画面に1つずつ)
     [["q-staff-code", "q-staff"], ["rep-staff-code", "rep-staff"], ["cm-staff-code", "cm-staff"],
      ["rx-handler-code", "rx-handler"], ["rep-staff-handler-code", "rep-staff-handler"],

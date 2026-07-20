@@ -38,6 +38,7 @@ CREATE TABLE customers (
   birthday      TEXT,           -- YYYY-MM-DD
   wedding_day   TEXT,
   rank          TEXT,
+  district      TEXT,           -- 地区(m_tiku。DMの地区絞り込み用)
   dm_ok         TEXT,
   email         TEXT,
   ring_size     TEXT,
@@ -82,7 +83,8 @@ CREATE TABLE products (
   name          TEXT,
   info          TEXT,
   category      TEXT,               -- 大分類名
-  brand         TEXT,               -- ブランド
+  brand         TEXT,               -- ブランド(m_brand)
+  metal         TEXT,               -- 地金(m_jigane)
   supplier      TEXT,
   cost_price    INTEGER,            -- 仕入単価
   list_price    INTEGER,            -- 上代価格

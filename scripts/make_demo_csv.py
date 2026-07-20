@@ -45,14 +45,16 @@ def user(tc, kk, name, kana, tel, tan, sex="2", rank="A"):
     return {"strkotencode": tc, "lngkokey": kk, "strkoname": name, "strkokana": kana,
             "strkotel": tel, "strtel2": "", "strkopos": "471-0001", "strkojyu1": "豊田市○○町1-2",
             "strkojyu2": "△△マンション101", "strsexkbn": sex, "datbirthday": "1975/6/12",
-            "datwedddate": "2000/3/3", "strrank": rank, "strdmkbn": "1", "strpcmail": "a@example.com",
+            "datwedddate": "2000/3/3", "strrank": rank, "strtikucode": "T1", "strdmkbn": "1",
+            "strpcmail": "a@example.com",
             "strkeitaimail": "", "lngfinsize1": "9", "strpiasukbn": "1", "strtancode": tan,
             "strkanritenpo": tc, "dattoudate": "2010/1/5"}
 
 
 UCOLS = ["strkotencode", "lngkokey", "strkoname", "strkokana", "strkotel", "strtel2", "strkopos",
-         "strkojyu1", "strkojyu2", "strsexkbn", "datbirthday", "datwedddate", "strrank", "strdmkbn",
-         "strpcmail", "strkeitaimail", "lngfinsize1", "strpiasukbn", "strtancode", "strkanritenpo", "dattoudate"]
+         "strkojyu1", "strkojyu2", "strsexkbn", "datbirthday", "datwedddate", "strrank", "strtikucode",
+         "strdmkbn", "strpcmail", "strkeitaimail", "lngfinsize1", "strpiasukbn", "strtancode",
+         "strkanritenpo", "dattoudate"]
 write("d_user", UCOLS, [
     user("01", "100", "田中 一郎", "ﾀﾅｶ ｲﾁﾛｳ", "0565-00-0001", "001", "2"),
     user("01", "101", "鈴木 幸子", "ｽｽﾞｷ ｻﾁｺ", "0565-00-0002", "002", "1"),
@@ -69,21 +71,23 @@ write("d_famiry", ["strkotencode", "lngkokey", "strfamiryname", "strzokukbn", "s
 
 # ── 商品(店01に5000/5001、店02に5000=衝突) ──
 # 状態区分コードは実データ準拠: 0=受託, 1=在庫, 3=売上, 5=返品
-def item(tc, sk, no, name, dbun, oro, kou, ishi="I1", state="1"):
+def item(tc, sk, no, name, dbun, oro, kou, ishi="I1", state="1", brc="", jic=""):
     return {"strsytencode": tc, "lngsykey": sk, "strsyno": no, "strsyname": name, "strsyinfo": "自社",
-            "strdbuncode": dbun, "strsirsakicode": "S1", "curorokin": oro, "curkoukin": kou,
+            "strdbuncode": dbun, "strbrcode": brc, "strjicode": jic, "strsirsakicode": "S1",
+            "curorokin": oro, "curkoukin": kou,
             "strjotaikbn": state, "strhotencode": tc, "striscode": ishi, "curmainjuryo": "0.3",
             "strcolcode": "F", "strclacode": "VS1", "strcutcode": "3EX", "strkanbno": "GIA123",
             "dattoudate": "2015/4/1"}
 
 
-ICOLS = ["strsytencode", "lngsykey", "strsyno", "strsyname", "strsyinfo", "strdbuncode", "strsirsakicode",
+ICOLS = ["strsytencode", "lngsykey", "strsyno", "strsyname", "strsyinfo", "strdbuncode",
+         "strbrcode", "strjicode", "strsirsakicode",
          "curorokin", "curkoukin", "strjotaikbn", "strhotencode", "striscode", "curmainjuryo",
          "strcolcode", "strclacode", "strcutcode", "strkanbno", "dattoudate"]
 write("d_item", ICOLS, [
-    item("01", "5000", "R-5000", "ダイヤリング", "10", "150000", "300000"),
+    item("01", "5000", "R-5000", "ダイヤリング", "10", "150000", "300000", brc="B1", jic="J1"),
     item("01", "5001", "G-5001", "メガネフレーム", "90", "8000", "20000"),
-    item("02", "5000", "R-9000", "ルビーリング", "10", "90000", "180000", "I2"),
+    item("02", "5000", "R-9000", "ルビーリング", "10", "90000", "180000", "I2", jic="J1"),
 ])
 
 # ── 販売(伝票T1: 顧客01-100 が商品2点、伝票T2: 顧客02-100) ──

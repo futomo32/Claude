@@ -62,6 +62,8 @@ def ensure_schema(con):
     adds = [
         ("products", "image_file", "TEXT"),
         ("products", "brand", "TEXT"),
+        ("products", "metal", "TEXT"),
+        ("customers", "district", "TEXT"),
         ("customers", "tel2", "TEXT"), ("customers", "note", "TEXT"),
         ("customers", "postal", "TEXT"), ("customers", "address2", "TEXT"),
         ("customers", "email", "TEXT"),
@@ -111,7 +113,7 @@ def build_blob(con):
 
     customers = []
     for r in cur.execute("""SELECT customer_id,name,kana,tel,staff_name,address,birthday,gender,wedding_day,
-                                   is_test,note,postal,address2,tel2,email,rank,dm_ok
+                                   is_test,note,postal,address2,tel2,email,rank,dm_ok,district
                             FROM customers ORDER BY is_test DESC, CAST(customer_id AS INTEGER)"""):
         cid = r["customer_id"]
         customers.append([
@@ -120,7 +122,7 @@ def build_blob(con):
             r["is_test"], r["note"], last_buy.get(cid),   # 11=テスト印 12=用途 13=最終購入日
             r["postal"], r["address2"],                    # 14=郵便番号 15=建物名等
             r["tel2"], r["email"],                         # 16=携帯電話(TEL2) 17=eメール
-            r["rank"], r["dm_ok"],                         # 18=ランク 19=DM可否
+            r["rank"], r["dm_ok"], r["district"],          # 18=ランク 19=DM可否 20=地区
         ])
 
     def group(sql, key_idx=0):
@@ -266,7 +268,7 @@ def build_blob_light(con):
 
     customers = []
     for r in cur.execute("""SELECT customer_id,name,kana,tel,staff_name,address,birthday,gender,wedding_day,
-                                   is_test,note,postal,address2,tel2,email,rank,dm_ok
+                                   is_test,note,postal,address2,tel2,email,rank,dm_ok,district
                             FROM customers ORDER BY is_test DESC, CAST(customer_id AS INTEGER)"""):
         cid = r["customer_id"]
         customers.append([
@@ -274,7 +276,7 @@ def build_blob_light(con):
             r["birthday"], r["gender"], totals.get(cid, 0), y_cur.get(cid, 0), r["wedding_day"],
             r["is_test"], r["note"], last_buy.get(cid),
             r["postal"], r["address2"], r["tel2"], r["email"],
-            r["rank"], r["dm_ok"],   # 18=ランク 19=DM可否
+            r["rank"], r["dm_ok"], r["district"],   # 18=ランク 19=DM可否 20=地区
         ])
 
     def group(sql, key_idx=0):
@@ -449,14 +451,14 @@ def search_products(con, q="", cat="", state="", supplier="", genre="", sort="no
     rows = []
     for r in con.execute(
             "SELECT product_no,name,category,list_price,cost_price,state,location,"
-            "center_stone,center_carat,supplier,product_key,image_file,brand "
+            "center_stone,center_carat,supplier,product_key,image_file,brand,metal "
             "FROM products" + wsql + order_sql + " LIMIT ? OFFSET ?", args + [limit, offset]):
         stone = r["center_stone"] or ""
         if stone and r["center_carat"]:
             stone += f' {r["center_carat"]}ct'
         rows.append([r["product_no"], r["name"], r["category"], r["list_price"],
                      r["state"], r["location"], stone or None, r["product_key"], r["image_file"],
-                     r["cost_price"], r["supplier"], r["brand"]])  # [11]=ブランド
+                     r["cost_price"], r["supplier"], r["brand"], r["metal"]])  # [11]=ブランド [12]=地金
     return {"rows": rows, "total": total}
 
 
@@ -696,10 +698,10 @@ MASTERS = {
     "category":   {"label": "商品分類",   "table": "products",      "col": "category"},
     "brand":      {"label": "ブランド",   "table": "products",      "col": "brand"},
     "stone":      {"label": "石種",       "table": "products",      "col": "center_stone"},
-    # 地金は商品に専用の列がまだ無いのでスタンドアロンのリスト(seedのみ・使用件数は0)。
-    # 商品に地金列を足したら table/col を付ければ使用件数・改名追随が有効になる。
-    "metal":      {"label": "地金",       "seed": ["Pt900", "Pt950", "K18", "K18YG", "K18WG",
-                                                   "K18PG", "K24", "K14", "SV925"]},
+    "metal":      {"label": "地金",       "table": "products",      "col": "metal",
+                   "seed": ["Pt900", "Pt950", "K18", "K18YG", "K18WG",
+                            "K18PG", "K24", "K14", "SV925"]},
+    "district":   {"label": "地区",       "table": "customers",     "col": "district"},
     "location":   {"label": "保管場所",   "table": "products",      "col": "location"},
     "motive":     {"label": "購入動機",   "table": "sales_slips",   "col": "motive"},
     "pay_method": {"label": "支払方法",   "table": "sale_payments", "col": "method",
@@ -899,7 +901,7 @@ def sample_in_stock_key(con):
 
 
 CUSTOMER_FIELDS = ("name", "kana", "gender", "birthday", "wedding_day", "tel", "tel2",
-                   "email", "postal", "address", "address2", "rank", "dm_ok",
+                   "email", "postal", "address", "address2", "rank", "district", "dm_ok",
                    "staff_name", "ring_size", "pierce", "note")
 
 
@@ -967,7 +969,7 @@ def add_family(con, p):
     return {"customer_id": cid, "ok": True}
 
 
-PRODUCT_FIELDS = ("product_no", "name", "category", "brand", "supplier", "cost_price",
+PRODUCT_FIELDS = ("product_no", "name", "category", "brand", "metal", "supplier", "cost_price",
                   "list_price", "location", "center_stone", "center_carat",
                   "color", "clarity", "cut", "cert_no", "info")
 
@@ -1016,7 +1018,7 @@ def get_product(con, product_key):
         raise ValueError("商品が指定されていません")
     con.row_factory = sqlite3.Row
     r = con.execute(
-        "SELECT product_key,product_no,name,category,brand,supplier,cost_price,list_price,location,"
+        "SELECT product_key,product_no,name,category,brand,metal,supplier,cost_price,list_price,location,"
         "center_stone,center_carat,color,clarity,cut,cert_no,info,state,image_file "
         "FROM products WHERE product_key=?", (pk,)).fetchone()
     if not r:
