@@ -1394,6 +1394,7 @@ def checkout(con, payload):
     if summary_name and len(summary_name) > 60:
         summary_name = summary_name[:59] + "…"
 
+    receivables_out = []
     for p in payments:
         method = p.get("method") or "現金"
         amt = int(p.get("amount") or 0)
@@ -1403,8 +1404,11 @@ def checkout(con, payload):
         if method == "掛売":
             cur.execute("""INSERT INTO receivables(customer_id,product_name,bought_at,down_payment,balance,last_paid_at)
                            VALUES (?,?,?,?,?,?)""", (cid, summary_name, sold_at, 0, amt, None))
+            rid = cur.lastrowid  # 画面側でD.urikakeを即時更新できるよう新しい売掛行を返す
             cur.execute("""INSERT INTO receivable_entries(customer_id,entry_type,entry_date,product_name,amount,paid)
                            VALUES (?,?,?,?,?,?)""", (cid, "掛売", sold_at, summary_name, amt, None))
+            receivables_out.append({"id": rid, "product_name": summary_name, "bought_at": sold_at,
+                                    "down_payment": 0, "balance": amt, "last_paid_at": None})
 
     if earned:
         row = con.execute("SELECT balance FROM point_balances WHERE customer_id=?", (cid,)).fetchone()
@@ -1417,7 +1421,7 @@ def checkout(con, payload):
 
     con.commit()
     return {"slip_id": slip_id, "earned": earned, "total": total, "lines": lines_out,
-            "sold_at": sold_at, "pay_method": pay_label}
+            "sold_at": sold_at, "pay_method": pay_label, "receivables": receivables_out}
 
 
 def _restock_line(con, line_id):

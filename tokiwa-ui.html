@@ -5234,8 +5234,16 @@
       (data.lines || []).forEach(function (l) {
         if (l.glasses) { (D.rxCandidates[cid] = D.rxCandidates[cid] || []).unshift([l.line_id, today, l.name, l.amount, l.kind || ""]); }
       });
+      // 掛売で買った分を売掛残高(D.urikake)に即時反映(顧客を選び直すと売掛残高パネルに出る)
+      var kakeAdd = 0;
+      (data.receivables || []).forEach(function (rv) {
+        (D.urikake[cid] = D.urikake[cid] || []).push([rv.id, rv.product_name, rv.bought_at, rv.down_payment, rv.balance, rv.last_paid_at]);
+        (D.urikakeHist[cid] = D.urikakeHist[cid] || []).unshift([rv.bought_at, "掛売", rv.product_name, rv.balance, null]);
+        kakeAdd += rv.balance || 0;
+      });
       showToast(nm + "様 — 伝票 #" + data.slip_id + " を保存しました(合計 ¥" + data.total.toLocaleString() +
-        " / 加算 " + data.earned + "pt)。在庫引き落とし・購入履歴へ反映済み。");
+        " / 加算 " + data.earned + "pt)。" + (kakeAdd ? "うち掛売 ¥" + kakeAdd.toLocaleString() + " を売掛に計上。" : "") + "在庫引き落とし・購入履歴へ反映済み。");
+      renderPosReceivable();  // 掛売直後でも(顧客が選択中なら)売掛残高パネルを更新
       resetPosAfterSale();
     }).catch(function (e) {
       checkedOut = false; btn.disabled = false; btn.textContent = "会計を確定";
