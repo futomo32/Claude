@@ -702,6 +702,7 @@
     <button class="nav-item active" data-screen="home"><span class="ic">◇</span>ホーム</button>
     <button class="nav-item" data-screen="register"><span class="ic">￥</span>レジ(売上登録)</button>
     <button class="nav-item" data-screen="customers"><span class="ic">👤</span>顧客管理</button>
+    <button class="nav-item" data-screen="search"><span class="ic">🔍</span>検索・分析</button>
     <button class="nav-item" data-screen="products"><span class="ic">◆</span>商品・在庫</button>
     <button class="nav-item" data-screen="repairs"><span class="ic">🔧</span>修理伝票</button>
     <button class="nav-item" data-screen="estimate"><span class="ic">📄</span>見積・請求</button>
@@ -901,6 +902,83 @@
         <div class="tabpane" id="c-pay"></div>
         <div class="tabpane" id="c-point"></div>
         <div class="tabpane" id="c-glasses"></div>
+      </div>
+    </section>
+
+    <!-- ── 検索・分析(B-4) ── -->
+    <section class="content" data-screen="search">
+      <div class="tabs" data-tabgroup="srch">
+        <button class="tab active" data-tab="s-cust">顧客検索・DM抽出</button>
+        <button class="tab" data-tab="s-rank">購入順位ランキング</button>
+        <button class="tab" data-tab="s-rx">メガネ処方箋検索</button>
+      </div>
+
+      <!-- 顧客検索・DM抽出 -->
+      <div class="tabpane active" id="s-cust">
+        <div class="card">
+          <div class="search-row">
+            <div class="field"><label>顧客名・カナ</label><input id="s-name" placeholder="ヤマダ(あいまい可)"></div>
+            <div class="field"><label>担当者</label><div style="display:flex;gap:0.3em"><input type="number" id="s-staff-code" class="num" placeholder="番号" style="width:4.5em;flex:none"><select id="s-staff"><option value="">すべて</option></select></div></div>
+            <div class="field"><label>ランク</label><select id="s-rank-f"><option value="">すべて</option></select></div>
+            <div class="field"><label>誕生月</label><select id="s-birth"><option value="">すべて</option><option value="1">1月</option><option value="2">2月</option><option value="3">3月</option><option value="4">4月</option><option value="5">5月</option><option value="6">6月</option><option value="7">7月</option><option value="8">8月</option><option value="9">9月</option><option value="10">10月</option><option value="11">11月</option><option value="12">12月</option></select></div>
+            <div class="field"><label>地区</label><input id="s-district" list="district-datalist" placeholder="一部でも可"></div>
+            <div class="field"><label>最終購入</label><select id="s-lastbuy"><option value="">すべて</option><option value="1">1年以上購入なし</option><option value="3">3年以上購入なし</option><option value="5">5年以上購入なし</option><option value="none">購入履歴なし</option></select></div>
+            <button class="btn btn-primary" onclick="runCustomerSearch()">検索</button>
+          </div>
+          <div style="display:flex;gap:0.6em;align-items:center;margin:0.2rem 0 0.6rem">
+            <button class="btn" onclick="srchSelectAll(true)">全選択</button>
+            <button class="btn" onclick="srchSelectAll(false)">選択解除</button>
+            <button class="btn btn-primary" id="s-label-btn" style="display:none" onclick="openLabelPrint(Array.from(srchSelected))">🏷 選択した顧客(<span id="s-label-count">0</span>件)の住所ラベルを印刷</button>
+            <span id="s-cust-count" style="margin-left:auto;color:var(--muted);font-size:0.82em"></span>
+          </div>
+          <div class="table-scroll">
+            <table class="data">
+              <thead><tr><th></th><th>顧客名</th><th>カナ</th><th class="num">電話</th><th>ランク</th><th>地区</th><th class="r">累計購入</th><th>担当</th></tr></thead>
+              <tbody id="s-cust-tbody"><tr><td colspan="8" style="color:var(--muted)">条件を指定して「検索」を押してください。</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 購入順位ランキング -->
+      <div class="tabpane" id="s-rank">
+        <div class="card">
+          <div class="search-row">
+            <div class="field"><label>期間(自)</label><input type="date" id="s-rank-from"></div>
+            <div class="field"><label>期間(至)</label><input type="date" id="s-rank-to"></div>
+            <div class="field"><label>対象</label><select id="s-rank-kind"><option value="">全て</option><option value="宝飾">宝飾(メガネ以外)</option><option value="メガネ">メガネ</option></select></div>
+            <div class="field"><label>上位</label><select id="s-rank-limit"><option value="50">50位</option><option value="100">100位</option><option value="300">300位</option></select></div>
+            <div class="field"><label>集計対象外</label><label style="display:flex;align-items:center;gap:0.4em;font-weight:400"><input type="checkbox" id="s-rank-exclude" checked><span style="font-size:0.85em;color:var(--muted)">ななし等を除外</span></label></div>
+            <button class="btn btn-primary" onclick="runRanking()">集計</button>
+          </div>
+          <p style="margin:0 0 0.5rem;color:var(--muted);font-size:0.8em">期間を空にすると累計。行をダブルクリックで顧客詳細へ。</p>
+          <div class="table-scroll">
+            <table class="data">
+              <thead><tr><th class="r">順位</th><th>顧客名</th><th>ランク</th><th class="r">購入合計</th><th class="r">件数</th></tr></thead>
+              <tbody id="s-rank-tbody"><tr><td colspan="5" style="color:var(--muted)">条件を指定して「集計」を押してください。</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- メガネ処方箋検索 -->
+      <div class="tabpane" id="s-rx">
+        <div class="card">
+          <div class="search-row">
+            <div class="field"><label>処方日(自)</label><input type="date" id="s-rx-from"></div>
+            <div class="field"><label>処方日(至)</label><input type="date" id="s-rx-to"></div>
+            <div class="field"><label>用途</label><select id="s-rx-purpose"><option value="">すべて</option><option>常用</option><option>遠用</option><option>近用</option></select></div>
+            <div class="field"><label>絞り込み</label><label style="display:flex;align-items:center;gap:0.4em;font-weight:400"><input type="checkbox" id="s-rx-mis"><span style="font-size:0.85em;color:var(--muted)">宝飾誤登録のみ</span></label></div>
+            <button class="btn btn-primary" onclick="runRxSearch()">検索</button>
+          </div>
+          <p style="margin:0 0 0.5rem;color:var(--muted);font-size:0.8em">行をダブルクリックで顧客詳細へ。最大500件。</p>
+          <div class="table-scroll">
+            <table class="data">
+              <thead><tr><th>顧客</th><th class="num">処方日</th><th>用途</th><th>レンズ</th><th>フレーム</th><th class="r">合計</th><th>対応者</th></tr></thead>
+              <tbody id="s-rx-tbody"><tr><td colspan="7" style="color:var(--muted)">条件を指定して「検索」を押してください。</td></tr></tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1192,6 +1270,7 @@
         <div class="field"><label>住所2(建物名・部屋番号)</label><input id="cm-address2" placeholder="コーポ〇〇 101号室"></div>
         <div class="field"><label>顧客ランク</label><select id="cm-rank"><option value="">—</option><option>S</option><option>A</option><option>B</option><option>C</option></select></div>
         <div class="field"><label>地区</label><input id="cm-district" list="district-datalist" placeholder="例: 松本市"><datalist id="district-datalist"></datalist></div>
+        <div class="field"><label>集計対象外</label><label style="display:flex;align-items:center;gap:0.4em;font-weight:400"><input type="checkbox" id="cm-exclude"><span style="font-size:0.85em;color:var(--muted)">ランキング・平均から除外(ななし等)</span></label></div>
         <div class="field"><label>DM送付</label><select id="cm-dm"><option value="">—</option><option>可</option><option>不可</option></select></div>
         <div class="field"><label>リングサイズ</label><input id="cm-ring" placeholder="9号"></div>
         <div class="field"><label>ピアス穴</label><select id="cm-pierce"><option value="">—</option><option>あり</option><option>なし</option></select></div>
@@ -1687,7 +1766,7 @@
 
   var screenTitles = {
     home: "ホーム", register: "レジ(売上登録)", customers: "顧客管理",
-    "customer-detail": "顧客詳細", products: "商品・在庫", repairs: "修理伝票",
+    "customer-detail": "顧客詳細", search: "検索・分析", products: "商品・在庫", repairs: "修理伝票",
     estimate: "見積・請求", reports: "日報・帳票", settings: "設定・マスター"
   };
 
@@ -2158,6 +2237,7 @@
     document.getElementById("cm-title").textContent = id ? "顧客情報の編集" : "新規顧客登録";
     document.getElementById("cm-id").value = id || "";
     CM_FIELDS.forEach(function (k) { document.getElementById(k).value = ""; });
+    document.getElementById("cm-exclude").checked = false;
     eraSet("cm-birth", null);
     eraSet("cm-wed", null);
     if (id) {
@@ -2179,6 +2259,7 @@
         document.getElementById("cm-district").value = f[20] || "";
         document.getElementById("cm-rank").value = f[18] || "";   // 既存ランクを保持(空欄で保存して消えるのを防止)
         document.getElementById("cm-dm").value = f[19] || "";     // 既存DM区分を保持
+        document.getElementById("cm-exclude").checked = !!f[21];  // 集計対象外フラグ
       }
     }
     document.getElementById("cm-error").style.display = "none";
@@ -2235,7 +2316,8 @@
       birthday: birth.iso, wedding_day: wed.iso, tel: tel, tel2: zen2han(g("cm-tel2")), email: g("cm-email"),
       postal: zen2han(g("cm-postal")), address: g("cm-address"), address2: g("cm-address2"),
       rank: g("cm-rank"), district: g("cm-district"), dm_ok: g("cm-dm"), staff_name: g("cm-staff"),
-      ring_size: g("cm-ring"), pierce: g("cm-pierce"), note: g("cm-note")
+      ring_size: g("cm-ring"), pierce: g("cm-pierce"), note: g("cm-note"),
+      exclude_stats: document.getElementById("cm-exclude").checked ? 1 : 0
     };
     var btn = document.getElementById("cm-save");
     btn.disabled = true; btn.textContent = "保存中…";
@@ -2244,7 +2326,8 @@
                  payload.birthday, payload.gender, 0, 0, payload.wedding_day,
                  0, payload.note || null, null, payload.postal, payload.address2,
                  payload.tel2 || null, payload.email || null,
-                 payload.rank || null, payload.dm_ok || null, payload.district || null];  // 18=ランク 19=DM 20=地区
+                 payload.rank || null, payload.dm_ok || null, payload.district || null,
+                 payload.exclude_stats || 0];  // 18=ランク 19=DM 20=地区 21=集計対象外
       var idx = -1, i;
       for (i = 0; i < D.customers.length; i++) if (String(D.customers[i][0]) === String(cid)) { idx = i; break; }
       if (idx >= 0) { row[8] = D.customers[idx][8]; row[9] = D.customers[idx][9]; row[13] = D.customers[idx][13]; D.customers[idx] = row; }
@@ -2303,8 +2386,10 @@
   function populateRankOptions(ranks) {
     var cm = document.getElementById("cm-rank");
     if (cm) { var cur = cm.value; cm.innerHTML = '<option value="">—</option>' + ranks.map(function (r) { return '<option>' + esc(r) + '</option>'; }).join(""); if (cur) cm.value = cur; }
-    var q = document.getElementById("q-cust-rank");
-    if (q) { var cq = q.value; q.innerHTML = '<option value="">すべて</option>' + ranks.map(function (r) { return '<option>' + esc(r) + '</option>'; }).join(""); if (cq) q.value = cq; }
+    [["q-cust-rank", "すべて"], ["s-rank-f", "すべて"]].forEach(function (pair) {
+      var q = document.getElementById(pair[0]);
+      if (q) { var cq = q.value; q.innerHTML = '<option value="">' + pair[1] + '</option>' + ranks.map(function (r) { return '<option>' + esc(r) + '</option>'; }).join(""); if (cq) q.value = cq; }
+    });
   }
   function loadRankOptions() {
     var set = {};
@@ -2326,6 +2411,94 @@
     if (m) return parseInt(m[1], 10);
     m = String(b).match(/-(\d{1,2})-/);  // 念のため中央の値を月として拾う
     return m ? parseInt(m[1], 10) : 0;
+  }
+  /* ══ 検索・分析(B-4) ══ */
+  var srchSelected = new Set(), srchResults = [];
+  function runCustomerSearch() {
+    var nameRaw = (document.getElementById("s-name").value || "").trim();
+    var staff = document.getElementById("s-staff").value;
+    var rankF = document.getElementById("s-rank-f").value;
+    var birthF = document.getElementById("s-birth").value;
+    var distF = (document.getElementById("s-district").value || "").trim();
+    var lastF = document.getElementById("s-lastbuy").value;
+    var nq = normKana(nameRaw);
+    var cutoff = (lastF && lastF !== "none") ? yearsAgoIso(parseInt(lastF, 10)) : null;
+    srchResults = D.customers.filter(function (c) {
+      if (c[11]) return false;  // テスト顧客は検索結果から除外
+      if (nq && normKana(c[1]).indexOf(nq) < 0 && normKana(c[2]).indexOf(nq) < 0 && String(c[0]) !== nameRaw) return false;
+      if (staff && c[4] !== staff) return false;
+      if (rankF && c[18] !== rankF) return false;
+      if (birthF && birthMonth(c[6]) !== parseInt(birthF, 10)) return false;
+      if (distF && String(c[20] || "").indexOf(distF) < 0) return false;
+      if (lastF === "none") { if (c[13]) return false; }
+      else if (cutoff) { if (c[13] && c[13] >= cutoff) return false; }
+      return true;
+    });
+    srchSelected.clear();
+    paintSrchCustomers();
+  }
+  function paintSrchCustomers() {
+    var tb = document.getElementById("s-cust-tbody");
+    tb.innerHTML = srchResults.length ? srchResults.map(function (c) {
+      var checked = srchSelected.has(String(c[0])) ? " checked" : "";
+      return '<tr data-cust="' + esc(c[0]) + '"><td style="cursor:default"><input type="checkbox" onchange="toggleSrch(\'' + esc(c[0]) + '\',this.checked)"' + checked + '></td>' +
+        '<td>' + esc(dash(c[1])) + '</td><td>' + esc(dash(c[2])) + '</td><td class="num">' + esc(dash(c[3])) +
+        '</td><td>' + esc(dash(c[18])) + '</td><td>' + esc(dash(c[20])) + '</td><td class="r num">¥' + num(c[8]) +
+        '</td><td>' + esc(shortName(c[4])) + '</td></tr>';
+    }).join("") : '<tr><td colspan="8" style="color:var(--muted)">該当する顧客がいません。</td></tr>';
+    document.getElementById("s-cust-count").textContent = "該当 " + srchResults.length.toLocaleString() + "件";
+    updateSrchLabelBtn();
+  }
+  function toggleSrch(id, on) {
+    if (on) srchSelected.add(String(id)); else srchSelected.delete(String(id));
+    updateSrchLabelBtn();
+  }
+  function srchSelectAll(on) {
+    if (on) srchResults.forEach(function (c) { srchSelected.add(String(c[0])); });
+    else srchSelected.clear();
+    paintSrchCustomers();
+  }
+  function updateSrchLabelBtn() {
+    var n = srchSelected.size;
+    document.getElementById("s-label-btn").style.display = n ? "" : "none";
+    document.getElementById("s-label-count").textContent = n;
+  }
+  // 購入順位ランキング
+  function runRanking() {
+    if (!API) return showToast("ランキングはサーバー起動時に使えます。");
+    var q = "?from=" + encodeURIComponent(document.getElementById("s-rank-from").value) +
+      "&to=" + encodeURIComponent(document.getElementById("s-rank-to").value) +
+      "&kind=" + encodeURIComponent(document.getElementById("s-rank-kind").value) +
+      "&limit=" + encodeURIComponent(document.getElementById("s-rank-limit").value) +
+      "&exclude=" + (document.getElementById("s-rank-exclude").checked ? "1" : "0");
+    var tb = document.getElementById("s-rank-tbody");
+    tb.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">集計中…</td></tr>';
+    fetch(API + "/customer_ranking" + q).then(function (r) { return r.json(); }).then(function (res) {
+      var rows = res.rows || [];
+      tb.innerHTML = rows.length ? rows.map(function (x, i) {
+        return '<tr data-cust="' + esc(x.customer_id) + '"><td class="r num">' + (i + 1) + '</td><td>' + esc(dash(x.name)) +
+          '</td><td>' + esc(dash(x.rank)) + '</td><td class="r num">¥' + num(x.total) + '</td><td class="r num">' + num(x.count) + '</td></tr>';
+      }).join("") : '<tr><td colspan="5" style="color:var(--muted)">該当する売上がありません。</td></tr>';
+    }).catch(function () { tb.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">集計に失敗しました。</td></tr>'; });
+  }
+  // メガネ処方箋の横断検索
+  function runRxSearch() {
+    if (!API) return showToast("処方箋検索はサーバー起動時に使えます。");
+    var q = "?from=" + encodeURIComponent(document.getElementById("s-rx-from").value) +
+      "&to=" + encodeURIComponent(document.getElementById("s-rx-to").value) +
+      "&purpose=" + encodeURIComponent(document.getElementById("s-rx-purpose").value) +
+      "&misassign=" + (document.getElementById("s-rx-mis").checked ? "1" : "0");
+    var tb = document.getElementById("s-rx-tbody");
+    tb.innerHTML = '<tr><td colspan="7" style="color:var(--muted)">検索中…</td></tr>';
+    fetch(API + "/prescription_search" + q).then(function (r) { return r.json(); }).then(function (res) {
+      var rows = res.rows || [];
+      tb.innerHTML = rows.length ? rows.map(function (x) {
+        return '<tr data-cust="' + esc(x.customer_id) + '"' + (x.misassign ? ' style="background:#fff3f3"' : '') + '><td>' + esc(dash(x.customer)) +
+          '</td><td class="num">' + esc(dash(x.rx_date)) + '</td><td>' + esc(dash(x.purpose)) +
+          '</td><td>' + esc(dash(x.lens_name)) + '</td><td>' + esc(dash(x.frame_name)) +
+          '</td><td class="r num">' + (x.total ? "¥" + num(x.total) : "—") + '</td><td>' + esc(shortName(x.handler)) + '</td></tr>';
+      }).join("") : '<tr><td colspan="7" style="color:var(--muted)">該当する処方箋がありません。</td></tr>';
+    }).catch(function () { tb.innerHTML = '<tr><td colspan="7" style="color:var(--muted)">検索に失敗しました。</td></tr>'; });
   }
   function renderCustomers() {
     var nameRaw = (document.getElementById("q-name").value || "").trim();
@@ -3139,6 +3312,7 @@
     }
     names.sort();
     fillStaffSelect("q-staff", names, true, true);
+    fillStaffSelect("s-staff", names, true, true);
     fillStaffSelect("rep-staff", names, true, true);
     fillStaffSelect("cm-staff", names, true, false);
     fillStaffSelect("rx-handler", names, false, false);
@@ -4030,8 +4204,9 @@
     populateMetalDatalist();  // 登録・修正の地金入力候補(地金マスタ)を埋める
     populateDistrictDatalist();  // 顧客編集の地区入力候補(地区マスタ)を埋める
     // 担当者を番号でも選べるように(既存のプルダウンはそのまま。番号欄は各画面に1つずつ)
-    [["q-staff-code", "q-staff"], ["rep-staff-code", "rep-staff"], ["cm-staff-code", "cm-staff"],
-     ["rx-handler-code", "rx-handler"], ["rep-staff-handler-code", "rep-staff-handler"],
+    [["q-staff-code", "q-staff"], ["s-staff-code", "s-staff"], ["rep-staff-code", "rep-staff"],
+     ["cm-staff-code", "cm-staff"], ["rx-handler-code", "rx-handler"],
+     ["rep-staff-handler-code", "rep-staff-handler"],
      ["np-staff-code", "np-staff"]].forEach(function (pair) { bindStaffCodeInput(pair[0], pair[1]); });
     var catSel = document.getElementById("q-cat");
     function addCats(cats) {

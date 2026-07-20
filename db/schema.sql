@@ -39,6 +39,7 @@ CREATE TABLE customers (
   wedding_day   TEXT,
   rank          TEXT,
   district      TEXT,           -- 地区(m_tiku。DMの地区絞り込み用)
+  exclude_stats INTEGER NOT NULL DEFAULT 0,  -- 1=集計対象外(ななし等。ランキング・平均から除外)
   dm_ok         TEXT,
   email         TEXT,
   ring_size     TEXT,

@@ -64,6 +64,7 @@ def ensure_schema(con):
         ("products", "brand", "TEXT"),
         ("products", "metal", "TEXT"),
         ("customers", "district", "TEXT"),
+        ("customers", "exclude_stats", "INTEGER DEFAULT 0"),
         ("customers", "tel2", "TEXT"), ("customers", "note", "TEXT"),
         ("customers", "postal", "TEXT"), ("customers", "address2", "TEXT"),
         ("customers", "email", "TEXT"),
@@ -113,7 +114,7 @@ def build_blob(con):
 
     customers = []
     for r in cur.execute("""SELECT customer_id,name,kana,tel,staff_name,address,birthday,gender,wedding_day,
-                                   is_test,note,postal,address2,tel2,email,rank,dm_ok,district
+                                   is_test,note,postal,address2,tel2,email,rank,dm_ok,district,exclude_stats
                             FROM customers ORDER BY is_test DESC, CAST(customer_id AS INTEGER)"""):
         cid = r["customer_id"]
         customers.append([
@@ -122,7 +123,7 @@ def build_blob(con):
             r["is_test"], r["note"], last_buy.get(cid),   # 11=テスト印 12=用途 13=最終購入日
             r["postal"], r["address2"],                    # 14=郵便番号 15=建物名等
             r["tel2"], r["email"],                         # 16=携帯電話(TEL2) 17=eメール
-            r["rank"], r["dm_ok"], r["district"],          # 18=ランク 19=DM可否 20=地区
+            r["rank"], r["dm_ok"], r["district"], r["exclude_stats"],  # 18=ランク 19=DM 20=地区 21=集計対象外
         ])
 
     def group(sql, key_idx=0):
@@ -268,7 +269,7 @@ def build_blob_light(con):
 
     customers = []
     for r in cur.execute("""SELECT customer_id,name,kana,tel,staff_name,address,birthday,gender,wedding_day,
-                                   is_test,note,postal,address2,tel2,email,rank,dm_ok,district
+                                   is_test,note,postal,address2,tel2,email,rank,dm_ok,district,exclude_stats
                             FROM customers ORDER BY is_test DESC, CAST(customer_id AS INTEGER)"""):
         cid = r["customer_id"]
         customers.append([
@@ -276,7 +277,7 @@ def build_blob_light(con):
             r["birthday"], r["gender"], totals.get(cid, 0), y_cur.get(cid, 0), r["wedding_day"],
             r["is_test"], r["note"], last_buy.get(cid),
             r["postal"], r["address2"], r["tel2"], r["email"],
-            r["rank"], r["dm_ok"], r["district"],   # 18=ランク 19=DM可否 20=地区
+            r["rank"], r["dm_ok"], r["district"], r["exclude_stats"],  # 18=ランク 19=DM 20=地区 21=集計対象外
         ])
 
     def group(sql, key_idx=0):
@@ -574,6 +575,68 @@ def slip_lines(con, frm, to, staff=""):
         out.append({"date": r["sold_at"], "name": r["cname"] or r["cid"], "item": r["item"],
                     "amount": r["amount"] or 0, "pay": r["pay_method"] or "", "staff": r["staff_name"],
                     "kind4": sale_kind4(r["ig"], r["cat"], r["place"])})
+    return out
+
+
+def customer_ranking(con, frm="", to="", kind="", limit=100, exclude=True):
+    """購入額の顧客ランキング(B-4)。期間・対象カテゴリで絞り込み、合計購入額の多い順に返す。
+      frm/to  … 販売日の期間(空なら全期間=累計)
+      kind    … "" 全て / "メガネ"=メガネ商品のみ / "宝飾"=メガネ以外
+      exclude … True で「集計対象外(ななし等)」と検証ペルソナを除外(既定)
+    戻り値: [{customer_id,name,rank,total,count}] を total 降順で。"""
+    con.row_factory = sqlite3.Row
+    try:
+        limit = max(1, min(int(limit), 1000))
+    except (TypeError, ValueError):
+        limit = 100
+    where, args = ["s.customer_id IS NOT NULL", "l.amount IS NOT NULL"], []
+    if frm:
+        where.append("s.sold_at >= ?"); args.append(str(frm))
+    if to:
+        where.append("s.sold_at <= ?"); args.append(str(to))
+    if kind == "メガネ":
+        where.append("p.is_glasses = 1")
+    elif kind == "宝飾":
+        where.append("COALESCE(p.is_glasses,0) = 0")
+    if exclude:
+        where.append("COALESCE(c.exclude_stats,0) = 0 AND COALESCE(c.is_test,0) = 0")
+    sql = ("""SELECT s.customer_id cid, c.name cname, c.rank rank,
+                     SUM(l.amount) total, COUNT(*) cnt
+              FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
+              LEFT JOIN products p ON l.product_key = p.product_key
+              LEFT JOIN customers c ON c.customer_id = s.customer_id
+              WHERE """ + " AND ".join(where) +
+           " GROUP BY s.customer_id ORDER BY total DESC LIMIT ?")
+    out = []
+    for r in con.execute(sql, args + [limit]):
+        out.append({"customer_id": r["cid"], "name": r["cname"] or r["cid"],
+                    "rank": r["rank"], "total": r["total"] or 0, "count": r["cnt"]})
+    return out
+
+
+def prescription_search(con, frm="", to="", purpose="", misassign_only=False):
+    """メガネ処方箋の横断検索(B-4)。顧客をまたいで処方箋を期間・用途で絞り込む。
+    行から元の顧客詳細へ遷移できるよう customer_id と顧客名も返す。"""
+    con.row_factory = sqlite3.Row
+    where, args = ["1=1"], []
+    if frm:
+        where.append("rx.rx_date >= ?"); args.append(str(frm))
+    if to:
+        where.append("rx.rx_date <= ?"); args.append(str(to))
+    if purpose:
+        where.append("rx.purpose = ?"); args.append(purpose)
+    if misassign_only:
+        where.append("rx.jewelry_misassign = 1")
+    out = []
+    for r in con.execute("""
+        SELECT rx.id, rx.customer_id cid, c.name cname, rx.rx_no, rx.rx_date, rx.purpose,
+               rx.lens_name, rx.frame_name, rx.total_sell, rx.handler, rx.jewelry_misassign mis
+        FROM prescriptions rx LEFT JOIN customers c ON c.customer_id = rx.customer_id
+        WHERE """ + " AND ".join(where) + " ORDER BY rx.rx_date DESC, rx.id DESC LIMIT 500", args):
+        out.append({"id": r["id"], "customer_id": r["cid"], "customer": r["cname"] or r["cid"],
+                    "rx_no": r["rx_no"], "rx_date": r["rx_date"], "purpose": r["purpose"],
+                    "lens_name": r["lens_name"], "frame_name": r["frame_name"],
+                    "total": r["total_sell"], "handler": r["handler"], "misassign": bool(r["mis"])})
     return out
 
 
@@ -902,7 +965,7 @@ def sample_in_stock_key(con):
 
 CUSTOMER_FIELDS = ("name", "kana", "gender", "birthday", "wedding_day", "tel", "tel2",
                    "email", "postal", "address", "address2", "rank", "district", "dm_ok",
-                   "staff_name", "ring_size", "pierce", "note")
+                   "staff_name", "ring_size", "pierce", "note", "exclude_stats")
 
 
 def upsert_customer(con, payload):
@@ -910,6 +973,7 @@ def upsert_customer(con, payload):
     cur = con.cursor()
     cid = str(payload.get("customer_id") or "").strip()
     vals = {k: (payload.get(k) or None) for k in CUSTOMER_FIELDS}
+    vals["exclude_stats"] = 1 if payload.get("exclude_stats") else 0  # NULLでなく0/1で保持(集計除外の判定用)
     is_new = not cid
     if is_new:
         row = con.execute("SELECT MAX(CAST(customer_id AS INTEGER)) FROM customers").fetchone()

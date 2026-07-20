@@ -167,7 +167,8 @@ class Handler(BaseHTTPRequestHandler):
             if path in ("/api/customer_detail", "/api/products", "/api/product_categories",
                         "/api/product_suppliers", "/api/product_brands", "/api/supplier_master", "/api/staff",
                         "/api/staff_junk", "/api/masters", "/api/master", "/api/photo_pool",
-                        "/api/product", "/api/daily_sales", "/api/slip_lines", "/api/documents"):
+                        "/api/product", "/api/daily_sales", "/api/slip_lines", "/api/documents",
+                        "/api/customer_ranking", "/api/prescription_search"):
                 qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
 
                 def q1(name, default=""):
@@ -199,6 +200,13 @@ class Handler(BaseHTTPRequestHandler):
                         result = {"pool": db_query.list_photo_pool(con)}
                     elif path == "/api/product":
                         result = db_query.get_product(con, q1("key"))
+                    elif path == "/api/customer_ranking":
+                        result = {"rows": db_query.customer_ranking(
+                            con, q1("from"), q1("to"), q1("kind"), q1("limit", "100"),
+                            q1("exclude", "1") != "0")}
+                    elif path == "/api/prescription_search":
+                        result = {"rows": db_query.prescription_search(
+                            con, q1("from"), q1("to"), q1("purpose"), q1("misassign") == "1")}
                     elif path == "/api/masters":
                         result = {"masters": db_query.master_types()}
                     elif path == "/api/master":
