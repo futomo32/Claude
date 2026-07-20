@@ -1045,7 +1045,7 @@
             <div class="field"><label>商品分類</label><select id="np-cat"><option>リング</option><option>ネックレス</option><option>ピアス</option><option>ブレスレット</option><option>時計</option><option>メガネフレーム</option><option>メガネレンズ</option><option>その他</option></select></div>
             <div class="field"><label>ブランド</label><input id="np-brand" list="brand-datalist" placeholder="例: カルティエ"></div>
             <datalist id="brand-datalist"></datalist>
-            <div class="field"><label>地金</label><input id="np-metal" list="metal-datalist" placeholder="例: Pt900"></div>
+            <div class="field" id="np-metal-field"><label>地金</label><input id="np-metal" list="metal-datalist" placeholder="例: Pt900"></div>
             <datalist id="metal-datalist"></datalist>
           </div>
           <div id="np-gem-section">
@@ -1219,10 +1219,7 @@
     <!-- ── 設定 ── -->
     <section class="content" data-screen="settings">
       <div class="settings-grid">
-        <div class="card" style="cursor:pointer" onclick="openStaffMaster()"><h3>担当者マスタ</h3><p>担当者の追加・名称変更・利用停止。レジ・修理・処方箋・日報・顧客の担当者選択に反映されます。</p></div>
-        <div class="card" style="cursor:pointer" onclick="openSupplierMaster()"><h3>仕入先マスタ</h3><p>仕入先の分類(宝石/メガネ/時計/その他)を設定。在庫一覧の「仕入先ジャンル」絞り込みに反映されます。</p></div>
-        <div class="card" style="cursor:pointer" onclick="openMasterHub()"><h3>各種マスタ管理</h3><p>商品分類・保管場所・支払方法などを選んで、項目の追加・名称変更・削除ができます。</p></div>
-        <div class="card" style="cursor:pointer" onclick="openRankUpdate()"><h3>顧客ランク更新</h3><p>合計購入額の基準で顧客ランクを再計算。全/宝飾/メガネ別に、変更内容をプレビューしてから一括更新。</p></div>
+        <div class="card" style="cursor:pointer" onclick="openMasterHub()"><h3>マスタ管理</h3><p>マスタは全てここから。担当者・仕入先・商品分類・ブランド・石種・地金・購入動機・保管場所・支払方法・顧客ランク・地区の管理と、顧客ランク更新まで1画面で開けます。</p></div>
         <div class="card"><h3>スタッフと権限</h3><p>ユーザーの追加、レジ操作・帳票出力・マスター編集の権限設定。</p></div>
         <div class="card"><h3>ポイント設定</h3><p>還元率、有効期限、ランク別優待の設定。</p></div>
         <div class="card"><h3>オフライン同期</h3><p>通信障害時の一時保存と自動再送の設定。未送信キューの確認・手動送信もこちら。</p></div>
@@ -1391,15 +1388,22 @@
       <button class="close" aria-label="閉じる" onclick="closeMasterHub()">×</button>
     </div>
     <div class="modal-body">
-      <div class="field" style="margin-bottom:0.8rem">
-        <label>マスタを選択</label>
+      <p style="margin:0 0 0.5rem;color:var(--muted);font-size:0.85em">マスタはここから全て管理します。専用画面が要るものは下のボタンから開きます。</p>
+      <div style="display:flex;gap:0.4em;flex-wrap:wrap;margin-bottom:0.8rem">
+        <button class="btn" onclick="closeMasterHub();openStaffMaster()">👤 担当者マスタ</button>
+        <button class="btn" onclick="closeMasterHub();openSupplierMaster()">🏭 仕入先マスタ</button>
+        <button class="btn" onclick="closeMasterHub();openRankUpdate()">⭐ 顧客ランク更新</button>
+      </div>
+      <div class="field" style="margin-bottom:0.6rem">
+        <label>マスタを選択(商品分類・ブランド・石種・地金・購入動機・保管場所・支払方法・顧客ランク・地区)</label>
         <select id="mh-type" onchange="loadMasterItems()"></select>
       </div>
-      <div style="display:flex;gap:0.5em;margin-bottom:0.8rem">
-        <input id="mh-new-name" placeholder="新しい項目名" style="flex:1">
+      <div style="display:flex;gap:0.5em;margin-bottom:0.5rem;flex-wrap:wrap">
+        <input id="mh-search" placeholder="🔍 項目名で絞り込み" style="flex:1;min-width:8em" oninput="renderMasterItems()">
+        <input id="mh-new-name" placeholder="新しい項目名" style="flex:1;min-width:8em">
         <button class="btn btn-primary" onclick="addMasterItem()">追加</button>
       </div>
-      <div class="table-scroll" style="max-height:48vh;overflow-y:auto">
+      <div class="table-scroll" style="max-height:44vh;overflow-y:auto">
         <table class="data">
           <thead><tr><th>項目名</th><th class="r">使用件数</th><th></th></tr></thead>
           <tbody id="mh-tbody"></tbody>
@@ -3364,6 +3368,7 @@
   var mhTypes = [], mhItems = [];
   function openMasterHub() {
     document.getElementById("master-hub-modal").classList.add("show");
+    var sb = document.getElementById("mh-search"); if (sb) sb.value = "";  // 検索は毎回クリア
     if (!API) {
       document.getElementById("mh-tbody").innerHTML = '<tr><td colspan="3" style="color:var(--muted)">サーバー起動時に利用できます。</td></tr>';
       return;
@@ -3388,11 +3393,15 @@
   }
   function renderMasterItems() {
     var tb = document.getElementById("mh-tbody");
-    tb.innerHTML = mhItems.length ? mhItems.map(function (it, i) {
+    var q = ((document.getElementById("mh-search") || {}).value || "").trim().toLowerCase();
+    // 検索で絞り込むが、rename/deleteが正しく効くよう元の添字(i)は保持する
+    var html = mhItems.map(function (it, i) {
+      if (q && String(it.name || "").toLowerCase().indexOf(q) < 0) return "";
       return '<tr><td><input value="' + esc(it.name) + '" onchange="renameMasterItem(' + i + ',this.value)"></td>' +
         '<td class="r num">' + num(it.count || 0) + '</td>' +
         '<td><button class="btn" onclick="deleteMasterItem(' + i + ')">削除</button></td></tr>';
-    }).join("") : '<tr><td colspan="3" style="color:var(--muted)">項目がありません。上で追加してください。</td></tr>';
+    }).join("");
+    tb.innerHTML = html || '<tr><td colspan="3" style="color:var(--muted)">' + (q ? "「" + esc(q) + "」に一致する項目はありません。" : "項目がありません。上で追加してください。") + '</td></tr>';
   }
   function postMasterItem(payload, msg) {
     fetch(API + "/master_item", {
@@ -3918,13 +3927,18 @@
     // 折数 = 上代(定価)の半額(店独自の参考値。DBには保存しない・説明文言は付けない)
     document.getElementById("np-ori").value = list ? "¥" + num(Math.round(list / 2)) : "";
   }
-  // 仕入登録の種別切替(宝石 / 宝石以外)。宝石以外は宝飾情報の入力欄を隠す
+  // 仕入登録の種別切替(宝石 / 宝石以外)。宝石以外は宝飾専用の入力欄(宝飾情報・地金)を隠す
   var npType = "gem";
   function setPurchaseType(t) {
     npType = t;
-    document.getElementById("np-type-gem").classList.toggle("active", t === "gem");
-    document.getElementById("np-type-other").classList.toggle("active", t === "other");
-    document.getElementById("np-gem-section").style.display = (t === "other") ? "none" : "";
+    var other = (t === "other");
+    document.getElementById("np-type-gem").classList.toggle("active", !other);
+    document.getElementById("np-type-other").classList.toggle("active", other);
+    document.getElementById("np-gem-section").style.display = other ? "none" : "";
+    document.getElementById("np-metal-field").style.display = other ? "none" : "";  // 地金は宝石のみ
+    // 「例」の文言も種別に合わせる(宝石以外に宝石の例が出て違和感、を解消)
+    document.getElementById("np-name").placeholder = other ? "例: メガネフレーム / 腕時計" : "例: Pt900 サファイアリング";
+    document.getElementById("np-brand").placeholder = other ? "例: レイバン / セイコー" : "例: カルティエ";
   }
   // 仕入登録フォームで選んだ写真(リサイズ済みJPEG dataURL)。登録成功後に新商品へ紐付ける
   var npPhotoData = null;
@@ -3983,7 +3997,7 @@
       name: name,
       category: document.getElementById("np-cat").value,
       brand: document.getElementById("np-brand").value.trim(),
-      metal: document.getElementById("np-metal").value.trim(),
+      metal: gem ? document.getElementById("np-metal").value.trim() : "",
       supplier: document.getElementById("np-supplier").value,
       cost_price: numval("np-cost"),
       list_price: numval("np-list"),
