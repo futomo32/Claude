@@ -254,6 +254,16 @@ class Handler(BaseHTTPRequestHandler):
                 result = db_query.checkout(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/void_line":
+                con = connect()
+                result = db_query.void_sale_line(con, payload.get("line_id"))
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/void_slip":
+                con = connect()
+                result = db_query.void_sale_slip(con, payload.get("slip_id"))
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/customer":
                 con = connect()
                 result = db_query.upsert_customer(con, payload)

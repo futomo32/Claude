@@ -63,6 +63,8 @@ def ensure_schema(con):
         ("products", "image_file", "TEXT"),
         ("products", "brand", "TEXT"),
         ("products", "metal", "TEXT"),
+        ("sale_lines", "voided", "INTEGER DEFAULT 0"),
+        ("sales_slips", "voided", "INTEGER DEFAULT 0"),
         ("customers", "district", "TEXT"),
         ("customers", "exclude_stats", "INTEGER DEFAULT 0"),
         ("customers", "tel2", "TEXT"), ("customers", "note", "TEXT"),
@@ -107,6 +109,7 @@ def build_blob(con):
                MAX(s.sold_at) last
         FROM sales_slips s JOIN sale_lines l ON l.slip_id = s.slip_id
         WHERE s.customer_id IS NOT NULL AND l.amount IS NOT NULL
+              AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0
         GROUP BY s.customer_id"""):
         totals[r["cid"]] = r["tot"] or 0
         y2026[r["cid"]] = r["y26"] or 0
@@ -138,6 +141,7 @@ def build_blob(con):
                      FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
                      LEFT JOIN products p ON l.product_key = p.product_key
                      WHERE s.customer_id IS NOT NULL
+                           AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0
                      ORDER BY s.sold_at DESC""")
 
     families = group("""SELECT customer_id, name, relation, gender, birthday, linked_customer_id, id
@@ -188,7 +192,8 @@ def build_blob(con):
                COALESCE(l.free_name, p.name) nm, p.is_glasses g, p.category cat
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
-        WHERE s.customer_id IS NOT NULL"""):
+        WHERE s.customer_id IS NOT NULL
+              AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0"""):
         nm = r["nm"] or ""
         is_glass = r["g"] == 1 or bool(GLASS_PAT.search(nm))
         if is_glass and r["line_id"] not in linked:
@@ -234,6 +239,7 @@ def build_blob(con):
     tenders = []
     for r in cur.execute("""SELECT s.sold_at, sp.method, sp.amount, s.customer_id
                             FROM sale_payments sp JOIN sales_slips s ON s.slip_id = sp.slip_id
+                            WHERE COALESCE(s.voided,0)=0
                             ORDER BY s.sold_at DESC"""):
         tenders.append([r["sold_at"], r["method"], r["amount"], str(r["customer_id"])])
 
@@ -262,6 +268,7 @@ def build_blob_light(con):
                MAX(s.sold_at) last
         FROM sales_slips s JOIN sale_lines l ON l.slip_id = s.slip_id
         WHERE s.customer_id IS NOT NULL AND l.amount IS NOT NULL
+              AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0
         GROUP BY s.customer_id""", (cur_year + "%",)):
         totals[r["cid"]] = r["tot"] or 0
         y_cur[r["cid"]] = r["yc"] or 0
@@ -321,6 +328,7 @@ def build_blob_light(con):
     tenders = []
     for r in cur.execute("""SELECT s.sold_at, sp.method, sp.amount, s.customer_id
                             FROM sale_payments sp JOIN sales_slips s ON s.slip_id = sp.slip_id
+                            WHERE COALESCE(s.voided,0)=0
                             ORDER BY s.sold_at DESC"""):
         tenders.append([r["sold_at"], r["method"], r["amount"], str(r["customer_id"])])
 
@@ -376,10 +384,11 @@ def customer_detail(con, cid):
 
     sales = [list(r) for r in cur.execute("""
         SELECT s.sold_at, COALESCE(l.free_name, p.name), l.info,
-               l.amount, s.pay_method, s.staff_name, p.product_no
+               l.amount, s.pay_method, s.staff_name, p.product_no, l.line_id, s.slip_id
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         WHERE s.customer_id = ?
+              AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0
         ORDER BY s.sold_at DESC""", (cid,))]
 
     point_tx = [list(r) for r in cur.execute("""
@@ -401,7 +410,8 @@ def customer_detail(con, cid):
                COALESCE(l.free_name, p.name) nm, p.is_glasses g, p.category cat
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
-        WHERE s.customer_id = ?""", (cid,)):
+        WHERE s.customer_id = ?
+              AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0""", (cid,)):
         nm = r["nm"] or ""
         is_glass = r["g"] == 1 or bool(GLASS_PAT.search(nm))
         if is_glass and r["line_id"] not in linked:
@@ -546,7 +556,7 @@ def daily_sales(con, date):
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         LEFT JOIN customers c ON c.customer_id = s.customer_id
-        WHERE s.sold_at = ?""", (str(date),)):
+        WHERE s.sold_at = ? AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0""", (str(date),)):
         out.append({"cid": r["cid"], "name": r["cname"] or r["cid"], "item": r["item"],
                     "info": r["info"], "amount": r["amount"] or 0,
                     "pay": r["pay_method"] or "現金", "staff": r["staff_name"],
@@ -570,7 +580,8 @@ def slip_lines(con, frm, to, staff=""):
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         LEFT JOIN customers c ON c.customer_id = s.customer_id
-        WHERE s.sold_at >= ? AND s.sold_at <= ?""" + staffsql + """
+        WHERE s.sold_at >= ? AND s.sold_at <= ?
+              AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0""" + staffsql + """
         ORDER BY s.sold_at""", args):
         out.append({"date": r["sold_at"], "name": r["cname"] or r["cid"], "item": r["item"],
                     "amount": r["amount"] or 0, "pay": r["pay_method"] or "", "staff": r["staff_name"],
@@ -589,7 +600,9 @@ def customer_ranking(con, frm="", to="", kind="", limit=100, exclude=True):
         limit = max(1, min(int(limit), 1000))
     except (TypeError, ValueError):
         limit = 100
-    where, args = ["s.customer_id IS NOT NULL", "l.amount IS NOT NULL"], []
+    where = ["s.customer_id IS NOT NULL", "l.amount IS NOT NULL",
+             "COALESCE(l.voided,0)=0", "COALESCE(s.voided,0)=0"]
+    args = []
     if frm:
         where.append("s.sold_at >= ?"); args.append(str(frm))
     if to:
@@ -1124,7 +1137,7 @@ def delete_product(con, product_key):
     pk = str(product_key or "").strip()
     if not pk:
         raise ValueError("商品が指定されていません")
-    used = con.execute("SELECT COUNT(*) FROM sale_lines WHERE product_key=?", (pk,)).fetchone()[0]
+    used = con.execute("SELECT COUNT(*) FROM sale_lines WHERE product_key=? AND COALESCE(voided,0)=0", (pk,)).fetchone()[0]
     if used:
         raise ValueError(f"この商品は販売履歴({used}件)と紐づいているため削除できません。誤登録の場合は内容の修正をご利用ください。")
     row = con.execute("SELECT image_file FROM products WHERE product_key=?", (pk,)).fetchone()
@@ -1334,3 +1347,45 @@ def checkout(con, payload):
     con.commit()
     return {"slip_id": slip_id, "earned": earned, "total": total, "lines": lines_out,
             "sold_at": sold_at, "pay_method": pay_label}
+
+
+def _restock_line(con, line_id):
+    """取消する明細に在庫品が紐づいていれば在庫に戻す(売上→在庫)。返品の在庫戻し。"""
+    row = con.execute("SELECT product_key, slip_id FROM sale_lines WHERE line_id=?", (line_id,)).fetchone()
+    if not row:
+        return
+    pk = row[0]
+    if pk:
+        con.execute("UPDATE products SET state='在庫' WHERE product_key=? AND state='売上'", (pk,))
+        con.execute("""INSERT INTO stock_events(product_key,event_type,qty_delta,ref_slip_id)
+                       VALUES (?,?,?,?)""", (pk, "返品", 1, row[1]))
+
+
+def void_sale_line(con, line_id):
+    """明細1行を取消(訂正/一部返品)。集計・履歴から除外し、在庫品なら在庫に戻す。
+    最終正データのみ表示する方針のため、取消済み行は各画面に出さない。"""
+    line_id = int(line_id)
+    row = con.execute("SELECT voided FROM sale_lines WHERE line_id=?", (line_id,)).fetchone()
+    if not row:
+        raise ValueError("対象の明細が見つかりません")
+    if row[0]:
+        return {"line_id": line_id, "already": True}
+    _restock_line(con, line_id)
+    con.execute("UPDATE sale_lines SET voided=1 WHERE line_id=?", (line_id,))
+    con.commit()
+    return {"line_id": line_id, "voided": True}
+
+
+def void_sale_slip(con, slip_id):
+    """伝票ごと取消(返品)。伝票の全明細を無効化し、在庫品は在庫に戻す。
+    伝票のvoidedも立て、入金(sale_payments)も集計から外れる。"""
+    slip_id = int(slip_id)
+    row = con.execute("SELECT voided FROM sales_slips WHERE slip_id=?", (slip_id,)).fetchone()
+    if not row:
+        raise ValueError("対象の伝票が見つかりません")
+    for lr in con.execute("SELECT line_id FROM sale_lines WHERE slip_id=? AND COALESCE(voided,0)=0", (slip_id,)):
+        _restock_line(con, lr[0])
+    con.execute("UPDATE sale_lines SET voided=1 WHERE slip_id=?", (slip_id,))
+    con.execute("UPDATE sales_slips SET voided=1 WHERE slip_id=?", (slip_id,))
+    con.commit()
+    return {"slip_id": slip_id, "voided": True}

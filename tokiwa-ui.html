@@ -2758,15 +2758,19 @@
       '<div class="tile"><div class="t-label">購入明細数</div><div class="t-value num">' + sales.length.toLocaleString() + '<small>件</small></div></div>' +
       '<div class="tile"><div class="t-label">' + esc(CUR_YEAR_LABEL) + '</div><div class="t-value num">¥' + num(c[9]) + '</div></div></div>';
     if (sales.length) {
-      html += '<p style="margin:0 0 0.4rem;color:var(--muted);font-size:0.8em">※商品名をダブルクリックすると、その商品の情報・写真を表示します(在庫商品のみ)。</p>' +
-        '<div class="table-scroll"><table class="data"><thead><tr><th>買上日</th><th>商品名</th><th>商品情報</th><th class="r">購入金額</th><th>支払</th><th>担当</th></tr></thead><tbody>' +
+      html += '<p style="margin:0 0 0.4rem;color:var(--muted);font-size:0.8em">※商品名をダブルクリックすると、その商品の情報・写真を表示します(在庫商品のみ)。返品・訂正は右の「取消」から(取消済みは一覧に表示されません)。</p>' +
+        '<div class="table-scroll"><table class="data"><thead><tr><th>買上日</th><th>商品名</th><th>商品情報</th><th class="r">購入金額</th><th>支払</th><th>担当</th><th></th></tr></thead><tbody>' +
         sales.map(function (s) {
           var nm = String(s[1] == null ? "" : s[1]);
           var amount = (nm.indexOf("種類未定") >= 0 && !s[3]) ? "未定" : "¥" + num(s[3]);
           var pno = s[6];  // 在庫商品なら商品番号。自由入力明細はnull
           var nameCell = esc(dash(s[1])) + (s[2] && String(s[2]).indexOf("後日入力") >= 0 ? ' <span class="chip chip-warn">後日入力</span>' : "");
           var attr = pno ? ' style="cursor:pointer" title="ダブルクリックで商品情報" ondblclick="openProductByNo(\'' + esc(String(pno)) + '\')"' : '';
-          return '<tr><td class="num">' + esc(s[0]) + '</td><td' + attr + '>' + nameCell + '</td><td>' + esc(dash(s[2])) + '</td><td class="r num">' + amount + '</td><td>' + esc(dash(s[4])) + '</td><td>' + esc(shortName(s[5])) + '</td></tr>';
+          // s[7]=line_id, s[8]=slip_id(サーバー経由時のみ)。取消(返品・訂正)ボタン
+          var voidCell = (API && s[7] != null)
+            ? '<button class="btn" style="color:var(--danger);padding:0.2em 0.6em" onclick="voidSaleLine(' + s[7] + ',' + (parseInt(s[3], 10) || 0) + ',\'' + esc(id) + '\')">取消</button>'
+            : '';
+          return '<tr><td class="num">' + esc(s[0]) + '</td><td' + attr + '>' + nameCell + '</td><td>' + esc(dash(s[2])) + '</td><td class="r num">' + amount + '</td><td>' + esc(dash(s[4])) + '</td><td>' + esc(shortName(s[5])) + '</td><td>' + voidCell + '</td></tr>';
         }).join("") + '</tbody></table></div>';
     } else {
       html += '<p style="margin:0;color:var(--muted);font-size:0.9em">購入履歴はありません。</p>';
@@ -2780,6 +2784,26 @@
       html += '<p style="margin:0;color:var(--muted);font-size:0.9em">アプローチ履歴はありません。</p>';
     }
     document.getElementById("c-history").innerHTML = html;
+  }
+  // 購入明細の取消(返品・訂正。B-1)。取消すると集計・履歴から除外し、在庫品は在庫に戻す
+  function voidSaleLine(lineId, amount, cid) {
+    if (!API) return;
+    alertPopup("この購入明細を取消(返品・訂正)しますか?\n取消すると購入履歴・売上集計から除外され、在庫商品は在庫に戻ります。", {
+      type: "warn", title: "購入明細の取消", okText: "取消する", cancelText: "やめる", confirm: true,
+      onOk: function () {
+        fetch(API + "/void_line", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ line_id: lineId })
+        }).then(function (r) { return r.json(); }).then(function (res) {
+          if (res.error) throw new Error(res.error);
+          // 累計購入額(c[8])をローカルで減算し、詳細を取り直して再描画
+          var c = findCust(cid);
+          if (c) c[8] = Math.max(0, (c[8] || 0) - (amount || 0));
+          _loadedDetail[String(cid)] = false;
+          openCustomer(cid);
+          showToast("取消しました。");
+        }).catch(function (e) { showToast("取消に失敗: " + (e.message || e)); });
+      }
+    });
   }
   function renderPay(c) {
     var id = String(c[0]);

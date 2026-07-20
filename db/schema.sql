@@ -130,6 +130,7 @@ CREATE TABLE sales_slips (
   place         TEXT,              -- 購入場所
   used_points   INTEGER DEFAULT 0,
   earned_points INTEGER DEFAULT 0,
+  voided        INTEGER NOT NULL DEFAULT 0,  -- 1=伝票ごと取消(返品)。明細・入金も集計から除外
   created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX idx_slips_cust ON sales_slips(customer_id);
@@ -145,7 +146,8 @@ CREATE TABLE sale_lines (
   amount        INTEGER,           -- 買上金額(編集可)
   discount_rate REAL,              -- 割引率
   tax           INTEGER,
-  spec_pending  INTEGER NOT NULL DEFAULT 0 -- 1=仕様未定(後日入力するレンズ等)
+  spec_pending  INTEGER NOT NULL DEFAULT 0, -- 1=仕様未定(後日入力するレンズ等)
+  voided        INTEGER NOT NULL DEFAULT 0  -- 1=取消(返品/訂正で無効化。集計・表示から除外)
 );
 CREATE INDEX idx_lines_slip ON sale_lines(slip_id);
 
