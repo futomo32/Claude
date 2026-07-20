@@ -1208,6 +1208,7 @@
         <div class="card" style="cursor:pointer" onclick="openStaffMaster()"><h3>担当者マスタ</h3><p>担当者の追加・名称変更・利用停止。レジ・修理・処方箋・日報・顧客の担当者選択に反映されます。</p></div>
         <div class="card" style="cursor:pointer" onclick="openSupplierMaster()"><h3>仕入先マスタ</h3><p>仕入先の分類(宝石/メガネ/時計/その他)を設定。在庫一覧の「仕入先ジャンル」絞り込みに反映されます。</p></div>
         <div class="card" style="cursor:pointer" onclick="openMasterHub()"><h3>各種マスタ管理</h3><p>商品分類・保管場所・支払方法などを選んで、項目の追加・名称変更・削除ができます。</p></div>
+        <div class="card" style="cursor:pointer" onclick="openRankUpdate()"><h3>顧客ランク更新</h3><p>合計購入額の基準で顧客ランクを再計算。全/宝飾/メガネ別に、変更内容をプレビューしてから一括更新。</p></div>
         <div class="card"><h3>スタッフと権限</h3><p>ユーザーの追加、レジ操作・帳票出力・マスター編集の権限設定。</p></div>
         <div class="card"><h3>ポイント設定</h3><p>還元率、有効期限、ランク別優待の設定。</p></div>
         <div class="card"><h3>オフライン同期</h3><p>通信障害時の一時保存と自動再送の設定。未送信キューの確認・手動送信もこちら。</p></div>
@@ -1465,6 +1466,33 @@
       <div class="pool-grid" id="pool-grid" style="max-height:50vh;overflow-y:auto"></div>
     </div>
     <div class="modal-foot"><button class="btn" onclick="closePhotoPool()">閉じる</button></div>
+  </div>
+</div>
+
+<!-- 顧客ランク更新(B-5) モーダル -->
+<div class="modal-back" id="rank-update-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ru-title">
+    <div class="modal-head">
+      <h3 id="ru-title">顧客ランク更新</h3>
+      <button class="close" aria-label="閉じる" onclick="closeRankUpdate()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">合計購入額の基準で顧客ランクを再計算します。まず「プレビュー」で変更内容を確認し、問題なければ「この内容で更新」を押してください。集計対象外(ななし等)・検証用データ・取消明細は対象外です。</p>
+      <div style="display:flex;gap:0.6em;align-items:center;flex-wrap:wrap;margin-bottom:0.6rem">
+        <div class="field" style="flex:none"><label>対象</label><select id="ru-kind"><option value="">全て(全購入)</option><option value="宝飾">宝飾(メガネ以外)</option><option value="メガネ">メガネ</option></select></div>
+        <button class="btn btn-primary" onclick="rankPreview()" style="margin-top:1.1em">プレビュー</button>
+        <button class="btn" id="ru-apply" style="margin-top:1.1em;display:none" onclick="rankApply()">この内容で更新</button>
+      </div>
+      <div id="ru-rules" style="color:var(--muted);font-size:0.8em;margin-bottom:0.5rem"></div>
+      <p id="ru-summary" style="margin:0 0 0.5rem;font-weight:700"></p>
+      <div class="table-scroll" style="max-height:45vh;overflow-y:auto">
+        <table class="data">
+          <thead><tr><th>顧客名</th><th class="r">合計購入額</th><th>現ランク</th><th>新ランク</th></tr></thead>
+          <tbody id="ru-tbody"><tr><td colspan="4" style="color:var(--muted)">「プレビュー」を押すと、ランクが変わる顧客の一覧が出ます。</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="closeRankUpdate()">閉じる</button></div>
   </div>
 </div>
 
@@ -2103,6 +2131,7 @@
   bindBackdropClose("supplier-master-modal", closeSupplierMaster);
   bindBackdropClose("staff-master-modal", closeStaffMaster);
   bindBackdropClose("photo-pool-modal", closePhotoPool);
+  bindBackdropClose("rank-update-modal", closeRankUpdate);
   bindBackdropClose("master-hub-modal", closeMasterHub);
   bindBackdropClose("alert-modal", alertCancel);
   bindBackdropClose("free-modal", closeFreePicker);
@@ -2802,6 +2831,57 @@
           openCustomer(cid);
           showToast("取消しました。");
         }).catch(function (e) { showToast("取消に失敗: " + (e.message || e)); });
+      }
+    });
+  }
+  /* ── 顧客ランク更新(B-5) ── */
+  var ruPreview = null;
+  function openRankUpdate() {
+    if (!API) return showToast("ランク更新はサーバー起動時に使えます。");
+    document.getElementById("rank-update-modal").classList.add("show");
+    document.getElementById("ru-apply").style.display = "none";
+    document.getElementById("ru-summary").textContent = "";
+    document.getElementById("ru-rules").textContent = "";
+    document.getElementById("ru-tbody").innerHTML = '<tr><td colspan="4" style="color:var(--muted)">「プレビュー」を押すと、ランクが変わる顧客の一覧が出ます。</td></tr>';
+  }
+  function closeRankUpdate() { document.getElementById("rank-update-modal").classList.remove("show"); }
+  function rankPreview() {
+    if (!API) return;
+    var kind = document.getElementById("ru-kind").value;
+    var tb = document.getElementById("ru-tbody");
+    tb.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">集計中…</td></tr>';
+    document.getElementById("ru-apply").style.display = "none";
+    fetch(API + "/rank_preview?kind=" + encodeURIComponent(kind)).then(function (r) { return r.json(); }).then(function (res) {
+      ruPreview = res;
+      var rules = (res.rules || []).map(function (x) { return x[1] + ":¥" + num(x[0]) + "〜"; }).join(" / ");
+      document.getElementById("ru-rules").textContent = "基準 " + rules;
+      var ups = res.updates || [];
+      document.getElementById("ru-summary").textContent =
+        "対象 " + (res.total_customers || 0).toLocaleString() + "名中、ランクが変わる顧客: " + ups.length.toLocaleString() + "名";
+      tb.innerHTML = ups.length ? ups.map(function (u) {
+        return '<tr><td>' + esc(dash(u.name)) + '</td><td class="r num">¥' + num(u.total) + '</td><td>' + esc(dash(u.old)) +
+          '</td><td><b>' + esc(dash(u.new)) + '</b></td></tr>';
+      }).join("") : '<tr><td colspan="4" style="color:var(--muted)">ランクが変わる顧客はいません(全員が基準どおりです)。</td></tr>';
+      document.getElementById("ru-apply").style.display = ups.length ? "" : "none";
+    }).catch(function () { tb.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">集計に失敗しました。</td></tr>'; });
+  }
+  function rankApply() {
+    if (!API || !ruPreview) return;
+    var kind = document.getElementById("ru-kind").value;
+    var n = (ruPreview.updates || []).length;
+    alertPopup(n + "名のランクを更新します。よろしいですか?", {
+      type: "warn", title: "ランク更新の確認", okText: "更新する", cancelText: "やめる", confirm: true,
+      onOk: function () {
+        fetch(API + "/rank_apply", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: kind })
+        }).then(function (r) { return r.json(); }).then(function (res) {
+          if (res.error) throw new Error(res.error);
+          // ローカルのランク(c[18])も反映して一覧・絞り込みを最新化
+          (ruPreview.updates || []).forEach(function (u) { var c = findCust(u.customer_id); if (c) c[18] = u.new; });
+          showToast((res.updated || 0) + "名のランクを更新しました。");
+          closeRankUpdate();
+          loadRankOptions();
+        }).catch(function (e) { showToast("更新に失敗: " + (e.message || e)); });
       }
     });
   }

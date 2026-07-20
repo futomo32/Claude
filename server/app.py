@@ -168,7 +168,7 @@ class Handler(BaseHTTPRequestHandler):
                         "/api/product_suppliers", "/api/product_brands", "/api/supplier_master", "/api/staff",
                         "/api/staff_junk", "/api/masters", "/api/master", "/api/photo_pool",
                         "/api/product", "/api/daily_sales", "/api/slip_lines", "/api/documents",
-                        "/api/customer_ranking", "/api/prescription_search"):
+                        "/api/customer_ranking", "/api/prescription_search", "/api/rank_preview"):
                 qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
 
                 def q1(name, default=""):
@@ -207,6 +207,8 @@ class Handler(BaseHTTPRequestHandler):
                     elif path == "/api/prescription_search":
                         result = {"rows": db_query.prescription_search(
                             con, q1("from"), q1("to"), q1("purpose"), q1("misassign") == "1")}
+                    elif path == "/api/rank_preview":
+                        result = db_query.compute_rank_updates(con, q1("kind"))
                     elif path == "/api/masters":
                         result = {"masters": db_query.master_types()}
                     elif path == "/api/master":
@@ -262,6 +264,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/void_slip":
                 con = connect()
                 result = db_query.void_sale_slip(con, payload.get("slip_id"))
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/rank_apply":
+                con = connect()
+                result = db_query.apply_rank_updates(con, payload.get("kind") or "")
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/customer":

@@ -653,6 +653,65 @@ def prescription_search(con, frm="", to="", purpose="", misassign_only=False):
     return out
 
 
+# 顧客ランクの基準(B-5)。宝飾ナビの合計金額ランク(1が最上位)に準拠。
+# (下限金額, ランク名) を上から判定。基準を変えたい場合はここを編集(将来は設定画面でマスタ化)。
+RANK_RULES = [
+    (1000000, "1"), (500000, "2"), (300000, "3"), (200000, "4"),
+    (100000, "5"), (50000, "6"), (9800, "7"), (1, "8"), (0, "9"),
+]
+
+
+def rank_for_amount(total):
+    """合計購入額から基準に沿ったランク名を返す。"""
+    t = total or 0
+    for lo, label in RANK_RULES:
+        if t >= lo:
+            return label
+    return RANK_RULES[-1][1]
+
+
+def compute_rank_updates(con, kind=""):
+    """全顧客の合計購入額から新ランクを算出し、現ランクと異なる顧客の一覧を返す(プレビュー)。
+      kind: ""=全て / "宝飾" / "メガネ"。集計対象外・検証ペルソナ・取消明細は対象外。
+    戻り値: {rules:[[下限,ランク]...], updates:[{customer_id,name,old,new,total}], total_customers:N}"""
+    con.row_factory = sqlite3.Row
+    where = ["s.customer_id IS NOT NULL", "l.amount IS NOT NULL",
+             "COALESCE(l.voided,0)=0", "COALESCE(s.voided,0)=0"]
+    if kind == "メガネ":
+        where.append("p.is_glasses=1")
+    elif kind == "宝飾":
+        where.append("COALESCE(p.is_glasses,0)=0")
+    totals = {}
+    for r in con.execute("""SELECT s.customer_id cid, SUM(l.amount) t
+                            FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
+                            LEFT JOIN products p ON l.product_key = p.product_key
+                            WHERE """ + " AND ".join(where) + " GROUP BY s.customer_id"):
+        totals[r["cid"]] = r["t"] or 0
+    updates = []
+    n = 0
+    for r in con.execute("""SELECT customer_id, name, rank FROM customers
+                            WHERE COALESCE(is_test,0)=0 AND COALESCE(exclude_stats,0)=0"""):
+        n += 1
+        cid = r["customer_id"]
+        total = totals.get(cid, 0) or 0
+        newr = rank_for_amount(total)
+        if (r["rank"] or "") != newr:
+            updates.append({"customer_id": cid, "name": r["name"] or cid,
+                            "old": r["rank"], "new": newr, "total": total})
+    updates.sort(key=lambda u: u["total"], reverse=True)
+    return {"rules": RANK_RULES, "updates": updates, "total_customers": n}
+
+
+def apply_rank_updates(con, kind=""):
+    """compute_rank_updates の変更をまとめて customers.rank に反映する。"""
+    res = compute_rank_updates(con, kind)
+    cur = con.cursor()
+    for u in res["updates"]:
+        cur.execute("UPDATE customers SET rank=? WHERE customer_id=?", (u["new"], u["customer_id"]))
+    con.commit()
+    return {"updated": len(res["updates"])}
+
+
 def _ensure_documents_table(con):
     """発行履歴テーブルを(無ければ)作る。既存DBでもマイグレーション不要で動くように。"""
     con.execute("""CREATE TABLE IF NOT EXISTS issued_documents (
