@@ -291,6 +291,24 @@ class Handler(BaseHTTPRequestHandler):
                 result = db_query.set_product_image(con, pk, fname)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/product_image_clear":
+                # 商品写真の取り消し(間違って登録した写真を外す)。実ファイルも削除する。
+                pk = str(payload.get("product_key") or "").strip()
+                if not pk:
+                    raise ValueError("商品が指定されていません")
+                con = connect()
+                result = db_query.clear_product_image(con, pk)
+                con.close()
+                old_file = result.get("removed_file")
+                if old_file:
+                    fpath = image_path(old_file)
+                    if fpath and os.path.isfile(fpath):
+                        try:
+                            os.remove(fpath)
+                        except OSError:
+                            pass
+                    reset_img_index()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/photo_pool":
                 # 写真プールへの一括アップロード: まとめて撮った複数枚を、商品登録前に
                 # 先に保存しておく(商品登録・修正の時にここから選んで紐づける)。

@@ -75,16 +75,14 @@ def ensure_schema(con):
                 changed = True
             except sqlite3.Error:
                 pass
-    # staff.is_register(レジ会計担当としてワンタップバーに出すか)。初回付与時は、
-    # 旧・宝飾ナビ由来のゴミ担当(「Aランク：三輪」等のランクタグ)を除いた本物だけを
-    # 1(表示)、ゴミは0(非表示)でシードする。以後はマスタ画面で個別に切替。
+    # staff.is_register(レジ会計担当としてワンタップバーに出すか)。デフォルトは
+    # 0(非表示)。宝飾ナビ由来の担当者は数百件規模になりがちで、全員表示→不要な
+    # ものだけ手動でOFFにする方式だとクリック数が膨大になるため、逆に全員非表示から
+    # 必要な人だけマスタ画面でONにする運用にする(実店舗は数人〜十数人のため負担が少ない)。
     scols = cols("staff")
     if scols and "is_register" not in scols:
         try:
-            con.execute("ALTER TABLE staff ADD COLUMN is_register INTEGER DEFAULT 1")
-            for r in con.execute("SELECT staff_code, name FROM staff"):
-                if _is_junk_staff_name(r[1]):
-                    con.execute("UPDATE staff SET is_register=0 WHERE staff_code=?", (r[0],))
+            con.execute("ALTER TABLE staff ADD COLUMN is_register INTEGER DEFAULT 0")
             changed = True
         except sqlite3.Error:
             pass
@@ -328,17 +326,20 @@ def build_blob_light(con):
     if not staff:
         staff = [r["staff_name"] for r in cur.execute(
             "SELECT DISTINCT staff_name FROM customers WHERE staff_name IS NOT NULL AND staff_name<>'' ORDER BY staff_name")]
-    # レジ会計担当のワンタップバーに出す担当者(is_register=1 の有効な人だけ)。
-    # フラグ列が無い/全部OFF等で空になる場合は staff 全体にフォールバック。
+    # レジ会計担当のワンタップバーに出す担当者(is_register=1 の有効な人だけ。デフォルトOFF)。
+    # 誰も設定していない(全部OFF)場合に限り staff 全体にフォールバック(会計不能を防ぐ安全策)。
     register_staff = [r["name"] for r in cur.execute(
-        "SELECT name FROM staff WHERE active=1 AND COALESCE(is_register,1)=1 ORDER BY name")]
+        "SELECT name FROM staff WHERE active=1 AND COALESCE(is_register,0)=1 ORDER BY name")]
     if not register_staff:
         register_staff = staff
+    # 担当者の「番号」入力(コード検索)用。有効な担当者のcode/nameペア
+    staff_codes = [[r["staff_code"], r["name"]] for r in cur.execute(
+        "SELECT staff_code, name FROM staff WHERE active=1")]
 
     return dict(customers=customers, families=families, points=points,
                 urikake=urikake, urikakeHist=urikake_hist,
                 repairs=repairs, tenders=tenders, stockStats=stock_stats, staff=staff,
-                registerStaff=register_staff,
+                registerStaff=register_staff, staffCodes=staff_codes,
                 lite=True)  # lite=True で「明細は遅延取得」とUIに知らせる
 
 
@@ -609,6 +610,21 @@ def set_product_image(con, product_key, image_file):
     return {"product_key": pk, "image_file": image_file}
 
 
+def clear_product_image(con, product_key):
+    """商品の写真を外す(間違って登録した写真を取り消す用)。商品自体は削除しない。
+    直前まで紐づいていたファイル名を返すので、実ファイルの削除はapp.py側で行う。"""
+    pk = str(product_key or "").strip()
+    if not pk:
+        raise ValueError("商品が指定されていません")
+    row = con.execute("SELECT image_file FROM products WHERE product_key=?", (pk,)).fetchone()
+    if not row:
+        raise ValueError("対象の商品が見つかりません")
+    old_file = row[0]
+    con.execute("UPDATE products SET image_file=NULL WHERE product_key=?", (pk,))
+    con.commit()
+    return {"product_key": pk, "removed_file": old_file}
+
+
 # ── 写真プール(まとめて撮影→後で商品に割り当て) ──
 def add_photo_pool_entry(con, filename):
     """アップロード済みの1枚をプールに登録する(実ファイル保存はapp.py側)。"""
@@ -756,15 +772,16 @@ def _staff_usage_map(con):
 
 
 def list_staff(con):
-    """担当者マスタ一覧。code/name/active＋使用件数(顧客/売上/アプローチ/処方箋/修理の合算)。"""
+    """担当者マスタ一覧。code/name/active＋使用件数(顧客/売上/アプローチ/処方箋/修理の合算)。
+    並び順はデフォルトで番号(staff_code)の昇順。"""
     sync_staff_from_names(con)
     umap = _staff_usage_map(con)
     con.row_factory = sqlite3.Row
     return [{"code": r["staff_code"], "name": r["name"], "active": bool(r["active"]),
              "register": bool(r["is_register"]), "count": umap.get(r["name"], 0)}
             for r in con.execute(
-                "SELECT staff_code,name,active,COALESCE(is_register,1) is_register "
-                "FROM staff ORDER BY active DESC, is_register DESC, name")]
+                "SELECT staff_code,name,active,COALESCE(is_register,0) is_register "
+                "FROM staff ORDER BY CAST(staff_code AS INTEGER)")]
 
 
 def save_staff(con, p):
@@ -789,7 +806,7 @@ def save_staff(con, p):
             raise ValueError("担当者名を入力してください")
         row = con.execute("SELECT MAX(CAST(staff_code AS INTEGER)) FROM staff WHERE staff_code GLOB '[0-9]*'").fetchone()
         code = str((row[0] or 0) + 1)
-        reg_new = register if has_reg else 1  # 手動追加は既定でレジ表示ON
+        reg_new = register if has_reg else 0  # 手動追加も既定はレジ表示OFF(必要な人だけON)
         cur.execute("INSERT INTO staff(staff_code,name,active,is_register) VALUES (?,?,?,?)",
                     (code, name, active, reg_new))
     else:  # 更新
