@@ -951,6 +951,68 @@ def add_product(con, payload):
                     vals["location"], stone or None]}
 
 
+def get_product(con, product_key):
+    """商品1件の全項目を返す(修正フォームの初期表示用)。search_products の一覧行より
+    項目数が多い(カラー・クラリティ・カット・鑑定書No・備考も含む)。"""
+    pk = str(product_key or "").strip()
+    if not pk:
+        raise ValueError("商品が指定されていません")
+    con.row_factory = sqlite3.Row
+    r = con.execute(
+        "SELECT product_key,product_no,name,category,supplier,cost_price,list_price,location,"
+        "center_stone,center_carat,color,clarity,cut,cert_no,info,state,image_file "
+        "FROM products WHERE product_key=?", (pk,)).fetchone()
+    if not r:
+        raise ValueError("商品が見つかりません")
+    return dict(r)
+
+
+def update_product(con, payload):
+    """商品情報の修正(B-7: 登録内容の確認・修正)。product_key必須。
+    state(在庫/売上/受託/返品)と image_file はここでは変更しない
+    (会計・返品・写真登録の各機能が管理しているため、競合を避けて触れない)。"""
+    pk = str(payload.get("product_key") or "").strip()
+    if not pk:
+        raise ValueError("商品が指定されていません")
+    vals = {k: (payload.get(k) or None) for k in PRODUCT_FIELDS}
+    name = (vals["name"] or "").strip()
+    if not name:
+        raise ValueError("商品名は必須です")
+    for k in ("cost_price", "list_price"):
+        if vals[k] is not None:
+            try:
+                vals[k] = int(str(vals[k]).replace(",", ""))
+            except ValueError:
+                raise ValueError("価格は数字で入力してください")
+    is_glasses = 1 if ("メガネ" in (vals["category"] or "") or "メガネ" in name) else 0
+    sets = ",".join(f"{k}=?" for k in PRODUCT_FIELDS) + ",is_glasses=?"
+    cur = con.execute(f"UPDATE products SET {sets} WHERE product_key=?",
+                       [vals[k] for k in PRODUCT_FIELDS] + [is_glasses, pk])
+    con.commit()
+    if cur.rowcount == 0:
+        raise ValueError("対象の商品が見つかりません")
+    return get_product(con, pk)
+
+
+def delete_product(con, product_key):
+    """商品の削除(誤登録の訂正用)。販売履歴(sale_lines)に紐づく商品は削除しない
+    (削除すると購入履歴の商品名解決ができなくなるため)。画像ファイル名を返すので、
+    実ファイルの削除はapp.py側(ディスク操作)で行う。"""
+    pk = str(product_key or "").strip()
+    if not pk:
+        raise ValueError("商品が指定されていません")
+    used = con.execute("SELECT COUNT(*) FROM sale_lines WHERE product_key=?", (pk,)).fetchone()[0]
+    if used:
+        raise ValueError(f"この商品は販売履歴({used}件)と紐づいているため削除できません。誤登録の場合は内容の修正をご利用ください。")
+    row = con.execute("SELECT image_file FROM products WHERE product_key=?", (pk,)).fetchone()
+    if not row:
+        raise ValueError("対象の商品が見つかりません")
+    image_file = row[0]
+    con.execute("DELETE FROM products WHERE product_key=?", (pk,))
+    con.commit()
+    return {"deleted": pk, "image_file": image_file}
+
+
 def add_prescription(con, p):
     """メガネ処方箋の新規登録/編集。id があれば更新、無ければ採番して新規。
     合計金額はレンズ金額+フレーム金額を優先(無ければ total_sell を使用)。"""

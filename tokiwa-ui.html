@@ -1249,6 +1249,33 @@
         <span id="pd-upload-status" style="margin-left:0.6em;color:var(--muted);font-size:0.85em"></span>
       </div>
       <div class="pd-info" id="pd-info"></div>
+      <div id="pd-actions" style="display:none;margin-top:0.8rem;gap:0.6em">
+        <button class="btn" onclick="startEditProduct()">✏️ 修正する</button>
+        <button class="btn" style="color:var(--danger)" onclick="deleteProductConfirm()">🗑 削除する</button>
+      </div>
+      <div id="pd-edit-form" style="display:none;margin-top:0.8rem">
+        <div class="kv">
+          <div class="field"><label>商品番号</label><input id="pe-no"></div>
+          <div class="field"><label>商品名 <span style="color:var(--danger)">必須</span></label><input id="pe-name"></div>
+          <div class="field"><label>商品分類</label><input id="pe-cat"></div>
+          <div class="field"><label>仕入先</label><input id="pe-supplier"></div>
+          <div class="field"><label>仕入単価(下代)</label><input class="num" id="pe-cost" inputmode="numeric"></div>
+          <div class="field"><label>上代(定価)</label><input class="num" id="pe-list" inputmode="numeric"></div>
+          <div class="field"><label>保管場所</label><input id="pe-loc"></div>
+          <div class="field"><label>中石(石種)</label><input id="pe-stone"></div>
+          <div class="field"><label>中石重量(ct)</label><input class="num" id="pe-carat" inputmode="decimal"></div>
+          <div class="field"><label>カラー</label><input id="pe-color"></div>
+          <div class="field"><label>クラリティ</label><input id="pe-clarity"></div>
+          <div class="field"><label>カット</label><input id="pe-cut"></div>
+          <div class="field"><label>鑑定書No</label><input class="num" id="pe-cert"></div>
+          <div class="field"><label>備考</label><input id="pe-info"></div>
+        </div>
+        <p id="pe-error" style="color:var(--danger);font-size:0.85em;margin:0.6rem 0 0;display:none"></p>
+        <div class="form-actions" style="margin-top:0.8rem">
+          <button class="btn" onclick="cancelEditProduct()">キャンセル</button>
+          <button class="btn btn-primary" onclick="saveProductEdit(this)">保存する</button>
+        </div>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn" onclick="closeProductDetail()">閉じる</button>
@@ -2864,13 +2891,108 @@
     document.getElementById("pd-info").innerHTML = rows.map(function (r) {
       return '<div class="kv-row"><span class="k">' + esc(r[0]) + '</span><span class="v">' + esc(r[1]) + '</span></div>';
     }).join("");
-    // 写真の登録/変更ボタンは、サーバー稼働時かつ商品キーがある場合のみ表示
+    // 写真の登録/変更・修正/削除ボタンは、サーバー稼働時かつ商品キーがある場合のみ表示
     var up = document.getElementById("pd-upload");
     document.getElementById("pd-upload-status").textContent = "";
     up.style.display = (API && p[7]) ? "" : "none";
+    document.getElementById("pd-actions").style.display = (API && p[7]) ? "flex" : "none";
+    cancelEditProduct();  // 開き直す時は必ず閲覧モードに戻す(前回の編集内容を残さない)
     document.getElementById("prod-detail-modal").classList.add("show");
   }
   function closeProductDetail() { document.getElementById("prod-detail-modal").classList.remove("show"); }
+  /* ── 商品の修正・削除(B-7) ── */
+  function startEditProduct() {
+    if (!pdProduct || !API) return;
+    fetch(API + "/product?key=" + encodeURIComponent(pdProduct[7])).then(function (r) { return r.json(); }).then(function (pr) {
+      if (pr.error) throw new Error(pr.error);
+      document.getElementById("pe-no").value = pr.product_no || "";
+      document.getElementById("pe-name").value = pr.name || "";
+      document.getElementById("pe-cat").value = pr.category || "";
+      document.getElementById("pe-supplier").value = pr.supplier || "";
+      document.getElementById("pe-cost").value = pr.cost_price || "";
+      document.getElementById("pe-list").value = pr.list_price || "";
+      document.getElementById("pe-loc").value = pr.location || "";
+      document.getElementById("pe-stone").value = pr.center_stone || "";
+      document.getElementById("pe-carat").value = pr.center_carat || "";
+      document.getElementById("pe-color").value = pr.color || "";
+      document.getElementById("pe-clarity").value = pr.clarity || "";
+      document.getElementById("pe-cut").value = pr.cut || "";
+      document.getElementById("pe-cert").value = pr.cert_no || "";
+      document.getElementById("pe-info").value = pr.info || "";
+      document.getElementById("pe-error").style.display = "none";
+      document.getElementById("pd-info").style.display = "none";
+      document.getElementById("pd-actions").style.display = "none";
+      document.getElementById("pd-edit-form").style.display = "block";
+    }).catch(function (e) { showToast("読み込みに失敗: " + (e.message || e)); });
+  }
+  function cancelEditProduct() {
+    document.getElementById("pd-edit-form").style.display = "none";
+    document.getElementById("pd-info").style.display = "";
+    if (pdProduct && pdProduct[7] && API) document.getElementById("pd-actions").style.display = "flex";
+  }
+  function saveProductEdit(btn) {
+    var err = document.getElementById("pe-error");
+    err.style.display = "none";
+    var name = document.getElementById("pe-name").value.trim();
+    if (!name) { err.textContent = "商品名を入力してください。"; err.style.display = "block"; return; }
+    var numval = function (id) {
+      var v = zen2han(document.getElementById(id).value).replace(/[^0-9]/g, "");
+      return v ? parseInt(v, 10) : null;
+    };
+    var payload = {
+      product_key: pdProduct[7],
+      product_no: zen2han(document.getElementById("pe-no").value).trim(),
+      name: name,
+      category: document.getElementById("pe-cat").value.trim(),
+      supplier: document.getElementById("pe-supplier").value.trim(),
+      cost_price: numval("pe-cost"),
+      list_price: numval("pe-list"),
+      location: document.getElementById("pe-loc").value.trim(),
+      center_stone: document.getElementById("pe-stone").value.trim(),
+      center_carat: zen2han(document.getElementById("pe-carat").value).trim(),
+      color: document.getElementById("pe-color").value.trim(),
+      clarity: document.getElementById("pe-clarity").value.trim(),
+      cut: document.getElementById("pe-cut").value.trim(),
+      cert_no: zen2han(document.getElementById("pe-cert").value).trim(),
+      info: document.getElementById("pe-info").value.trim()
+    };
+    btn.disabled = true;
+    fetch(API + "/product_update", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    }).then(function (r) { return r.json(); }).then(function (pr) {
+      btn.disabled = false;
+      if (pr.error) throw new Error(pr.error);
+      // 行データ(prodRows/D.products と同一参照)を更新して一覧にもその場で反映する
+      var stone = pr.center_stone || "";
+      if (stone && pr.center_carat) stone += " " + pr.center_carat + "ct";
+      pdProduct[0] = pr.product_no; pdProduct[1] = pr.name; pdProduct[2] = pr.category;
+      pdProduct[3] = pr.list_price; pdProduct[5] = pr.location; pdProduct[6] = stone || null;
+      pdProduct[9] = pr.cost_price; pdProduct[10] = pr.supplier;
+      openProductDetailRow(pdProduct);  // 表示を最新化(閲覧モードに戻る)
+      paintProducts();
+      showToast("修正しました。");
+    }).catch(function (e) { btn.disabled = false; err.textContent = "保存に失敗しました: " + (e.message || e); err.style.display = "block"; });
+  }
+  function deleteProductConfirm() {
+    if (!pdProduct || !API) return;
+    var p = pdProduct;
+    alertPopup("「" + (p[1] || "この商品") + "」（" + dash(p[0]) + "）を削除しますか?写真も一緒に削除されます。この操作は取り消せません。", {
+      type: "warn", title: "商品の削除", okText: "削除する", cancelText: "やめる", confirm: true,
+      onOk: function () {
+        fetch(API + "/product_delete", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ product_key: p[7] })
+        }).then(function (r) { return r.json(); }).then(function (res) {
+          if (res.error) throw new Error(res.error);
+          closeProductDetail();
+          prodRows = prodRows.filter(function (x) { return x[7] !== p[7]; });
+          if (D.products) D.products = D.products.filter(function (x) { return x[7] !== p[7]; });
+          prodTotal = Math.max(0, prodTotal - 1);
+          paintProducts();
+          showToast("削除しました。");
+        }).catch(function (e) { alertPopup("削除できませんでした: " + (e.message || e), { type: "warn", title: "削除エラー", okText: "OK" }); });
+      }
+    });
+  }
   /* ── 各種マスタ管理(汎用) TOPで選択→追加/編集/削除 ── */
   var mhTypes = [], mhItems = [];
   function openMasterHub() {

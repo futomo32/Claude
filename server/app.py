@@ -167,7 +167,7 @@ class Handler(BaseHTTPRequestHandler):
             if path in ("/api/customer_detail", "/api/products", "/api/product_categories",
                         "/api/product_suppliers", "/api/supplier_master", "/api/staff",
                         "/api/staff_junk", "/api/masters", "/api/master", "/api/photo_pool",
-                        "/api/daily_sales", "/api/slip_lines", "/api/documents"):
+                        "/api/product", "/api/daily_sales", "/api/slip_lines", "/api/documents"):
                 qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
 
                 def q1(name, default=""):
@@ -195,6 +195,8 @@ class Handler(BaseHTTPRequestHandler):
                         result = {"junk": db_query.list_junk_staff(con)}
                     elif path == "/api/photo_pool":
                         result = {"pool": db_query.list_photo_pool(con)}
+                    elif path == "/api/product":
+                        result = db_query.get_product(con, q1("key"))
                     elif path == "/api/masters":
                         result = {"masters": db_query.master_types()}
                     elif path == "/api/master":
@@ -345,6 +347,29 @@ class Handler(BaseHTTPRequestHandler):
                 con = connect()
                 result = db_query.add_product(con, payload)
                 con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/product_update":
+                con = connect()
+                result = db_query.update_product(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/product_delete":
+                # 商品の削除(誤登録の訂正。B-7)。販売履歴があれば db_query 側で拒否される。
+                pk = str(payload.get("product_key") or "").strip()
+                if not pk:
+                    raise ValueError("商品が指定されていません")
+                con = connect()
+                result = db_query.delete_product(con, pk)
+                con.close()
+                image_file = result.get("image_file")
+                if image_file:
+                    fpath = image_path(image_file)
+                    if fpath and os.path.isfile(fpath):
+                        try:
+                            os.remove(fpath)
+                        except OSError:
+                            pass
+                    reset_img_index()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/repair":
                 con = connect()
