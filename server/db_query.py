@@ -1415,6 +1415,27 @@ def add_receivable_payment(con, p):
     return {"receivable_id": receivable_id, "new_balance": new_balance, "paid_at": paid_at, "amount": amount}
 
 
+def receivable_summary(con):
+    """売掛残高のある顧客ごとの合計(売掛管理の一覧用)。誰がいくら・件数・最古買上日・
+    最終入金日を返し、総合計と対象顧客数も付ける。残高の多い順。"""
+    con.row_factory = sqlite3.Row
+    rows, total = [], 0
+    for r in con.execute("""
+        SELECT r.customer_id cid, c.name cname, c.staff_name staff, c.tel tel,
+               COUNT(*) cnt, SUM(r.balance) bal, MAX(r.last_paid_at) last_paid, MIN(r.bought_at) oldest
+        FROM receivables r LEFT JOIN customers c ON c.customer_id = r.customer_id
+        WHERE COALESCE(r.balance,0) > 0
+        GROUP BY r.customer_id
+        HAVING SUM(r.balance) > 0
+        ORDER BY bal DESC"""):
+        bal = r["bal"] or 0
+        total += bal
+        rows.append({"customer_id": r["cid"], "name": r["cname"] or r["cid"], "staff": r["staff"],
+                     "tel": r["tel"], "count": r["cnt"], "balance": bal,
+                     "last_paid": r["last_paid"], "oldest": r["oldest"]})
+    return {"rows": rows, "total": total, "count": len(rows)}
+
+
 def add_receivable(con, p):
     """既存顧客に売掛(未回収残高)を手動で追加する。レジ会計を経由しない過去分の登録用。
     payload: {customer_id, product_name, amount, bought_at}"""
@@ -1438,6 +1459,41 @@ def add_receivable(con, p):
     con.commit()
     return {"id": rid, "customer_id": cid, "product_name": name, "bought_at": bought_at,
             "down_payment": 0, "balance": amount, "last_paid_at": None}
+
+
+def update_receivable(con, p):
+    """売掛1件の修正(商品名・残高・買上日)。入力ミスの訂正用。"""
+    rid = p.get("id")
+    if not rid:
+        raise ValueError("対象の売掛が指定されていません")
+    row = con.execute("SELECT customer_id FROM receivables WHERE id=?", (rid,)).fetchone()
+    if not row:
+        raise ValueError("対象の売掛が見つかりません")
+    try:
+        balance = int(str(p.get("amount")).replace(",", ""))
+    except (TypeError, ValueError):
+        raise ValueError("金額を数字で入力してください")
+    if balance < 0:
+        raise ValueError("残高は0以上で入力してください")
+    name = p.get("product_name") or None
+    bought_at = p.get("bought_at") or None
+    con.execute("UPDATE receivables SET product_name=?, balance=?, bought_at=? WHERE id=?",
+                (name, balance, bought_at, rid))
+    con.commit()
+    return {"id": rid, "customer_id": row[0], "product_name": name, "bought_at": bought_at,
+            "balance": balance}
+
+
+def delete_receivable(con, rid):
+    """売掛1件を削除(誤登録の訂正用)。売掛残高から消える。入金履歴の記録は残す。"""
+    if not rid:
+        raise ValueError("対象の売掛が指定されていません")
+    row = con.execute("SELECT customer_id FROM receivables WHERE id=?", (rid,)).fetchone()
+    if not row:
+        raise ValueError("対象の売掛が見つかりません")
+    con.execute("DELETE FROM receivables WHERE id=?", (rid,))
+    con.commit()
+    return {"deleted": rid, "customer_id": row[0]}
 
 
 def add_cash_movement(con, p):

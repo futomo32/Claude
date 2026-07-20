@@ -707,6 +707,7 @@
     <button class="nav-item" data-screen="register"><span class="ic">￥</span>レジ(売上登録)</button>
     <button class="nav-item" data-screen="customers"><span class="ic">👤</span>顧客管理</button>
     <button class="nav-item" data-screen="search"><span class="ic">🔍</span>検索・分析</button>
+    <button class="nav-item" data-screen="receivables"><span class="ic">💳</span>売掛管理</button>
     <button class="nav-item" data-screen="products"><span class="ic">◆</span>商品・在庫</button>
     <button class="nav-item" data-screen="repairs"><span class="ic">🔧</span>修理伝票</button>
     <button class="nav-item" data-screen="estimate"><span class="ic">📄</span>見積・請求</button>
@@ -984,6 +985,33 @@
               <tbody id="s-rx-tbody"><tr><td colspan="7" style="color:var(--muted)">条件を指定して「検索」を押してください。</td></tr></tbody>
             </table>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 売掛管理 ── -->
+    <section class="content" data-screen="receivables">
+      <div class="card">
+        <div class="tiles report-tiles" id="rcv-tiles"></div>
+        <div style="display:flex;gap:0.6em;align-items:center;margin:0.4rem 0 0.6rem">
+          <input id="rcv-search" placeholder="🔍 顧客名で絞り込み" style="flex:1;max-width:20em" oninput="renderReceivables()">
+          <button class="btn" onclick="loadReceivables()">再読込</button>
+          <button class="btn" onclick="exportReceivablesCsv()">CSV出力</button>
+        </div>
+        <p style="margin:0 0 0.5rem;color:var(--muted);font-size:0.8em">売掛残高のある顧客の一覧です。行をクリックすると顧客の入金管理を開きます(そこで入金・請求書印刷ができます)。列見出しで並び替え。</p>
+        <div class="table-scroll">
+          <table class="data">
+            <thead><tr>
+              <th class="sortable" onclick="sortReceivables('name')">顧客名<span class="ar" data-rar="name"></span></th>
+              <th class="sortable" onclick="sortReceivables('staff')">担当<span class="ar" data-rar="staff"></span></th>
+              <th class="num">電話</th>
+              <th class="r sortable" onclick="sortReceivables('count')">売掛件数<span class="ar" data-rar="count"></span></th>
+              <th class="num sortable" onclick="sortReceivables('oldest')">最古買上日<span class="ar" data-rar="oldest"></span></th>
+              <th class="num">最終入金</th>
+              <th class="r sortable" onclick="sortReceivables('balance')">売掛残高<span class="ar" data-rar="balance"></span></th>
+            </tr></thead>
+            <tbody id="rcv-tbody"><tr><td colspan="7" style="color:var(--muted)">読み込み中…</td></tr></tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -1614,13 +1642,13 @@
 <div class="modal-back" id="addrecv-modal">
   <div class="modal" style="width:min(440px,100%)" role="dialog" aria-modal="true">
     <div class="modal-head">
-      <h3>売掛を追加</h3>
+      <h3 id="ar-title">売掛を追加</h3>
       <button class="close" aria-label="閉じる" onclick="closeAddReceivable()">×</button>
     </div>
     <div class="modal-body">
-      <p style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">レジ会計を経由しない売掛(過去分の未回収など)をこの顧客に登録します。あとで「入金する」で回収できます。</p>
+      <p id="ar-desc" style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">レジ会計を経由しない売掛(過去分の未回収など)をこの顧客に登録します。あとで「入金する」で回収できます。</p>
       <div class="field"><label>商品名・内容(任意)</label><input id="ar-name" placeholder="例: 修理代 / K18ネックレス"></div>
-      <div class="field"><label>売掛金額</label><input class="num" id="ar-amount" inputmode="numeric" placeholder="0"></div>
+      <div class="field"><label id="ar-amount-label">売掛金額</label><input class="num" id="ar-amount" inputmode="numeric" placeholder="0"></div>
       <div class="field"><label>発生日(買上日)</label><input type="date" id="ar-date"></div>
       <p id="ar-error" style="display:none;color:var(--danger);font-size:0.85em;margin:0.4em 0 0"></p>
     </div>
@@ -1871,7 +1899,7 @@
 
   var screenTitles = {
     home: "ホーム", register: "レジ(売上登録)", customers: "顧客管理",
-    "customer-detail": "顧客詳細", search: "検索・分析", products: "商品・在庫", repairs: "修理伝票",
+    "customer-detail": "顧客詳細", search: "検索・分析", receivables: "売掛管理", products: "商品・在庫", repairs: "修理伝票",
     estimate: "見積・請求", reports: "日報・帳票", settings: "設定・マスター"
   };
 
@@ -1907,6 +1935,7 @@
     // 画面に入るたびに最新化(いずれもサーバーへの軽い問い合わせ。表示ボタンを押さなくてよい)
     try {
       if (name === "home") renderHomeTiles();
+      else if (name === "receivables") loadReceivables();
       else if (name === "reports") renderDailyReport();
       else if (name === "repairs") renderRepairs();
       else if (name === "products") renderProducts();
@@ -2619,6 +2648,56 @@
   function openRankCustomer(cid) {
     openCustomer(cid, { back: { screen: "search", tab: "s-rank", label: "ランキングへ戻る" } });
   }
+  /* ══ 売掛管理 ══ */
+  var rcvRows = [], rcvSort = { key: "balance", dir: "desc" };
+  function loadReceivables() {
+    var tb = document.getElementById("rcv-tbody");
+    if (!API) { tb.innerHTML = '<tr><td colspan="7" style="color:var(--muted)">売掛管理はサーバー起動時に利用できます。</td></tr>'; document.getElementById("rcv-tiles").innerHTML = ""; return; }
+    tb.innerHTML = '<tr><td colspan="7" style="color:var(--muted)">読み込み中…</td></tr>';
+    fetch(API + "/receivables_summary").then(function (r) { return r.json(); }).then(function (res) {
+      rcvRows = res.rows || [];
+      document.getElementById("rcv-tiles").innerHTML =
+        '<div class="tile"><div class="t-label">総売掛残高</div><div class="t-value num"' + (res.total > 0 ? ' style="color:var(--danger)"' : "") + '>¥' + num(res.total || 0) + '</div></div>' +
+        '<div class="tile"><div class="t-label">売掛のある顧客</div><div class="t-value num">' + (res.count || 0) + '<small>名</small></div></div>';
+      renderReceivables();
+    }).catch(function () { tb.innerHTML = '<tr><td colspan="7" style="color:var(--muted)">読み込みに失敗しました。</td></tr>'; });
+  }
+  function sortReceivables(key) {
+    if (rcvSort.key === key) rcvSort.dir = (rcvSort.dir === "asc") ? "desc" : "asc";
+    else { rcvSort.key = key; rcvSort.dir = (key === "name" || key === "staff" || key === "oldest") ? "asc" : "desc"; }
+    renderReceivables();
+  }
+  function renderReceivables() {
+    var q = ((document.getElementById("rcv-search") || {}).value || "").trim();
+    var nq = normKana(q);
+    var list = rcvRows.filter(function (r) { return !q || normKana(r.name).indexOf(nq) >= 0; });
+    var dir = (rcvSort.dir === "desc") ? -1 : 1, k = rcvSort.key;
+    list.sort(function (a, b) {
+      var av = a[k], bv = b[k];
+      if (k === "name" || k === "staff" || k === "oldest") { av = String(av || ""); bv = String(bv || ""); return av.localeCompare(bv, "ja") * dir; }
+      return ((av || 0) - (bv || 0)) * dir;
+    });
+    var tb = document.getElementById("rcv-tbody");
+    tb.innerHTML = list.length ? list.map(function (r) {
+      return '<tr style="cursor:pointer" onclick="openReceivableCustomer(\'' + esc(String(r.customer_id)) + '\')" title="クリックで入金管理を開く">' +
+        '<td>' + esc(dash(r.name)) + '</td><td>' + esc(shortName(r.staff)) + '</td><td class="num">' + esc(dash(r.tel)) +
+        '</td><td class="r num">' + num(r.count) + '</td><td class="num">' + esc(dash(r.oldest)) + '</td><td class="num">' + esc(dash(r.last_paid)) +
+        '</td><td class="r num" style="color:var(--danger)">¥' + num(r.balance) + '</td></tr>';
+    }).join("") : '<tr><td colspan="7" style="color:var(--muted)">' + (q ? "該当する顧客がいません。" : "売掛残高のある顧客はいません。") + '</td></tr>';
+    document.querySelectorAll('[data-rar]').forEach(function (el) {
+      el.textContent = (el.getAttribute("data-rar") === rcvSort.key) ? (rcvSort.dir === "asc" ? " ▲" : " ▼") : "";
+    });
+  }
+  // 行クリック: その顧客の入金管理タブを開き、戻り先を売掛管理にする
+  function openReceivableCustomer(cid) {
+    openCustomer(cid, { tab: "c-pay", back: { screen: "receivables", label: "売掛管理へ戻る" } });
+  }
+  function exportReceivablesCsv() {
+    if (!rcvRows.length) return showToast("出力する売掛データがありません。");
+    var rows = [["顧客名", "担当", "電話", "売掛件数", "最古買上日", "最終入金日", "売掛残高"]];
+    rcvRows.forEach(function (r) { rows.push([r.name, shortName(r.staff) || "", r.tel || "", r.count, r.oldest || "", r.last_paid || "", r.balance]); });
+    downloadCsv("売掛一覧_" + TODAY_ISO + ".csv", rows);
+  }
   function renderCustomers() {
     var nameRaw = (document.getElementById("q-name").value || "").trim();
     var telRaw = (document.getElementById("q-tel").value || "").replace(/[^0-9]/g, "");
@@ -3063,13 +3142,16 @@
       (balance > 0 ? '<button class="btn" onclick="printInvoice(\'' + esc(id) + '\')">請求書を印刷</button>' : "") + '</div>';
     if (uk.length) {
       html += '<div class="section-title">売掛明細</div><div class="table-scroll"><table class="data"><thead><tr><th>商品名</th><th>買上日</th><th class="r">頭金</th><th class="r">残高</th><th></th></tr></thead><tbody>' +
-        uk.map(function (u) {
+        uk.map(function (u, i) {
           var bal = parseInt(u[4], 10) || 0;
           var nm = esc(u[1] || "").replace(/'/g, "&#39;");
-          var btn = bal > 0 ? '<button class="btn" onclick="openPayModal(\'' + esc(u[0]) + '\',\'' + esc(id) +
-            '\',\'' + nm + '\',' + bal + ')">入金する</button>' : "—";
+          var pay = bal > 0 ? '<button class="btn" onclick="openPayModal(\'' + esc(u[0]) + '\',\'' + esc(id) +
+            '\',\'' + nm + '\',' + bal + ')">入金する</button>' : "";
+          var edit = '<button class="btn" onclick="openAddReceivable(\'' + esc(id) + '\', D.urikake[\'' + esc(id) + '\'][' + i + '])">修正</button>';
+          var del = '<button class="btn" onclick="deleteReceivable(\'' + esc(u[0]) + '\',\'' + esc(id) + '\')">削除</button>';
+          var acts = '<div style="display:flex;gap:0.3em;flex-wrap:wrap;justify-content:flex-end">' + pay + edit + del + '</div>';
           return '<tr><td>' + esc(dash(u[1])) + '</td><td class="num">' + esc(dash(u[2])) + '</td><td class="r num">' +
-            (u[3] ? "¥" + num(u[3]) : "—") + '</td><td class="r num">¥' + num(bal) + '</td><td>' + btn + '</td></tr>';
+            (u[3] ? "¥" + num(u[3]) : "—") + '</td><td class="r num">¥' + num(bal) + '</td><td>' + acts + '</td></tr>';
         }).join("") + '</tbody></table></div>';
     }
     if (hist.length) {
@@ -3082,44 +3164,89 @@
     }
     document.getElementById("c-pay").innerHTML = html;
   }
-  /* ── 売掛を手動追加(既存客の過去分など) ── */
+  /* ── 売掛を手動追加/修正(既存客の過去分など) ── */
   var addRecvCid = null;
-  function openAddReceivable(cid) {
+  var editRecvId = null; // 修正モード時は対象売掛のid、新規はnull
+  function openAddReceivable(cid, existing) {
     if (!API) return showToast("売掛の追加はサーバー起動時に使えます。");
     addRecvCid = String(cid);
-    document.getElementById("ar-name").value = "";
-    document.getElementById("ar-amount").value = "";
-    document.getElementById("ar-date").value = TODAY_ISO;
+    editRecvId = existing ? existing[0] : null;
+    var isEdit = !!editRecvId;
+    document.getElementById("ar-title").textContent = isEdit ? "売掛を修正" : "売掛を追加";
+    document.getElementById("ar-desc").textContent = isEdit
+      ? "この売掛の内容を修正します。残高を変更すると請求額に反映されます。"
+      : "レジ会計を経由しない売掛(過去分の未回収など)をこの顧客に登録します。あとで「入金する」で回収できます。";
+    document.getElementById("ar-amount-label").textContent = isEdit ? "残高" : "売掛金額";
+    document.getElementById("ar-name").value = isEdit ? (existing[1] || "") : "";
+    document.getElementById("ar-amount").value = isEdit ? (parseInt(existing[4], 10) || 0) : "";
+    document.getElementById("ar-date").value = isEdit ? (existing[2] || TODAY_ISO) : TODAY_ISO;
     document.getElementById("ar-error").style.display = "none";
+    document.getElementById("ar-submit-btn").textContent = isEdit ? "保存する" : "追加する";
     document.getElementById("addrecv-modal").classList.add("show");
   }
-  function closeAddReceivable() { document.getElementById("addrecv-modal").classList.remove("show"); addRecvCid = null; }
+  function closeAddReceivable() { document.getElementById("addrecv-modal").classList.remove("show"); addRecvCid = null; editRecvId = null; }
   function submitAddReceivable() {
     if (!addRecvCid) return;
     var err = document.getElementById("ar-error");
+    var isEdit = !!editRecvId;
     var amt = parseInt(zen2han(document.getElementById("ar-amount").value).replace(/[^0-9]/g, ""), 10) || 0;
-    if (amt <= 0) { err.textContent = "売掛金額を入力してください。"; err.style.display = "block"; return; }
+    if (!isEdit && amt <= 0) { err.textContent = "売掛金額を入力してください。"; err.style.display = "block"; return; }
+    if (isEdit && amt < 0) { err.textContent = "残高は0以上で入力してください。"; err.style.display = "block"; return; }
     err.style.display = "none";
     var cid = addRecvCid;
-    var payload = {
-      customer_id: cid, amount: amt,
-      product_name: document.getElementById("ar-name").value.trim() || null,
-      bought_at: document.getElementById("ar-date").value || TODAY_ISO
-    };
+    var name = document.getElementById("ar-name").value.trim() || null;
+    var bought_at = document.getElementById("ar-date").value || TODAY_ISO;
     var btn = document.getElementById("ar-submit-btn");
-    btn.disabled = true; btn.textContent = "追加中…";
+    var doneLabel = isEdit ? "保存する" : "追加する";
+    btn.disabled = true; btn.textContent = isEdit ? "保存中…" : "追加中…";
+    if (isEdit) {
+      var rid = editRecvId;
+      fetch(API + "/receivable_update", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: rid, product_name: name, amount: amt, bought_at: bought_at })
+      }).then(function (r) { return r.json(); }).then(function (rv) {
+        btn.disabled = false; btn.textContent = doneLabel;
+        if (rv.error) throw new Error(rv.error);
+        var arr = D.urikake[cid] || [];
+        for (var i = 0; i < arr.length; i++) {
+          if (String(arr[i][0]) === String(rid)) { arr[i][1] = rv.product_name; arr[i][2] = rv.bought_at; arr[i][4] = rv.balance; break; }
+        }
+        closeAddReceivable();
+        var c = findCust(cid); if (c) renderPay(c);
+        renderPosReceivable();
+        loadReceivables();
+        showToast("売掛を修正しました。");
+      }).catch(function (e) { btn.disabled = false; btn.textContent = doneLabel; err.textContent = "修正に失敗しました: " + (e.message || e); err.style.display = "block"; });
+      return;
+    }
     fetch(API + "/receivable_add", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ customer_id: cid, amount: amt, product_name: name, bought_at: bought_at })
     }).then(function (r) { return r.json(); }).then(function (rv) {
-      btn.disabled = false; btn.textContent = "追加する";
+      btn.disabled = false; btn.textContent = doneLabel;
       if (rv.error) throw new Error(rv.error);
       (D.urikake[cid] = D.urikake[cid] || []).push([rv.id, rv.product_name, rv.bought_at, rv.down_payment, rv.balance, rv.last_paid_at]);
       (D.urikakeHist[cid] = D.urikakeHist[cid] || []).unshift([rv.bought_at, "掛売", rv.product_name, rv.balance, null]);
       closeAddReceivable();
       var c = findCust(cid); if (c) renderPay(c);
       renderPosReceivable();
+      loadReceivables();
       showToast("売掛 ¥" + num(rv.balance) + " を追加しました。");
-    }).catch(function (e) { btn.disabled = false; btn.textContent = "追加する"; err.textContent = "追加に失敗しました: " + (e.message || e); err.style.display = "block"; });
+    }).catch(function (e) { btn.disabled = false; btn.textContent = doneLabel; err.textContent = "追加に失敗しました: " + (e.message || e); err.style.display = "block"; });
+  }
+  function deleteReceivable(rid, cid) {
+    if (!API) return showToast("売掛の削除はサーバー起動時に使えます。");
+    if (!confirm("この売掛を削除します。よろしいですか?\n(入金履歴の記録は残ります)")) return;
+    fetch(API + "/receivable_delete", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: rid })
+    }).then(function (r) { return r.json(); }).then(function (rv) {
+      if (rv.error) throw new Error(rv.error);
+      D.urikake[cid] = (D.urikake[cid] || []).filter(function (u) { return String(u[0]) !== String(rid); });
+      var c = findCust(cid); if (c) renderPay(c);
+      renderPosReceivable();
+      loadReceivables();
+      showToast("売掛を削除しました。");
+    }).catch(function (e) { showToast("削除に失敗: " + (e.message || e)); });
   }
   // レジで顧客を選んだ時、売掛残高があれば入金パネルを表示(現金授受→ドロワーがレジで完結)
   function renderPosReceivable() {

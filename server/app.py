@@ -169,7 +169,7 @@ class Handler(BaseHTTPRequestHandler):
                         "/api/staff_junk", "/api/masters", "/api/master", "/api/photo_pool",
                         "/api/product", "/api/daily_sales", "/api/slip_lines", "/api/documents",
                         "/api/customer_ranking", "/api/prescription_search", "/api/rank_preview",
-                        "/api/rank_rules"):
+                        "/api/rank_rules", "/api/receivables_summary"):
                 qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
 
                 def q1(name, default=""):
@@ -212,6 +212,8 @@ class Handler(BaseHTTPRequestHandler):
                         result = db_query.compute_rank_updates(con, q1("kind"))
                     elif path == "/api/rank_rules":
                         result = {"rules": db_query.get_rank_rules(con)}
+                    elif path == "/api/receivables_summary":
+                        result = db_query.receivable_summary(con)
                     elif path == "/api/masters":
                         result = {"masters": db_query.master_types()}
                     elif path == "/api/master":
@@ -282,6 +284,16 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/receivable_add":
                 con = connect()
                 result = db_query.add_receivable(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/receivable_update":
+                con = connect()
+                result = db_query.update_receivable(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/receivable_delete":
+                con = connect()
+                result = db_query.delete_receivable(con, payload.get("id"))
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/rank_rules":
