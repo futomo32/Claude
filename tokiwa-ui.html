@@ -656,6 +656,11 @@
   .op-bar .op-btn { padding: 0.45em 1em; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); cursor: pointer; font: inherit; font-size: 0.92em; }
   .op-bar .op-btn.sel { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
   .op-bar .op-add { border-style: dashed; color: var(--muted); }
+  /* 写真プール(まとめて撮影→後で商品に割り当て) */
+  .pool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 0.6rem; margin-top: 0.8rem; }
+  .pool-item { position: relative; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fbfbfb; }
+  .pool-item img { width: 100%; height: 110px; object-fit: cover; display: block; cursor: pointer; }
+  .pool-del { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; line-height: 1; border-radius: 50%; border: none; background: rgba(0,0,0,0.55); color: #fff; cursor: pointer; font-size: 0.8em; }
   th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
   th.sortable:hover { color: var(--accent); }
   th .ar { color: var(--accent); font-size: 0.85em; }
@@ -900,9 +905,12 @@
 
     <!-- ── 商品・在庫 ── -->
     <section class="content" data-screen="products">
-      <div class="tabs" data-tabgroup="prod">
-        <button class="tab active" data-tab="p-stock">在庫一覧</button>
-        <button class="tab" data-tab="p-purchase">仕入登録</button>
+      <div class="tabs" data-tabgroup="prod" style="justify-content:space-between;align-items:center">
+        <div>
+          <button class="tab active" data-tab="p-stock">在庫一覧</button>
+          <button class="tab" data-tab="p-purchase">仕入登録</button>
+        </div>
+        <button class="btn" onclick="openPhotoPool('manage')" title="スマホでまとめて撮った商品写真を先にアップロード・整理できます">📷 写真プール</button>
       </div>
 
       <div class="tabpane active" id="p-stock">
@@ -967,9 +975,10 @@
             <div class="field"><label>保管場所</label><select id="np-loc"><option>金庫</option><option>ショーケースA</option><option>バックヤード</option></select></div>
           </div>
           <div class="field" style="margin-top:0.6rem"><label>商品写真(任意)</label>
-            <div style="display:flex;align-items:center;gap:0.6em">
+            <div style="display:flex;align-items:center;gap:0.6em;flex-wrap:wrap">
               <input type="file" id="np-photo" accept="image/*" capture="environment" style="display:none">
               <button type="button" class="btn" id="np-photo-btn">📷 写真を選ぶ / 撮る</button>
+              <button type="button" class="btn" onclick="pickFromPoolForNew()">📁 プールから選ぶ</button>
               <span id="np-photo-name" style="color:var(--muted);font-size:0.85em"></span>
             </div>
           </div>
@@ -1236,6 +1245,7 @@
       <div id="pd-upload" style="display:none;margin-top:0.8rem">
         <input type="file" id="pd-file" accept="image/*" capture="environment" style="display:none">
         <button class="btn" id="pd-upload-btn">📷 写真を撮る / 選ぶ</button>
+        <button class="btn" onclick="pickFromPoolForDetail()">📁 プールから選ぶ</button>
         <span id="pd-upload-status" style="margin-left:0.6em;color:var(--muted);font-size:0.85em"></span>
       </div>
       <div class="pd-info" id="pd-info"></div>
@@ -1316,6 +1326,28 @@
       </div>
     </div>
     <div class="modal-foot"><button class="btn" onclick="closeSupplierMaster()">閉じる</button></div>
+  </div>
+</div>
+
+<!-- 写真プール(まとめて撮影→後で商品に割り当て) モーダル -->
+<div class="modal-back" id="photo-pool-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pool-title">
+    <div class="modal-head">
+      <h3 id="pool-title">写真プール</h3>
+      <button class="close" aria-label="閉じる" onclick="closePhotoPool()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">スマホでまとめて撮影した商品写真を先にアップロードしておき、商品の登録・修正の時にここから選んで紐づけられます。</p>
+      <p id="pool-hint" style="display:none;margin:0 0 0.6rem;color:var(--accent);font-size:0.85em;font-weight:700">使う写真をタップして選んでください。</p>
+      <div style="display:flex;gap:0.5em;align-items:center;flex-wrap:wrap">
+        <input type="file" id="pool-upload-input" accept="image/*" multiple style="display:none">
+        <button type="button" class="btn btn-primary" id="pool-upload-btn">📷 まとめてアップロード</button>
+        <span id="pool-upload-status" style="color:var(--muted);font-size:0.85em"></span>
+        <span id="pool-count" style="margin-left:auto;color:var(--muted);font-size:0.85em"></span>
+      </div>
+      <div class="pool-grid" id="pool-grid" style="max-height:50vh;overflow-y:auto"></div>
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="closePhotoPool()">閉じる</button></div>
   </div>
 </div>
 
@@ -1953,6 +1985,7 @@
   bindBackdropClose("prod-detail-modal", closeProductDetail);
   bindBackdropClose("supplier-master-modal", closeSupplierMaster);
   bindBackdropClose("staff-master-modal", closeStaffMaster);
+  bindBackdropClose("photo-pool-modal", closePhotoPool);
   bindBackdropClose("master-hub-modal", closeMasterHub);
   bindBackdropClose("alert-modal", alertCancel);
   bindBackdropClose("free-modal", closeFreePicker);
@@ -3134,6 +3167,96 @@
     img.onerror = function () { URL.revokeObjectURL(img.src); cb(null); };
     img.src = URL.createObjectURL(file);
   }
+  /* ── 写真プール(まとめて撮影→後で商品に割り当て) ──
+     mode="manage": プール一覧の閲覧・不要な写真の削除だけ(商品画面から開く)。
+     mode="pick": サムネイルをタップすると選択され、cb(item)を呼んでモーダルを閉じる
+     (商品登録フォーム・商品詳細の「プールから選ぶ」から開く)。 */
+  var photoPool = [], photoPoolMode = "manage", photoPoolCallback = null;
+  function openPhotoPool(mode, cb) {
+    photoPoolMode = mode || "manage";
+    photoPoolCallback = cb || null;
+    document.getElementById("pool-hint").style.display = photoPoolMode === "pick" ? "block" : "none";
+    document.getElementById("photo-pool-modal").classList.add("show");
+    loadPhotoPool();
+  }
+  function closePhotoPool() {
+    document.getElementById("photo-pool-modal").classList.remove("show");
+    photoPoolCallback = null;
+  }
+  function loadPhotoPool() {
+    var grid = document.getElementById("pool-grid");
+    if (!API) { grid.innerHTML = '<p style="color:var(--muted)">写真プールはサーバー起動時に利用できます。</p>'; return; }
+    grid.innerHTML = '<p style="color:var(--muted)">読み込み中…</p>';
+    fetch(API + "/photo_pool").then(function (r) { return r.json(); }).then(function (res) {
+      photoPool = res.pool || [];
+      renderPhotoPool();
+    }).catch(function () { grid.innerHTML = '<p style="color:var(--muted)">読み込みに失敗しました。</p>'; });
+  }
+  function renderPhotoPool() {
+    var grid = document.getElementById("pool-grid");
+    var cnt = document.getElementById("pool-count");
+    if (cnt) cnt.textContent = photoPool.length ? ("未割当 " + photoPool.length + " 件") : "";
+    grid.innerHTML = photoPool.length ? photoPool.map(function (p, i) {
+      return '<div class="pool-item"><img src="' + esc(prodImgUrl(p.filename)) + '" onclick="pickPoolPhoto(' + i + ')">' +
+        '<button type="button" class="pool-del" onclick="deletePoolPhoto(' + i + ')" title="この写真をプールから削除">✕</button></div>';
+    }).join("") : '<p style="color:var(--muted)">プールに写真がありません。上の「まとめてアップロード」から追加してください。</p>';
+  }
+  function pickPoolPhoto(i) {
+    if (photoPoolMode !== "pick") return;  // 閲覧・整理モードではタップしても選択しない
+    var p = photoPool[i]; if (!p) return;
+    var cb = photoPoolCallback;
+    closePhotoPool();
+    if (cb) cb(p);
+  }
+  function deletePoolPhoto(i) {
+    var p = photoPool[i]; if (!p || !API) return;
+    fetch(API + "/photo_pool_delete", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pool_id: p.id })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (res.error) throw new Error(res.error);
+      loadPhotoPool();
+    }).catch(function (e) { showToast("削除に失敗: " + (e.message || e)); });
+  }
+  (function () {
+    var btn = document.getElementById("pool-upload-btn");
+    var input = document.getElementById("pool-upload-input");
+    if (!btn || !input) return;
+    btn.addEventListener("click", function () { input.click(); });
+    input.addEventListener("change", function () {
+      var files = Array.prototype.slice.call(input.files || []);
+      input.value = "";
+      if (!files.length || !API) return;
+      var status = document.getElementById("pool-upload-status");
+      var results = [];
+      var next = function (i) {
+        if (i >= files.length) {
+          status.textContent = "アップロード中…";
+          fetch(API + "/photo_pool", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ images: results })
+          }).then(function (r) { return r.json(); }).then(function (res) {
+            if (res.error) throw new Error(res.error);
+            status.textContent = (res.added || []).length + "枚をプールに追加しました。";
+            loadPhotoPool();
+          }).catch(function (e) { status.textContent = "失敗: " + (e.message || e); });
+          return;
+        }
+        status.textContent = "画像を処理中(" + (i + 1) + "/" + files.length + ")…";
+        resizeImageToDataUrl(files[i], 1200, 0.8, function (d) {
+          if (d) results.push(d);
+          next(i + 1);
+        });
+      };
+      next(0);
+    });
+  })();
+  // 商品詳細に写真を反映(アップロード直後・プールから割り当てた直後の両方で共用)
+  function _applyPdPhoto(imageFile) {
+    pdProduct[8] = imageFile;   // prodRowsと同じ参照なので一覧サムネイルにも反映される
+    var url = prodImgUrl(imageFile);
+    document.getElementById("pd-photo-wrap").innerHTML =
+      '<img class="pd-photo" src="' + esc(url) + '" onerror="this.style.display=\'none\'">';
+    paintProducts();
+  }
   function pdUploadPhoto() {
     var input = document.getElementById("pd-file");
     var file = input.files && input.files[0];
@@ -3149,12 +3272,24 @@
         body: JSON.stringify({ product_key: pdProduct[7], image: dataUrl })
       }).then(function (r) { return r.json(); }).then(function (res) {
         if (res.error) throw new Error(res.error);
-        pdProduct[8] = res.image_file;   // prodRowsと同じ参照なので一覧サムネイルにも反映される
         status.textContent = "写真を登録しました。";
-        var url = prodImgUrl(res.image_file);
-        document.getElementById("pd-photo-wrap").innerHTML =
-          '<img class="pd-photo" src="' + esc(url) + '" onerror="this.style.display=\'none\'">';
-        paintProducts();
+        _applyPdPhoto(res.image_file);
+      }).catch(function (e) { status.textContent = "失敗: " + (e.message || e); });
+    });
+  }
+  // 商品詳細から「プールから選ぶ」: 選んだ写真をその場で商品に割り当てる(product_keyが確定済みのため)
+  function pickFromPoolForDetail() {
+    if (!pdProduct || !API) return;
+    openPhotoPool("pick", function (item) {
+      var status = document.getElementById("pd-upload-status");
+      status.textContent = "割り当て中…";
+      fetch(API + "/photo_pool_assign", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pool_id: item.id, product_key: pdProduct[7] })
+      }).then(function (r) { return r.json(); }).then(function (res) {
+        if (res.error) throw new Error(res.error);
+        status.textContent = "写真を登録しました。";
+        _applyPdPhoto(res.image_file);
       }).catch(function (e) { status.textContent = "失敗: " + (e.message || e); });
     });
   }
@@ -3186,6 +3321,7 @@
       nm.textContent = "画像を処理中…";
       resizeImageToDataUrl(file, 1200, 0.8, function (d) {
         npPhotoData = d;
+        npPoolId = null;  // その場撮影を選んだので、プール選択は取り消す
         nm.textContent = d ? "写真を選択しました(登録時に保存)" : "画像を読み込めませんでした";
       });
     });
@@ -3198,7 +3334,18 @@
     document.getElementById("np-date").value = new Date().toISOString().slice(0, 10);
     document.getElementById("np-error").style.display = "none";
     npPhotoData = null;
+    npPoolId = null;
     document.getElementById("np-photo-name").textContent = "";
+  }
+  // 仕入登録フォームで「プールから選ぶ」: 商品はまだ存在しないため、pool_idだけ保持しておき、
+  // 登録が成功して product_key が採番された直後に割り当てる(saveProduct内)
+  var npPoolId = null;
+  function pickFromPoolForNew() {
+    openPhotoPool("pick", function (item) {
+      npPhotoData = null;
+      npPoolId = item.id;
+      document.getElementById("np-photo-name").textContent = "プールから選択しました(登録時に紐づけ)";
+    });
   }
   function saveProduct(btn) {
     var err = document.getElementById("np-error");
@@ -3244,12 +3391,19 @@
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
       }).then(function (r) { return r.json(); }).then(function (res) {
         if (res.error) throw new Error(res.error);
-        var pk = res.product_key, photo = npPhotoData;
-        done(res.row);   // フォームを初期化(npPhotoDataもクリアされる)
-        if (photo && pk) {   // 選んだ写真を、採番された新商品に紐付けて保存
+        var pk = res.product_key, photo = npPhotoData, poolId = npPoolId;
+        done(res.row);   // フォームを初期化(npPhotoData・npPoolIdもクリアされる)
+        if (photo && pk) {   // その場で撮った写真を、採番された新商品に紐付けて保存
           fetch(window.TOKIWA_API + "/product_image", {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ product_key: pk, image: photo })
+          }).then(function (r2) { return r2.json(); }).then(function (ir) {
+            if (!ir.error) { showToast("写真も登録しました。"); renderProducts(); }
+          }).catch(function () {});
+        } else if (poolId && pk) {   // プールから選んだ写真を、採番された新商品に割り当て
+          fetch(window.TOKIWA_API + "/photo_pool_assign", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pool_id: poolId, product_key: pk })
           }).then(function (r2) { return r2.json(); }).then(function (ir) {
             if (!ir.error) { showToast("写真も登録しました。"); renderProducts(); }
           }).catch(function () {});

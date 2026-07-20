@@ -14,7 +14,7 @@
 正式運用(Windows単機)ではこのサーバーをローカルで起動し、ブラウザで開く構成。
 将来デスクトップアプリ(Electron等)に載せ替える場合もAPIはそのまま流用できる。
 """
-import base64, json, mimetypes, os, re, socket, sqlite3, sys, time, urllib.request, urllib.parse
+import base64, json, mimetypes, os, re, socket, sqlite3, sys, time, uuid, urllib.request, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = os.path.join(os.path.dirname(__file__), "..")
@@ -49,6 +49,21 @@ def image_path(fname):
                 for fn in fnames:
                     _img_index.setdefault(fn.lower(), os.path.join(root, fn))
     return _img_index.get(fname.lower())
+
+
+def _decode_image_b64(data):
+    """dataURL(または素のbase64)をJPEGバイト列に変換(8MB上限)。不正ならValueError。"""
+    data = data or ""
+    if "," in data and data[:5].lower() == "data:":
+        data = data.split(",", 1)[1]
+    try:
+        raw = base64.b64decode(data)
+    except (ValueError, TypeError):
+        raise ValueError("画像データが不正です")
+    if len(raw) > 8 * 1024 * 1024:
+        raise ValueError("画像が大きすぎます(8MBまで)")
+    return raw
+
 
 sys.path.insert(0, os.path.dirname(__file__))
 import db_query  # noqa: E402
@@ -151,7 +166,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(blob, ensure_ascii=False).encode("utf-8"))
             if path in ("/api/customer_detail", "/api/products", "/api/product_categories",
                         "/api/product_suppliers", "/api/supplier_master", "/api/staff",
-                        "/api/staff_junk", "/api/masters", "/api/master",
+                        "/api/staff_junk", "/api/masters", "/api/master", "/api/photo_pool",
                         "/api/daily_sales", "/api/slip_lines", "/api/documents"):
                 qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
 
@@ -178,6 +193,8 @@ class Handler(BaseHTTPRequestHandler):
                         result = {"staff": db_query.list_staff(con)}
                     elif path == "/api/staff_junk":
                         result = {"junk": db_query.list_junk_staff(con)}
+                    elif path == "/api/photo_pool":
+                        result = {"pool": db_query.list_photo_pool(con)}
                     elif path == "/api/masters":
                         result = {"masters": db_query.master_types()}
                     elif path == "/api/master":
@@ -261,14 +278,7 @@ class Handler(BaseHTTPRequestHandler):
                 data = payload.get("image") or ""
                 if not pk or not data:
                     raise ValueError("商品と画像を指定してください")
-                if "," in data and data[:5].lower() == "data:":
-                    data = data.split(",", 1)[1]
-                try:
-                    raw = base64.b64decode(data)
-                except (ValueError, TypeError):
-                    raise ValueError("画像データが不正です")
-                if len(raw) > 8 * 1024 * 1024:
-                    raise ValueError("画像が大きすぎます(8MBまで)")
+                raw = _decode_image_b64(data)
                 safe = re.sub(r"[^A-Za-z0-9_-]", "_", pk)
                 fname = f"{safe}_{int(time.time())}.jpg"
                 os.makedirs(IMAGES, exist_ok=True)
@@ -279,6 +289,53 @@ class Handler(BaseHTTPRequestHandler):
                 result = db_query.set_product_image(con, pk, fname)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/photo_pool":
+                # 写真プールへの一括アップロード: まとめて撮った複数枚を、商品登録前に
+                # 先に保存しておく(商品登録・修正の時にここから選んで紐づける)。
+                images = payload.get("images") or []
+                if not isinstance(images, list) or not images:
+                    raise ValueError("画像を指定してください")
+                if len(images) > 40:
+                    raise ValueError("一度にアップロードできるのは40枚までです")
+                os.makedirs(IMAGES, exist_ok=True)
+                con = connect()
+                added = []
+                for data in images:
+                    raw = _decode_image_b64(data)
+                    fname = f"pool_{uuid.uuid4().hex}.jpg"
+                    with open(os.path.join(IMAGES, fname), "wb") as f:
+                        f.write(raw)
+                    pid = db_query.add_photo_pool_entry(con, fname)
+                    added.append({"id": pid, "filename": fname})
+                con.close()
+                reset_img_index()
+                return self._send(200, json.dumps({"added": added}, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/photo_pool_assign":
+                # プールの1枚を商品に割り当て(image_fileに設定してプールから外す)
+                pool_id = payload.get("pool_id")
+                pk = str(payload.get("product_key") or "").strip()
+                if not pool_id or not pk:
+                    raise ValueError("写真と商品を指定してください")
+                con = connect()
+                result = db_query.assign_photo_pool(con, pool_id, pk)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/photo_pool_delete":
+                # プールから1枚を除外(使わない写真の整理。実ファイルも削除)
+                pool_id = payload.get("pool_id")
+                if not pool_id:
+                    raise ValueError("写真を指定してください")
+                con = connect()
+                fname = db_query.delete_photo_pool_row(con, pool_id)
+                con.close()
+                fpath = image_path(fname)
+                if fpath and os.path.isfile(fpath):
+                    try:
+                        os.remove(fpath)
+                    except OSError:
+                        pass
+                reset_img_index()
+                return self._send(200, json.dumps({"deleted": pool_id}, ensure_ascii=False).encode("utf-8"))
             if path == "/api/prescription":
                 con = connect()
                 result = db_query.add_prescription(con, payload)

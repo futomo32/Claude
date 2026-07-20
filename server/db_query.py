@@ -46,6 +46,13 @@ def ensure_schema(con):
         name        TEXT NOT NULL,
         PRIMARY KEY (master_type, name)
     )""")
+    # 写真プール: まとめて撮影した未割当の商品写真(商品登録前に一括アップロードしておき、
+    # 商品登録・修正の時にここから選んで紐づける)。割り当てたら行を消す(ファイルは残す)。
+    con.execute("""CREATE TABLE IF NOT EXISTS photo_pool (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        filename    TEXT NOT NULL,
+        uploaded_at TEXT
+    )""")
 
     def cols(t):
         try:
@@ -600,6 +607,43 @@ def set_product_image(con, product_key, image_file):
     if cur.rowcount == 0:
         raise ValueError("対象の商品が見つかりません")
     return {"product_key": pk, "image_file": image_file}
+
+
+# ── 写真プール(まとめて撮影→後で商品に割り当て) ──
+def add_photo_pool_entry(con, filename):
+    """アップロード済みの1枚をプールに登録する(実ファイル保存はapp.py側)。"""
+    con.execute("INSERT INTO photo_pool(filename, uploaded_at) VALUES (?,?)",
+                (filename, datetime.datetime.now().isoformat(timespec="seconds")))
+    con.commit()
+    return con.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
+def list_photo_pool(con):
+    """未割当の写真プール一覧(古い=先に撮った順)。件数が多くなりやすいので撮影順消化を想定。"""
+    return [{"id": r[0], "filename": r[1], "uploaded_at": r[2]}
+            for r in con.execute("SELECT id, filename, uploaded_at FROM photo_pool ORDER BY id")]
+
+
+def assign_photo_pool(con, pool_id, product_key):
+    """プールの1枚を商品に割り当てる(商品のimage_fileに設定し、プールから外す)。"""
+    row = con.execute("SELECT filename FROM photo_pool WHERE id=?", (pool_id,)).fetchone()
+    if not row:
+        raise ValueError("対象の写真が見つかりません(他の人が使用済みかもしれません)")
+    fname = row[0]
+    set_product_image(con, product_key, fname)
+    con.execute("DELETE FROM photo_pool WHERE id=?", (pool_id,))
+    con.commit()
+    return {"product_key": str(product_key), "image_file": fname}
+
+
+def delete_photo_pool_row(con, pool_id):
+    """プールから1枚を除外する(使わない写真の整理用)。実ファイル削除はapp.py側で行う。"""
+    row = con.execute("SELECT filename FROM photo_pool WHERE id=?", (pool_id,)).fetchone()
+    if not row:
+        raise ValueError("対象の写真が見つかりません")
+    con.execute("DELETE FROM photo_pool WHERE id=?", (pool_id,))
+    con.commit()
+    return row[0]
 
 
 # 汎用マスタの定義(「名前の一覧」型)。table/col は使用件数と改名時のデータ追随に使う。
