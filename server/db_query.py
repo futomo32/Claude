@@ -143,6 +143,20 @@ def ensure_schema(con):
         con.commit()
 
 
+def stock_stats(con):
+    """在庫サマリ(状態=在庫の商品のみ)。上代=list_price(税込)、下代=cost_price(税別)。
+    粗利率 = (1 - 下代×(1+消費税率) / 上代) × 100 … 下代を税込換算して上代(税込)と比較。
+    ※消費税率は当面10%固定。会計確定・返品でリアルタイムに変わるので、UIからも取り直せる。"""
+    con.row_factory = sqlite3.Row
+    TAX_RATE = 0.10
+    srow = con.execute("""SELECT COUNT(*) c, COALESCE(SUM(list_price),0) lt, COALESCE(SUM(cost_price),0) ct
+                          FROM products WHERE state='在庫'""").fetchone()
+    s_count, s_list, s_cost = srow["c"], srow["lt"] or 0, srow["ct"] or 0
+    s_margin = round((1 - (s_cost * (1 + TAX_RATE)) / s_list) * 100, 1) if s_list else 0
+    return {"count": s_count, "listTotal": s_list, "costTotal": s_cost,
+            "marginRate": s_margin, "taxRate": TAX_RATE}
+
+
 def build_blob(con):
     """全画面ぶんのデータを1つのdictにまとめて返す(埋め込み版と同一形状)。"""
     con.row_factory = sqlite3.Row
@@ -270,16 +284,8 @@ def build_blob(con):
             "staff_name": r["staff_name"], "note": r["note"],
         })
 
-    # 在庫サマリ(状態=在庫の商品のみ)。上代=list_price(税込)、下代=cost_price(税別)。
-    # 粗利率 = (1 - 下代×(1+消費税率) / 上代) × 100  … 下代を税込換算して上代(税込)と比較。
-    # ※消費税率は当面10%固定。将来 zztaxrate 連動やロール別の非表示は access-control で対応。
-    TAX_RATE = 0.10
-    srow = cur.execute("""SELECT COUNT(*) c, COALESCE(SUM(list_price),0) lt, COALESCE(SUM(cost_price),0) ct
-                          FROM products WHERE state='在庫'""").fetchone()
-    s_count, s_list, s_cost = srow["c"], srow["lt"] or 0, srow["ct"] or 0
-    s_margin = round((1 - (s_cost * (1 + TAX_RATE)) / s_list) * 100, 1) if s_list else 0
-    stock_stats = {"count": s_count, "listTotal": s_list, "costTotal": s_cost,
-                   "marginRate": s_margin, "taxRate": TAX_RATE}
+    # 在庫サマリ(状態=在庫の商品のみ)。会計確定・返品でリアルタイムに変わるため /api/stock_stats でも取り直せる。
+    stock_summary = stock_stats(con)
 
     # 支払方法の内訳(フラット配列)。日報等で「支払方法別の実額」を正確に集計するために使う
     # (1会計が複数方法に分かれる場合、明細1行ごとの支払方法は代表ラベルに過ぎないため)
@@ -293,7 +299,7 @@ def build_blob(con):
     return dict(customers=customers, sales=sales, families=families, points=points,
                 pointTx=point_tx, urikake=urikake, urikakeHist=urikake_hist,
                 approach=approach, rx=rx, rxCandidates=rx_candidates, products=products,
-                repairs=repairs, tenders=tenders, stockStats=stock_stats)
+                repairs=repairs, tenders=tenders, stockStats=stock_summary)
 
 
 def build_blob_light(con):
@@ -364,13 +370,7 @@ def build_blob_light(con):
             "staff_name": r["staff_name"], "note": r["note"],
         })
 
-    TAX_RATE = 0.10
-    srow = cur.execute("""SELECT COUNT(*) c, COALESCE(SUM(list_price),0) lt, COALESCE(SUM(cost_price),0) ct
-                          FROM products WHERE state='在庫'""").fetchone()
-    s_count, s_list, s_cost = srow["c"], srow["lt"] or 0, srow["ct"] or 0
-    s_margin = round((1 - (s_cost * (1 + TAX_RATE)) / s_list) * 100, 1) if s_list else 0
-    stock_stats = {"count": s_count, "listTotal": s_list, "costTotal": s_cost,
-                   "marginRate": s_margin, "taxRate": TAX_RATE}
+    stock_summary = stock_stats(con)
 
     tenders = []
     for r in cur.execute("""SELECT s.sold_at, sp.method, sp.amount, s.customer_id
@@ -397,7 +397,7 @@ def build_blob_light(con):
 
     return dict(customers=customers, families=families, points=points,
                 urikake=urikake, urikakeHist=urikake_hist,
-                repairs=repairs, tenders=tenders, stockStats=stock_stats, staff=staff,
+                repairs=repairs, tenders=tenders, stockStats=stock_summary, staff=staff,
                 registerStaff=register_staff, staffCodes=staff_codes,
                 cashMovements=list_cash_movements(con),
                 lite=True)  # lite=True で「明細は遅延取得」とUIに知らせる

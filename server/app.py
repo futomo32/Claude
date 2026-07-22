@@ -285,7 +285,7 @@ class Handler(BaseHTTPRequestHandler):
                         "/api/staff_junk", "/api/masters", "/api/master", "/api/photo_pool",
                         "/api/product", "/api/daily_sales", "/api/slip_lines", "/api/documents",
                         "/api/customer_ranking", "/api/prescription_search", "/api/rank_preview",
-                        "/api/rank_rules", "/api/receivables_summary"):
+                        "/api/rank_rules", "/api/receivables_summary", "/api/stock_stats"):
                 qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
 
                 def q1(name, default=""):
@@ -331,6 +331,13 @@ class Handler(BaseHTTPRequestHandler):
                         result = {"rules": db_query.get_rank_rules(con)}
                     elif path == "/api/receivables_summary":
                         result = db_query.receivable_summary(con)
+                    elif path == "/api/stock_stats":
+                        # 在庫サマリの取り直し(会計確定・返品後にタイルを最新化)。パートには原価を送らない
+                        ss = db_query.stock_stats(con)
+                        if role == "part":
+                            ss.pop("costTotal", None)
+                            ss.pop("marginRate", None)
+                        result = {"stockStats": ss}
                     elif path == "/api/masters":
                         result = {"masters": db_query.master_types()}
                     elif path == "/api/master":
