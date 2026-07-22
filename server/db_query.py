@@ -582,6 +582,31 @@ def product_brands(con):
         "SELECT DISTINCT brand FROM products WHERE brand IS NOT NULL AND brand<>'' ORDER BY brand")]
 
 
+def product_metals(con):
+    """商品に登場する地金の一覧(重複除去。詳細検索の候補用)。"""
+    return [r[0] for r in con.execute(
+        "SELECT DISTINCT metal FROM products WHERE metal IS NOT NULL AND metal<>'' ORDER BY metal")]
+
+
+def product_stones(con):
+    """商品に登場する中石(石種)の一覧(重複除去。詳細検索の候補用)。"""
+    return [r[0] for r in con.execute(
+        "SELECT DISTINCT center_stone FROM products WHERE center_stone IS NOT NULL AND center_stone<>'' ORDER BY center_stone")]
+
+
+def prescription_purposes(con):
+    """処方箋に登場する用途の一覧(重複除去。詳細検索の候補用)。"""
+    return [r[0] for r in con.execute(
+        "SELECT DISTINCT purpose FROM prescriptions WHERE purpose IS NOT NULL AND purpose<>'' ORDER BY purpose")]
+
+
+def search_options(con):
+    """詳細検索フォームのプルダウン候補をまとめて返す(重複除去済み)。"""
+    return {"categories": product_categories(con), "brands": product_brands(con),
+            "metals": product_metals(con), "stones": product_stones(con),
+            "suppliers": product_suppliers(con), "purposes": prescription_purposes(con)}
+
+
 def set_supplier_genre(con, name, genre):
     """仕入先のジャンルを設定/変更する。"""
     name = str(name or "").strip()
@@ -720,6 +745,135 @@ def prescription_search(con, frm="", to="", purpose="", misassign_only=False):
                     "lens_name": r["lens_name"], "frame_name": r["frame_name"],
                     "total": r["total_sell"], "handler": r["handler"], "misassign": mis})
     return out
+
+
+def detailed_customer_search(con, p):
+    """顧客の横断詳細検索(B-4拡張)。顧客属性＋購入商品属性＋処方箋属性をANDで絞り込み、
+    条件に合う顧客の一覧を返す(DM・お声がけ抽出用)。
+      p(すべて任意):
+        顧客属性: name(氏名/カナ/ID部分一致), staff(担当名), rank, birth_month(1-12),
+                  district(部分一致), gender('男'/'女'), dm_ok('1'=DM可のみ),
+                  last_buy('none'|'1'|'3'|'5'), exclude('1'=集計対象外/検証を除外・既定)
+        購入商品: p_category, p_brand, p_metal, p_stone(部分一致), p_supplier, p_name(品名部分一致),
+                  buy_from, buy_to(買上日の期間), prod_match('same'=同一商品で全条件 / 'any'=別々の購入でも可)
+        処方箋:   rx_purpose, rx_lens(レンズ名/フレーム名の部分一致), rx_from, rx_to(処方日の期間)
+    戻り値: {rows:[[id,name,kana,tel,rank,district,total,staff]], count, truncated}"""
+    con.row_factory = sqlite3.Row
+    g = lambda k: str((p or {}).get(k) or "").strip()
+    where, args = ["COALESCE(c.is_test,0)=0"], []
+
+    # ── 顧客属性 ──
+    if g("exclude") != "0":  # 既定で集計対象外(ななし等)を除外
+        where.append("COALESCE(c.exclude_stats,0)=0")
+    if g("name"):
+        where.append("(c.name LIKE ? OR c.kana LIKE ? OR c.customer_id = ?)")
+        args += ["%" + g("name") + "%", "%" + g("name") + "%", g("name")]
+    if g("staff"):
+        where.append("c.staff_name = ?"); args.append(g("staff"))
+    if g("rank"):
+        where.append("c.rank = ?"); args.append(g("rank"))
+    if g("birth_month"):
+        try:
+            where.append("substr(c.birthday,6,2) = ?"); args.append("%02d" % int(g("birth_month")))
+        except ValueError:
+            pass
+    if g("district"):
+        where.append("c.district LIKE ?"); args.append("%" + g("district") + "%")
+    if g("gender"):
+        where.append("c.gender = ?"); args.append(g("gender"))
+    if g("dm_ok") == "1":
+        where.append("COALESCE(c.dm_ok,0) = 1")
+
+    # 最終購入(購入の最新日)。none=購入履歴なし / N=N年以上購入なし(購入はあるが古い)
+    lb = g("last_buy")
+    live_sales = ("SELECT 1 FROM sale_lines sl JOIN sales_slips ss ON sl.slip_id=ss.slip_id "
+                  "WHERE ss.customer_id=c.customer_id AND COALESCE(sl.voided,0)=0 AND COALESCE(ss.voided,0)=0")
+    if lb == "none":
+        where.append("NOT EXISTS(" + live_sales + ")")
+    elif lb in ("1", "3", "5"):
+        import datetime as _dt
+        cutoff = (_dt.date.today() - _dt.timedelta(days=365 * int(lb))).isoformat()
+        where.append("(SELECT MAX(ss.sold_at) FROM sale_lines sl JOIN sales_slips ss ON sl.slip_id=ss.slip_id "
+                     "WHERE ss.customer_id=c.customer_id AND COALESCE(sl.voided,0)=0 AND COALESCE(ss.voided,0)=0) < ?")
+        args.append(cutoff)
+
+    # ── 購入商品属性(EXISTS) ──
+    def prod_conds():
+        conds, a = [], []
+        if g("p_category"):
+            conds.append("pr.category = ?"); a.append(g("p_category"))
+        if g("p_brand"):
+            conds.append("pr.brand = ?"); a.append(g("p_brand"))
+        if g("p_metal"):
+            conds.append("pr.metal = ?"); a.append(g("p_metal"))
+        if g("p_stone"):
+            conds.append("pr.center_stone LIKE ?"); a.append("%" + g("p_stone") + "%")
+        if g("p_supplier"):
+            conds.append("pr.supplier = ?"); a.append(g("p_supplier"))
+        if g("p_name"):
+            conds.append("COALESCE(sl.free_name, pr.name) LIKE ?"); a.append("%" + g("p_name") + "%")
+        return conds, a
+
+    def exists_sale(extra_conds, extra_args):
+        base = ("EXISTS(SELECT 1 FROM sale_lines sl JOIN sales_slips ss ON sl.slip_id=ss.slip_id "
+                "LEFT JOIN products pr ON sl.product_key=pr.product_key "
+                "WHERE ss.customer_id=c.customer_id AND COALESCE(sl.voided,0)=0 AND COALESCE(ss.voided,0)=0")
+        a = []
+        for cnd in extra_conds:
+            base += " AND " + cnd
+        a += extra_args
+        if g("buy_from"):
+            base += " AND ss.sold_at >= ?"; a.append(g("buy_from"))
+        if g("buy_to"):
+            base += " AND ss.sold_at <= ?"; a.append(g("buy_to"))
+        return base + ")", a
+
+    pconds, pargs = prod_conds()
+    has_period = bool(g("buy_from") or g("buy_to"))
+    if pconds or has_period:
+        if g("prod_match") == "any" and pconds:
+            # 別々の購入でもよい: 各条件を個別のEXISTSにする(期間は各EXISTSに適用)
+            for cnd, av in zip(pconds, pargs):
+                sql, a = exists_sale([cnd], [av])
+                where.append(sql); args += a
+            if not pconds and has_period:
+                sql, a = exists_sale([], [])
+                where.append(sql); args += a
+        else:
+            # 既定(same): 同一商品(=同じ売上明細)が全条件を満たす
+            sql, a = exists_sale(pconds, pargs)
+            where.append(sql); args += a
+
+    # ── 処方箋属性(EXISTS) ──
+    rxc, rxa = [], []
+    if g("rx_purpose"):
+        rxc.append("rx.purpose = ?"); rxa.append(g("rx_purpose"))
+    if g("rx_lens"):
+        rxc.append("(rx.lens_name LIKE ? OR rx.frame_name LIKE ?)")
+        rxa += ["%" + g("rx_lens") + "%", "%" + g("rx_lens") + "%"]
+    if g("rx_from"):
+        rxc.append("rx.rx_date >= ?"); rxa.append(g("rx_from"))
+    if g("rx_to"):
+        rxc.append("rx.rx_date <= ?"); rxa.append(g("rx_to"))
+    if rxc:
+        where.append("EXISTS(SELECT 1 FROM prescriptions rx WHERE rx.customer_id=c.customer_id AND "
+                     + " AND ".join(rxc) + ")")
+        args += rxa
+
+    total_sub = ("(SELECT COALESCE(SUM(sl.amount),0) FROM sale_lines sl JOIN sales_slips ss ON sl.slip_id=ss.slip_id "
+                 "WHERE ss.customer_id=c.customer_id AND COALESCE(sl.voided,0)=0 AND COALESCE(ss.voided,0)=0)")
+    LIMIT = 2000
+    sql = ("SELECT c.customer_id id, c.name, c.kana, c.tel, c.rank, c.district, c.staff_name staff, "
+           + total_sub + " total FROM customers c WHERE " + " AND ".join(where)
+           + " ORDER BY total DESC LIMIT ?")
+    rows = []
+    for r in con.execute(sql, args + [LIMIT + 1]):
+        rows.append([r["id"], r["name"], r["kana"], r["tel"], r["rank"], r["district"],
+                     r["total"] or 0, r["staff"]])
+    truncated = len(rows) > LIMIT
+    if truncated:
+        rows = rows[:LIMIT]
+    return {"rows": rows, "count": len(rows), "truncated": truncated}
 
 
 # 顧客ランクの既定基準(B-5)。宝飾ナビの合計金額ランク(1が最上位)に準拠。

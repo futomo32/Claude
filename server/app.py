@@ -285,7 +285,8 @@ class Handler(BaseHTTPRequestHandler):
                         "/api/staff_junk", "/api/masters", "/api/master", "/api/photo_pool",
                         "/api/product", "/api/daily_sales", "/api/slip_lines", "/api/documents",
                         "/api/customer_ranking", "/api/prescription_search", "/api/rank_preview",
-                        "/api/rank_rules", "/api/receivables_summary", "/api/stock_stats"):
+                        "/api/rank_rules", "/api/receivables_summary", "/api/stock_stats",
+                        "/api/search_options", "/api/detailed_search"):
                 qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
 
                 def q1(name, default=""):
@@ -338,6 +339,12 @@ class Handler(BaseHTTPRequestHandler):
                             ss.pop("costTotal", None)
                             ss.pop("marginRate", None)
                         result = {"stockStats": ss}
+                    elif path == "/api/search_options":
+                        result = db_query.search_options(con)
+                    elif path == "/api/detailed_search":
+                        # 詳細検索(顧客属性＋購入商品＋処方箋のAND)。全パラメータをそのまま渡す
+                        result = db_query.detailed_customer_search(
+                            con, {k: v[0] for k, v in qs.items()})
                     elif path == "/api/masters":
                         result = {"masters": db_query.master_types()}
                     elif path == "/api/master":
