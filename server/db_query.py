@@ -756,42 +756,58 @@ def rank_for_amount(total, rules=None):
     return rules[-1][1] if rules else ""
 
 
-def compute_rank_updates(con, kind=""):
+def compute_rank_updates(con, kind="", date_from="", date_to=""):
     """全顧客の合計購入額から新ランクを算出し、現ランクと異なる顧客の一覧を返す(プレビュー)。
       kind: ""=全て / "宝飾" / "メガネ"。集計対象外・検証ペルソナ・取消明細は対象外。
-    戻り値: {rules:[[下限,ランク]...], updates:[{customer_id,name,old,new,total}], total_customers:N}"""
+      date_from/date_to: 集計する買上日の期間(YYYY-MM-DD、空なら全期間)。
+    ・すでに最下位ランク(既定"9")の顧客は更新対象から除外する。
+    戻り値: {rules, updates, total_customers, bottom_rank, date_from, date_to}"""
     con.row_factory = sqlite3.Row
     rules = get_rank_rules(con)
+    bottom_rank = rules[-1][1] if rules else "9"
     where = ["s.customer_id IS NOT NULL", "l.amount IS NOT NULL",
              "COALESCE(l.voided,0)=0", "COALESCE(s.voided,0)=0"]
+    args = []
     if kind == "メガネ":
         where.append("p.is_glasses=1")
     elif kind == "宝飾":
         where.append("COALESCE(p.is_glasses,0)=0")
+    if date_from:
+        where.append("s.sold_at >= ?"); args.append(str(date_from))
+    if date_to:
+        where.append("s.sold_at <= ?"); args.append(str(date_to))
     totals = {}
     for r in con.execute("""SELECT s.customer_id cid, SUM(l.amount) t
                             FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
                             LEFT JOIN products p ON l.product_key = p.product_key
-                            WHERE """ + " AND ".join(where) + " GROUP BY s.customer_id"):
+                            WHERE """ + " AND ".join(where) + " GROUP BY s.customer_id", args):
         totals[r["cid"]] = r["t"] or 0
     updates = []
     n = 0
+    skipped_bottom = 0
     for r in con.execute("""SELECT customer_id, name, rank FROM customers
                             WHERE COALESCE(is_test,0)=0 AND COALESCE(exclude_stats,0)=0"""):
         n += 1
+        cur_rank = r["rank"] or ""
+        # すでに最下位ランクの顧客は据え置き(更新しない)
+        if cur_rank == bottom_rank:
+            skipped_bottom += 1
+            continue
         cid = r["customer_id"]
         total = totals.get(cid, 0) or 0
         newr = rank_for_amount(total, rules)
-        if (r["rank"] or "") != newr:
+        if cur_rank != newr:
             updates.append({"customer_id": cid, "name": r["name"] or cid,
                             "old": r["rank"], "new": newr, "total": total})
     updates.sort(key=lambda u: u["total"], reverse=True)
-    return {"rules": rules, "updates": updates, "total_customers": n}
+    return {"rules": rules, "updates": updates, "total_customers": n,
+            "bottom_rank": bottom_rank, "skipped_bottom": skipped_bottom,
+            "date_from": date_from or "", "date_to": date_to or ""}
 
 
-def apply_rank_updates(con, kind=""):
+def apply_rank_updates(con, kind="", date_from="", date_to=""):
     """compute_rank_updates の変更をまとめて customers.rank に反映する。"""
-    res = compute_rank_updates(con, kind)
+    res = compute_rank_updates(con, kind, date_from, date_to)
     cur = con.cursor()
     for u in res["updates"]:
         cur.execute("UPDATE customers SET rank=? WHERE customer_id=?", (u["new"], u["customer_id"]))
