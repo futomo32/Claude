@@ -195,7 +195,7 @@ def build_blob(con):
                         FROM customer_families ORDER BY id""")
 
     urikake = group("""SELECT customer_id, id, product_name, bought_at, down_payment, balance, last_paid_at
-                       FROM receivables""")
+                       FROM receivables ORDER BY bought_at DESC, id DESC""")
     urikake_hist = group("""SELECT customer_id, entry_date, entry_type, product_name, amount, paid
                             FROM receivable_entries ORDER BY entry_date DESC""")
 
@@ -346,7 +346,7 @@ def build_blob_light(con):
     families = group("""SELECT customer_id, name, relation, gender, birthday, linked_customer_id, id
                         FROM customer_families ORDER BY id""")
     urikake = group("""SELECT customer_id, id, product_name, bought_at, down_payment, balance, last_paid_at
-                       FROM receivables""")
+                       FROM receivables ORDER BY bought_at DESC, id DESC""")
     urikake_hist = group("""SELECT customer_id, entry_date, entry_type, product_name, amount, paid
                             FROM receivable_entries ORDER BY entry_date DESC""")
     points = {str(r["customer_id"]): r["balance"]

@@ -714,7 +714,6 @@
     <button class="nav-item" data-screen="reports"><span class="ic">▤</span>日報・帳票</button>
     <button class="nav-item" data-screen="settings"><span class="ic">⚙</span>設定・マスター</button>
     <div class="side-foot">
-      <div class="side-user"><span class="avatar">田</span><span>田中 一槻<br><small style="color:var(--muted)">本店 / 管理者</small></span></div>
       <button class="btn" style="width:100%" onclick="doLogout()">ログアウト</button>
     </div>
   </aside>
@@ -3242,6 +3241,30 @@
       }
     });
   }
+  /* 売掛明細の並び順(買上日)。既定は降順(新しい順)。ヘッダクリックで昇順/降順を切替。 */
+  var paySortAsc = false;
+  function paySorted(uk) {
+    return uk.slice().sort(function (a, b) {
+      var da = a[2] || "", db = b[2] || "";
+      if (!da && !db) return 0;
+      if (!da) return 1;            // 買上日が空の行は常に末尾
+      if (!db) return -1;
+      if (da === db) return (parseInt(b[0], 10) || 0) - (parseInt(a[0], 10) || 0);
+      var r = da < db ? -1 : 1;
+      return paySortAsc ? r : -r;
+    });
+  }
+  function togglePaySort(cid) {
+    paySortAsc = !paySortAsc;
+    var c = findCust(cid);
+    if (c) renderPay(c);
+  }
+  function editReceivable(cid, rid) {
+    var arr = D.urikake[cid] || [];
+    for (var k = 0; k < arr.length; k++) {
+      if (String(arr[k][0]) === String(rid)) { openAddReceivable(cid, arr[k]); return; }
+    }
+  }
   function renderPay(c) {
     var id = String(c[0]);
     var uk = D.urikake[id] || [];
@@ -3253,13 +3276,16 @@
       '<button class="btn" onclick="openAddReceivable(\'' + esc(id) + '\')">＋ 売掛を追加</button>' +
       (balance > 0 ? '<button class="btn" onclick="printInvoice(\'' + esc(id) + '\')">請求書を印刷</button>' : "") + '</div>';
     if (uk.length) {
-      html += '<div class="section-title">売掛明細</div><div class="table-scroll"><table class="data"><thead><tr><th>商品名</th><th>買上日</th><th class="r">頭金</th><th class="r">残高</th><th></th></tr></thead><tbody>' +
-        uk.map(function (u, i) {
+      var ar = paySortAsc ? "▲" : "▼";
+      html += '<div class="section-title">売掛明細</div><div class="table-scroll"><table class="data"><thead><tr><th>商品名</th>' +
+        '<th class="sortable" onclick="togglePaySort(\'' + esc(id) + '\')" style="cursor:pointer;user-select:none" title="クリックで昇順/降順を切替">買上日 <span class="ar">' + ar + '</span></th>' +
+        '<th class="r">頭金</th><th class="r">残高</th><th></th></tr></thead><tbody>' +
+        paySorted(uk).map(function (u) {
           var bal = parseInt(u[4], 10) || 0;
           var nm = esc(u[1] || "").replace(/'/g, "&#39;");
           var pay = bal > 0 ? '<button class="btn" onclick="openPayModal(\'' + esc(u[0]) + '\',\'' + esc(id) +
             '\',\'' + nm + '\',' + bal + ')">入金する</button>' : "";
-          var edit = '<button class="btn" onclick="openAddReceivable(\'' + esc(id) + '\', D.urikake[\'' + esc(id) + '\'][' + i + '])">修正</button>';
+          var edit = '<button class="btn" onclick="editReceivable(\'' + esc(id) + '\',\'' + esc(u[0]) + '\')">修正</button>';
           var del = '<button class="btn" onclick="deleteReceivable(\'' + esc(u[0]) + '\',\'' + esc(id) + '\')">削除</button>';
           var acts = '<div style="display:flex;gap:0.3em;flex-wrap:wrap;justify-content:flex-end">' + pay + edit + del + '</div>';
           return '<tr><td>' + esc(dash(u[1])) + '</td><td class="num">' + esc(dash(u[2])) + '</td><td class="r num">' +
