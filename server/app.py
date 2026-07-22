@@ -95,11 +95,25 @@ def lan_ip():
             return None
 
 
-def render_index(remote=False):
-    """UIのHTMLに、DBから組み立てたデータとAPI有効フラグを埋め込んで返す。
-    remote=True(他PCからのアクセス)ではレジ機能をUI側で無効化するフラグを埋め込む。"""
+def apply_role_filter(blob, role):
+    """パート権限には原価情報を送らない(画面で隠すだけでなく"そもそも送らない")。
+    products行の[9]=cost_price(下代)と、在庫サマリの下代合計・粗利率を落とす。"""
+    if role != "part":
+        return blob
+    for p in blob.get("products") or []:
+        if len(p) > 9:
+            p[9] = None
+    ss = blob.get("stockStats")
+    if isinstance(ss, dict):
+        ss.pop("costTotal", None)
+        ss.pop("marginRate", None)
+    return blob
+
+
+def render_index(user):
+    """UIのHTMLに、DBから組み立てたデータとログインユーザー情報を埋め込んで返す。"""
     con = connect()
-    blob = db_query.build_blob_light(con)  # 起動時は軽量データのみ(明細は遅延取得)
+    blob = apply_role_filter(db_query.build_blob_light(con), user.get("role"))  # 起動時は軽量データのみ
     sample = db_query.sample_in_stock_key(con)
     con.close()
     html = open(UI, encoding="utf-8").read()
@@ -107,13 +121,81 @@ def render_index(remote=False):
         "window.TOKIWA_DATA=" + json.dumps(blob, ensure_ascii=False, separators=(",", ":")) + ";"
         "window.TOKIWA_API='/api';"
         "window.TOKIWA_SAMPLE_STOCK=" + json.dumps(sample) + ";"
-        "window.TOKIWA_REMOTE=" + ("true" if remote else "false") + ";"
+        "window.TOKIWA_USER=" + json.dumps(user, ensure_ascii=False) + ";"
     )
     marker_start = '<script id="tokiwa-data">'
     marker_end = "</script>"
     i = html.index(marker_start) + len(marker_start)
     j = html.index(marker_end, i)
     return (html[:i] + inject + html[j:]).encode("utf-8")
+
+
+def render_login():
+    """ログイン画面(未ログイン時に配信)。ユーザーを選び、パスワードを入力する。
+    パスワード未設定のユーザーは、初回に入力したものがそのままパスワードとして設定される。"""
+    con = connect()
+    users = db_query.list_login_users(con)
+    con.close()
+    options = "".join(
+        f'<option value="{u["id"]}" data-haspw="{1 if u["has_pw"] else 0}">{u["name"]}</option>'
+        for u in users)
+    return f"""<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>トキワ ログイン</title>
+<style>
+  body {{ font-family: "Hiragino Sans", "Yu Gothic UI", sans-serif; background: #f4f2ee;
+         display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }}
+  .box {{ background: #fff; border: 1px solid #ddd6cc; border-radius: 12px; padding: 2rem;
+          width: min(360px, 90vw); box-shadow: 0 6px 24px rgba(60,50,30,0.08); }}
+  h1 {{ font-size: 1.1rem; margin: 0 0 1.2rem; color: #4a4237; text-align: center; }}
+  label {{ display: block; font-size: 0.8rem; color: #7a7264; margin: 0.8rem 0 0.25rem; }}
+  select, input {{ width: 100%; box-sizing: border-box; font-size: 1rem; padding: 0.55em 0.7em;
+                   border: 1px solid #ccc4b8; border-radius: 8px; background: #fff; }}
+  button {{ width: 100%; margin-top: 1.2rem; font-size: 1rem; padding: 0.65em; border: 0;
+            border-radius: 8px; background: #8a6d3b; color: #fff; cursor: pointer; }}
+  button:disabled {{ opacity: 0.6; }}
+  .err {{ color: #b3261e; font-size: 0.85rem; margin: 0.8rem 0 0; display: none; }}
+  .hint {{ color: #7a7264; font-size: 0.78rem; margin: 0.4rem 0 0; }}
+  .logo {{ display: block; margin: 0 auto 0.8rem; max-height: 64px; }}
+</style></head><body>
+<form class="box" onsubmit="return doLogin(event)">
+  <img class="logo" src="/assets/logo.png" alt="" onerror="this.remove()">
+  <h1>トキワ にログイン</h1>
+  <label>ユーザー</label>
+  <select id="uid" onchange="updateHint()">{options}</select>
+  <label>パスワード</label>
+  <input id="pw" type="password" autocomplete="current-password" required minlength="1" autofocus>
+  <p class="hint" id="hint"></p>
+  <p class="err" id="err"></p>
+  <button id="btn" type="submit">ログイン</button>
+</form>
+<script>
+  function updateHint() {{
+    var o = document.getElementById("uid").selectedOptions[0];
+    document.getElementById("hint").textContent = (o && o.dataset.haspw === "0")
+      ? "このユーザーはパスワード未設定です。ここで決めたパスワード(4文字以上)がそのまま設定されます。" : "";
+  }}
+  updateHint();
+  function doLogin(e) {{
+    e.preventDefault();
+    var btn = document.getElementById("btn"), err = document.getElementById("err");
+    btn.disabled = true; err.style.display = "none";
+    fetch("/api/login", {{ method: "POST", headers: {{ "Content-Type": "application/json" }},
+      body: JSON.stringify({{ user_id: document.getElementById("uid").value,
+                              password: document.getElementById("pw").value }}) }})
+      .then(function (r) {{ return r.json(); }})
+      .then(function (res) {{
+        if (res.error) throw new Error(res.error);
+        location.reload();
+      }})
+      .catch(function (ex) {{
+        btn.disabled = false;
+        err.textContent = ex.message || "ログインに失敗しました";
+        err.style.display = "block";
+      }});
+    return false;
+  }}
+</script></body></html>""".encode("utf-8")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -127,20 +209,54 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass  # 静かに
 
-    def _is_remote(self):
-        """本番機(サーバーを動かしているPC)以外からのアクセスか。
-        テスト用に ?remote=1 でも再現できる(UI表示の切替のみで安全)。"""
-        if "remote=1" in self.path:
-            return True
-        return self.client_address[0] not in ("127.0.0.1", "::1", "localhost")
+    # ── ログインセッション(アクセス制御④) ──
+    def _session_token(self):
+        """Cookieからセッショントークンを取り出す。"""
+        cookie = self.headers.get("Cookie") or ""
+        for part in cookie.split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == "tokiwa_session":
+                return v
+        return None
+
+    def _current_user(self):
+        """ログイン中のユーザー {id,name,role} を返す(未ログインはNone)。"""
+        token = self._session_token()
+        if not token:
+            return None
+        con = connect()
+        try:
+            return db_query.session_user(con, token)
+        finally:
+            con.close()
+
+    def _deny(self, msg="この操作を行う権限がありません", code=403):
+        return self._send(code, json.dumps({"error": msg}, ensure_ascii=False).encode("utf-8"))
 
     def do_GET(self):
         try:
             path = self.path.split("?", 1)[0]  # クエリを除いた経路で判定
-            if path == "/":
-                return self._send(200, render_index(remote=self._is_remote()), "text/html; charset=utf-8")
             if path == "/api/health":
                 return self._send(200, json.dumps({"ok": True}).encode())
+            if path.startswith("/assets/"):
+                # ロゴはログイン画面でも使うため認証不要(静的ファイルのみ)
+                pass
+            else:
+                user = self._current_user()
+                if path == "/":
+                    if not user:
+                        return self._send(200, render_login(), "text/html; charset=utf-8")
+                    return self._send(200, render_index(user), "text/html; charset=utf-8")
+                if not user:
+                    return self._deny("ログインしてください(ページを再読み込みするとログイン画面が出ます)", 401)
+                role = user.get("role")
+                if path == "/api/app_users":
+                    if role != "admin":
+                        return self._deny()
+                    con = connect()
+                    result = {"users": db_query.list_app_users(con)}
+                    con.close()
+                    return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path.startswith("/assets/"):
                 # ロゴ等の静的ファイル配信(帳票ヘッダ表示用)。フォルダ外は不可
                 fname = os.path.basename(path)
@@ -161,7 +277,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, f.read(), ctype)
             if path == "/api/data":
                 con = connect()
-                blob = db_query.build_blob(con)
+                blob = apply_role_filter(db_query.build_blob(con), role)
                 con.close()
                 return self._send(200, json.dumps(blob, ensure_ascii=False).encode("utf-8"))
             if path in ("/api/customer_detail", "/api/products", "/api/product_categories",
@@ -227,6 +343,14 @@ class Handler(BaseHTTPRequestHandler):
                         result = {"lines": db_query.slip_lines(con, q1("from"), q1("to"), q1("staff"))}
                 finally:
                     con.close()
+                if role == "part":
+                    # パートには原価(下代)を送らない(サーバー側で強制。UI非表示は補助)
+                    if path == "/api/products":
+                        for row in result.get("rows") or []:
+                            if len(row) > 9:
+                                row[9] = None
+                    elif path == "/api/product" and isinstance(result, dict):
+                        result.pop("cost_price", None)
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/postal":
                 # 郵便番号→住所検索(zipcloudへの中継)。オフライン時はエラーを返すだけ
@@ -248,16 +372,68 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001
             self._send(500, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
 
+    # パート権限では使えない操作(原価に触れる・商品/マスタを書き換える系)。
+    # サーバー側で強制する(UIのボタン非表示は補助にすぎない)。docs/access-control.md 参照。
+    PART_DENIED_POSTS = {
+        "/api/product", "/api/product_update", "/api/product_delete",
+        "/api/product_image", "/api/product_image_clear",
+        "/api/photo_pool", "/api/photo_pool_assign", "/api/photo_pool_delete",
+        "/api/supplier_genre", "/api/master_item", "/api/rank_apply", "/api/rank_rules",
+    }
+    # 管理者のみの操作(担当者マスタ・ログインユーザー管理)
+    ADMIN_ONLY_POSTS = {"/api/staff", "/api/app_user"}
+
     def do_POST(self):
         try:
             path = self.path.split("?", 1)[0]  # クエリを除いた経路で判定
             length = int(self.headers.get("Content-Length", 0))
             payload = json.loads(self.rfile.read(length) or b"{}")
+            # ── 認証不要: ログイン/ログアウト ──
+            if path == "/api/login":
+                con = connect()
+                try:
+                    result = db_query.login_user(con, payload.get("user_id"), payload.get("password"))
+                except ValueError as e:
+                    return self._send(401, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                finally:
+                    con.close()
+                body = json.dumps({"ok": True, "first_time": result["first_time"],
+                                   "user": result["user"]}, ensure_ascii=False).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Set-Cookie",
+                                 f"tokiwa_session={result['token']}; Path=/; HttpOnly; SameSite=Lax; Max-Age=5184000")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if path == "/api/logout":
+                con = connect()
+                db_query.logout_user(con, self._session_token())
+                con.close()
+                body = json.dumps({"ok": True}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Set-Cookie", "tokiwa_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            # ── ここから先はログイン必須 ──
+            user = self._current_user()
+            if not user:
+                return self._deny("ログインしてください(ページを再読み込みするとログイン画面が出ます)", 401)
+            role = user.get("role")
+            if role == "part" and path in self.PART_DENIED_POSTS:
+                return self._deny("この操作はパート権限では行えません")
+            if path in self.ADMIN_ONLY_POSTS and role != "admin":
+                return self._deny("この操作は管理者のみ行えます")
+            if path == "/api/app_user":
+                con = connect()
+                result = db_query.save_app_user(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/checkout":
-                if self._is_remote():
-                    # レジ(会計)は機器のある本番機のみ。他PCからは閲覧・登録のみ
-                    return self._send(403, json.dumps(
-                        {"error": "レジ(会計)は本体レジPCでのみ操作できます"}, ensure_ascii=False).encode("utf-8"))
                 con = connect()
                 result = db_query.checkout(con, payload)
                 con.close()

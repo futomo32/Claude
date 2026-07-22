@@ -2,7 +2,7 @@
 
 UIの描画コードを変えずに済むよう、埋め込み版と同じ配列の並びで返す。
 """
-import json, re, sqlite3, datetime
+import hashlib, json, re, secrets, sqlite3, datetime
 
 GLASS_PAT = re.compile(r"メガネ|眼鏡|レンズ|フレーム|ﾒｶﾞﾈ|ﾚﾝｽﾞ|ﾌﾚｰﾑ")
 FRAME_PAT = re.compile(r"フレーム|ﾌﾚｰﾑ|frame", re.I)
@@ -80,6 +80,25 @@ def ensure_schema(con):
         key   TEXT PRIMARY KEY,
         value TEXT
     )""")
+    # ログインユーザー(ロール別アクセス制御④)。schema.sql と同形。無いDBでも動くように。
+    con.execute("""CREATE TABLE IF NOT EXISTS app_users (
+        user_id      TEXT PRIMARY KEY,
+        store_code   TEXT,
+        display_name TEXT,
+        role         TEXT NOT NULL DEFAULT 'staff',  -- admin=管理者/staff=社員/part=パート
+        pass_hash    TEXT,                            -- NULL=未設定(初回ログイン時に本人が設定)
+        active       INTEGER NOT NULL DEFAULT 1
+    )""")
+    # ログインセッション(トークン→ユーザー)。サーバー再起動してもログイン状態が残るようDBに置く。
+    con.execute("""CREATE TABLE IF NOT EXISTS app_sessions (
+        token      TEXT PRIMARY KEY,
+        user_id    TEXT NOT NULL,
+        created_at TEXT
+    )""")
+    # ユーザーが1人もいなければ初期管理者を作る(パスワードは初回ログイン時に設定)
+    if not con.execute("SELECT 1 FROM app_users LIMIT 1").fetchone():
+        con.execute("INSERT INTO app_users(user_id, display_name, role) VALUES ('admin', '管理者', 'admin')")
+        con.commit()
 
     def cols(t):
         try:
@@ -1699,3 +1718,124 @@ def void_sale_slip(con, slip_id):
     con.execute("UPDATE sales_slips SET voided=1 WHERE slip_id=?", (slip_id,))
     con.commit()
     return {"slip_id": slip_id, "voided": True}
+
+
+# ── ログイン認証・ロール制御(アクセス制御④。docs/access-control.md) ──
+ROLE_LABELS = {"admin": "管理者", "staff": "社員", "part": "パート"}
+
+
+def _hash_pw(password, salt=None):
+    """パスワードをPBKDF2でハッシュ化して 'salt$hash' 形式で返す(標準ライブラリのみ)。"""
+    salt = salt or secrets.token_hex(8)
+    h = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 120000).hex()
+    return salt + "$" + h
+
+
+def _check_pw(password, stored):
+    """保存済みハッシュとパスワードを照合する。"""
+    try:
+        salt, h = (stored or "").split("$", 1)
+    except ValueError:
+        return False
+    calc = hashlib.pbkdf2_hmac("sha256", (password or "").encode("utf-8"), salt.encode("utf-8"), 120000).hex()
+    return secrets.compare_digest(calc, h)
+
+
+def list_login_users(con):
+    """ログイン画面のユーザー選択用(有効ユーザーのみ・ハッシュは返さない)。"""
+    con.row_factory = sqlite3.Row
+    return [{"id": r["user_id"], "name": r["display_name"] or r["user_id"],
+             "has_pw": bool(r["pass_hash"])}
+            for r in con.execute("""SELECT user_id, display_name, pass_hash FROM app_users
+                                    WHERE active=1 ORDER BY role='admin' DESC, user_id""")]
+
+
+def login_user(con, user_id, password):
+    """ログイン。パスワード未設定(初回)なら入力されたものを設定して通す。
+    成功時 {token, user:{id,name,role}, first_time} / 失敗は ValueError。"""
+    row = con.execute("""SELECT user_id, display_name, role, pass_hash, active
+                         FROM app_users WHERE user_id=?""", (str(user_id or ""),)).fetchone()
+    if not row or not row[4]:
+        raise ValueError("ユーザーが見つかりません")
+    first = not row[3]
+    if first:
+        if len(password or "") < 4:
+            raise ValueError("初回ログインです。パスワードを4文字以上で決めて入力してください")
+        con.execute("UPDATE app_users SET pass_hash=? WHERE user_id=?", (_hash_pw(password), row[0]))
+    elif not _check_pw(password, row[3]):
+        raise ValueError("パスワードが違います")
+    token = secrets.token_hex(32)
+    con.execute("INSERT INTO app_sessions(token, user_id, created_at) VALUES (?,?,datetime('now','localtime'))",
+                (token, row[0]))
+    # 古いセッションの掃除(60日でログインし直し)
+    con.execute("DELETE FROM app_sessions WHERE created_at < datetime('now','-60 days','localtime')")
+    con.commit()
+    return {"token": token, "first_time": first,
+            "user": {"id": row[0], "name": row[1] or row[0], "role": row[2] or "staff"}}
+
+
+def session_user(con, token):
+    """セッショントークンからログインユーザーを引く。無効ならNone。"""
+    if not token:
+        return None
+    row = con.execute("""SELECT u.user_id, u.display_name, u.role
+                         FROM app_sessions s JOIN app_users u ON u.user_id = s.user_id
+                         WHERE s.token=? AND u.active=1
+                           AND s.created_at >= datetime('now','-60 days','localtime')""",
+                      (token,)).fetchone()
+    if not row:
+        return None
+    return {"id": row[0], "name": row[1] or row[0], "role": row[2] or "staff"}
+
+
+def logout_user(con, token):
+    """セッションを破棄する。"""
+    if token:
+        con.execute("DELETE FROM app_sessions WHERE token=?", (token,))
+        con.commit()
+    return {"ok": True}
+
+
+def list_app_users(con):
+    """ユーザー管理画面用の一覧(管理者のみ)。ハッシュ本体は返さない。"""
+    con.row_factory = sqlite3.Row
+    return [{"id": r["user_id"], "name": r["display_name"] or r["user_id"],
+             "role": r["role"] or "staff", "active": bool(r["active"]),
+             "has_pw": bool(r["pass_hash"])}
+            for r in con.execute("""SELECT user_id, display_name, role, pass_hash, active
+                                    FROM app_users ORDER BY role='admin' DESC, user_id""")]
+
+
+def save_app_user(con, p):
+    """ユーザーの追加・更新(管理者のみ)。reset_password=Trueでパスワードを未設定に戻す
+    (次回そのユーザーがログインする時に新しいパスワードを設定する)。"""
+    uid = str(p.get("id") or "").strip()
+    if not uid or not re.fullmatch(r"[A-Za-z0-9_-]{1,20}", uid):
+        raise ValueError("ログインIDは半角英数字(1〜20文字)で入力してください")
+    role = str(p.get("role") or "staff")
+    if role not in ROLE_LABELS:
+        raise ValueError("役割は 管理者/社員/パート から選んでください")
+    name = str(p.get("name") or "").strip() or uid
+    active = 1 if p.get("active", True) else 0
+    exists = con.execute("SELECT 1 FROM app_users WHERE user_id=?", (uid,)).fetchone()
+    # 安全装置: 最後の有効な管理者を降格・無効化してロックアウトしない
+    if exists and (role != "admin" or not active):
+        others = con.execute("""SELECT COUNT(*) FROM app_users
+                                WHERE role='admin' AND active=1 AND user_id != ?""", (uid,)).fetchone()[0]
+        was_admin = con.execute("SELECT 1 FROM app_users WHERE user_id=? AND role='admin' AND active=1",
+                                (uid,)).fetchone()
+        if was_admin and others == 0:
+            raise ValueError("最後の管理者は降格・無効化できません(先に別の管理者を作ってください)")
+    if exists:
+        con.execute("UPDATE app_users SET display_name=?, role=?, active=? WHERE user_id=?",
+                    (name, role, active, uid))
+    else:
+        con.execute("INSERT INTO app_users(user_id, display_name, role, active) VALUES (?,?,?,?)",
+                    (uid, name, role, active))
+    if p.get("reset_password"):
+        con.execute("UPDATE app_users SET pass_hash=NULL WHERE user_id=?", (uid,))
+        con.execute("DELETE FROM app_sessions WHERE user_id=?", (uid,))  # 使い回し防止
+    if not active:
+        con.execute("DELETE FROM app_sessions WHERE user_id=?", (uid,))  # 無効化=即ログアウト
+    con.commit()
+    return {"users": list_app_users(con)}

@@ -296,9 +296,16 @@ CREATE TABLE app_users (
   user_id      TEXT PRIMARY KEY,
   store_code   TEXT,
   display_name TEXT,
-  role         TEXT NOT NULL DEFAULT 'staff', -- staff/manager/admin
-  pass_hash    TEXT,
+  role         TEXT NOT NULL DEFAULT 'staff', -- admin=管理者/staff=社員/part=パート
+  pass_hash    TEXT,                          -- 'salt$pbkdf2' 形式。NULL=未設定(初回ログインで本人が設定)
   active       INTEGER NOT NULL DEFAULT 1
+);
+
+-- ログインセッション(v0.24.0)。DB保存でサーバー再起動後もログイン状態を維持(60日で失効)
+CREATE TABLE app_sessions (
+  token      TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL,
+  created_at TEXT
 );
 
 -- 仕入先マスタ(商品ジャンルの分類フラグを持つ。在庫一覧の絞り込みに使う)
