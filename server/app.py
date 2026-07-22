@@ -209,7 +209,8 @@ class Handler(BaseHTTPRequestHandler):
                         result = {"rows": db_query.prescription_search(
                             con, q1("from"), q1("to"), q1("purpose"), q1("misassign") == "1")}
                     elif path == "/api/rank_preview":
-                        result = db_query.compute_rank_updates(con, q1("kind"), q1("from"), q1("to"))
+                        result = db_query.compute_rank_updates(
+                            con, q1("kind"), q1("from"), q1("to"), q1("bottom") == "1")
                     elif path == "/api/rank_rules":
                         result = {"rules": db_query.get_rank_rules(con)}
                     elif path == "/api/receivables_summary":
@@ -274,7 +275,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/rank_apply":
                 con = connect()
                 result = db_query.apply_rank_updates(con, payload.get("kind") or "",
-                                                     payload.get("from") or "", payload.get("to") or "")
+                                                     payload.get("from") or "", payload.get("to") or "",
+                                                     bool(payload.get("include_bottom")))
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/cash_movement":

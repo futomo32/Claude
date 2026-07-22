@@ -1529,10 +1529,12 @@
         <div class="field" style="flex:none"><label>対象</label><select id="ru-kind"><option value="">全て(全購入)</option><option value="宝飾">宝飾(メガネ以外)</option><option value="メガネ">メガネ</option></select></div>
         <div class="field" style="flex:none"><label>期間(いつから)</label><input type="date" id="ru-from"></div>
         <div class="field" style="flex:none"><label>いつまで</label><input type="date" id="ru-to"></div>
+        <label style="display:flex;align-items:center;gap:0.35em;font-size:0.85em;white-space:nowrap"><input type="checkbox" id="ru-bottom"> 最下位ランク(9)も更新対象に含める</label>
         <button class="btn btn-primary" onclick="rankPreview()">プレビュー</button>
         <button class="btn" id="ru-apply" style="display:none" onclick="rankApply()">この内容で更新</button>
         <button class="btn" onclick="toggleRankRules()" style="margin-left:auto">⚙ ランク基準を設定</button>
       </div>
+      <p style="margin:-0.2rem 0 0.5rem;color:var(--muted);font-size:0.78em">通常は最下位ランク(9)の顧客は据え置きます。昔は購入があった9の顧客を復活させたいときは、上のチェックを入れて再計算してください(期間を空欄にすると全期間の合計で判定します)。</p>
       <!-- ランク基準(条件)の設定 -->
       <div id="ru-rules-editor" style="display:none;border:1px solid var(--line);border-radius:8px;padding:0.7rem;margin-bottom:0.6rem;background:#fafafa">
         <p style="margin:0 0 0.5rem;color:var(--muted);font-size:0.82em">合計購入額が「下限金額」以上の顧客に、そのランク名を付けます(上から順に判定)。金額の大きい行から並べてください。</p>
@@ -1548,6 +1550,7 @@
         </div>
       </div>
       <div id="ru-rules" style="color:var(--muted);font-size:0.8em;margin-bottom:0.5rem"></div>
+      <div id="ru-dist" style="display:none;margin-bottom:0.6rem"></div>
       <p id="ru-summary" style="margin:0 0 0.5rem;font-weight:700"></p>
       <div class="table-scroll" style="max-height:45vh;overflow-y:auto">
         <table class="data">
@@ -3052,6 +3055,9 @@
     document.getElementById("ru-rules-editor").style.display = "none";
     document.getElementById("ru-from").value = "";
     document.getElementById("ru-to").value = "";
+    document.getElementById("ru-bottom").checked = false;
+    document.getElementById("ru-dist").style.display = "none";
+    document.getElementById("ru-dist").innerHTML = "";
     document.getElementById("ru-tbody").innerHTML = '<tr><td colspan="4" style="color:var(--muted)">「プレビュー」を押すと、ランクが変わる顧客の一覧が出ます。</td></tr>';
     loadRankRules();
   }
@@ -3094,22 +3100,47 @@
       showToast("ランク基準を保存しました。プレビューで反映を確認できます。");
     }).catch(function (e) { showToast("保存に失敗: " + (e.message || e)); });
   }
+  /* 提案B: ランク別人数分布(現在 / 再計算後) */
+  function renderRankDist(res) {
+    var box = document.getElementById("ru-dist");
+    var dist = res.distribution || [];
+    if (!dist.length) { box.style.display = "none"; box.innerHTML = ""; return; }
+    var rows = dist.map(function (d) {
+      var diff = (d.calc || 0) - (d.cur || 0);
+      var diffTxt = diff === 0 ? "±0" : (diff > 0 ? "+" + diff : String(diff));
+      var col = diff > 0 ? "var(--ok,#2a8)" : (diff < 0 ? "var(--danger)" : "var(--muted)");
+      return '<tr><td><b>' + esc(String(d.rank)) + '</b></td><td class="r num" style="color:var(--muted)">¥' + num(d.min) + '〜</td>' +
+        '<td class="r num">' + (d.cur || 0).toLocaleString() + '</td>' +
+        '<td class="r num">' + (d.calc || 0).toLocaleString() + '</td>' +
+        '<td class="r num" style="color:' + col + '">' + diffTxt + '</td></tr>';
+    }).join("");
+    var other = res.other_cur ? '<tr><td colspan="2" style="color:var(--muted)">その他(基準外の現ランク)</td><td class="r num">' + res.other_cur.toLocaleString() + '</td><td class="r">—</td><td class="r">—</td></tr>' : "";
+    box.innerHTML = '<div class="section-title">ランク別 人数分布</div>' +
+      '<p style="margin:0 0 0.3rem;color:var(--muted);font-size:0.78em">「再計算後」は現在のランクに関係なく、基準どおりに判定した場合の人数です(100万超え＝ランク1の人数もここで確認できます)。</p>' +
+      '<div class="table-scroll" style="max-height:32vh;overflow-y:auto"><table class="data">' +
+      '<thead><tr><th>ランク</th><th class="r">下限</th><th class="r">現在</th><th class="r">再計算後</th><th class="r">増減</th></tr></thead>' +
+      '<tbody>' + rows + other + '</tbody></table></div>';
+    box.style.display = "block";
+  }
   function rankPreview() {
     if (!API) return;
     var kind = document.getElementById("ru-kind").value;
     var from = document.getElementById("ru-from").value;
     var to = document.getElementById("ru-to").value;
+    var incBottom = document.getElementById("ru-bottom").checked;
     if (from && to && from > to) return showToast("期間の指定が逆です(いつから ≤ いつまで)。");
     var tb = document.getElementById("ru-tbody");
     tb.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">集計中…</td></tr>';
     document.getElementById("ru-apply").style.display = "none";
     var qs = "?kind=" + encodeURIComponent(kind) +
-      (from ? "&from=" + encodeURIComponent(from) : "") + (to ? "&to=" + encodeURIComponent(to) : "");
+      (from ? "&from=" + encodeURIComponent(from) : "") + (to ? "&to=" + encodeURIComponent(to) : "") +
+      (incBottom ? "&bottom=1" : "");
     fetch(API + "/rank_preview" + qs).then(function (r) { return r.json(); }).then(function (res) {
       ruPreview = res;
       var rules = (res.rules || []).map(function (x) { return x[1] + ":¥" + num(x[0]) + "〜"; }).join(" / ");
       var period = (from || to) ? "　期間 " + (from || "最初") + "〜" + (to || "現在") : "";
       document.getElementById("ru-rules").textContent = "基準 " + rules + period;
+      renderRankDist(res);
       var ups = res.updates || [];
       var skip = res.skipped_bottom ? "(最下位「" + esc(res.bottom_rank || "9") + "」据え置き " + res.skipped_bottom.toLocaleString() + "名は除外)" : "";
       document.getElementById("ru-summary").textContent =
@@ -3126,12 +3157,13 @@
     var kind = document.getElementById("ru-kind").value;
     var from = document.getElementById("ru-from").value;
     var to = document.getElementById("ru-to").value;
+    var incBottom = document.getElementById("ru-bottom").checked;
     var n = (ruPreview.updates || []).length;
     alertPopup(n + "名のランクを更新します。よろしいですか?", {
       type: "warn", title: "ランク更新の確認", okText: "更新する", cancelText: "やめる", confirm: true,
       onOk: function () {
         fetch(API + "/rank_apply", {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: kind, from: from, to: to })
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: kind, from: from, to: to, include_bottom: incBottom })
         }).then(function (r) { return r.json(); }).then(function (res) {
           if (res.error) throw new Error(res.error);
           // ローカルのランク(c[18])も反映して一覧・絞り込みを最新化

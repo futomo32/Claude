@@ -756,12 +756,15 @@ def rank_for_amount(total, rules=None):
     return rules[-1][1] if rules else ""
 
 
-def compute_rank_updates(con, kind="", date_from="", date_to=""):
+def compute_rank_updates(con, kind="", date_from="", date_to="", include_bottom=False):
     """全顧客の合計購入額から新ランクを算出し、現ランクと異なる顧客の一覧を返す(プレビュー)。
       kind: ""=全て / "宝飾" / "メガネ"。集計対象外・検証ペルソナ・取消明細は対象外。
       date_from/date_to: 集計する買上日の期間(YYYY-MM-DD、空なら全期間)。
-    ・すでに最下位ランク(既定"9")の顧客は更新対象から除外する。
-    戻り値: {rules, updates, total_customers, bottom_rank, date_from, date_to}"""
+      include_bottom: True なら最下位ランク(既定"9")の顧客も更新対象に含める(復活可)。
+                      False(既定)なら最下位ランクの顧客は据え置き。
+    ・distribution: ランクごとの「現在の人数 / 再計算後の人数」内訳(提案B)。
+    戻り値: {rules, updates, total_customers, bottom_rank, skipped_bottom,
+             include_bottom, distribution, date_from, date_to}"""
     con.row_factory = sqlite3.Row
     rules = get_rank_rules(con)
     bottom_rank = rules[-1][1] if rules else "9"
@@ -782,6 +785,10 @@ def compute_rank_updates(con, kind="", date_from="", date_to=""):
                             LEFT JOIN products p ON l.product_key = p.product_key
                             WHERE """ + " AND ".join(where) + " GROUP BY s.customer_id", args):
         totals[r["cid"]] = r["t"] or 0
+    labels = [r[1] for r in rules]
+    dist_cur = {lab: 0 for lab in labels}   # 現在ランク別の人数
+    dist_calc = {lab: 0 for lab in labels}  # 基準どおり再計算した場合の人数
+    other_cur = 0  # ランク未設定・基準外の現ランク
     updates = []
     n = 0
     skipped_bottom = 0
@@ -789,25 +796,35 @@ def compute_rank_updates(con, kind="", date_from="", date_to=""):
                             WHERE COALESCE(is_test,0)=0 AND COALESCE(exclude_stats,0)=0"""):
         n += 1
         cur_rank = r["rank"] or ""
-        # すでに最下位ランクの顧客は据え置き(更新しない)
-        if cur_rank == bottom_rank:
-            skipped_bottom += 1
-            continue
+        if cur_rank in dist_cur:
+            dist_cur[cur_rank] += 1
+        else:
+            other_cur += 1
         cid = r["customer_id"]
         total = totals.get(cid, 0) or 0
         newr = rank_for_amount(total, rules)
+        if newr in dist_calc:
+            dist_calc[newr] += 1
+        # 最下位ランクの顧客は既定で据え置き(include_bottom=True なら含める)
+        if not include_bottom and cur_rank == bottom_rank:
+            skipped_bottom += 1
+            continue
         if cur_rank != newr:
             updates.append({"customer_id": cid, "name": r["name"] or cid,
                             "old": r["rank"], "new": newr, "total": total})
     updates.sort(key=lambda u: u["total"], reverse=True)
+    distribution = [{"rank": lab, "min": rules[i][0],
+                     "cur": dist_cur[lab], "calc": dist_calc[lab]}
+                    for i, lab in enumerate(labels)]
     return {"rules": rules, "updates": updates, "total_customers": n,
             "bottom_rank": bottom_rank, "skipped_bottom": skipped_bottom,
-            "date_from": date_from or "", "date_to": date_to or ""}
+            "include_bottom": bool(include_bottom), "distribution": distribution,
+            "other_cur": other_cur, "date_from": date_from or "", "date_to": date_to or ""}
 
 
-def apply_rank_updates(con, kind="", date_from="", date_to=""):
+def apply_rank_updates(con, kind="", date_from="", date_to="", include_bottom=False):
     """compute_rank_updates の変更をまとめて customers.rank に反映する。"""
-    res = compute_rank_updates(con, kind, date_from, date_to)
+    res = compute_rank_updates(con, kind, date_from, date_to, include_bottom)
     cur = con.cursor()
     for u in res["updates"]:
         cur.execute("UPDATE customers SET rank=? WHERE customer_id=?", (u["new"], u["customer_id"]))
