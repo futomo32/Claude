@@ -2083,8 +2083,15 @@
       return;
     }
     tb.innerHTML = posLines.map(function (ln, i) {
-      var nameCell = ln.kind === "stock" ? esc(ln.name)
-        : '<input value="' + esc(ln.name || "") + '" placeholder="品名(例: 修理・電池)" oninput="posEdit(' + i + ',\'name\',this.value)" style="width:12em">';
+      var nameCell;
+      if (ln.kind === "stock") {
+        var turl = ln.img ? prodImgUrl(ln.img) : null;
+        var thumb = turl ? '<img class="pm-thumb" loading="lazy" src="' + esc(turl) + '" onerror="this.style.display=\'none\'" style="vertical-align:middle;margin-right:0.4em">' : '';
+        var look = ln.no ? ' <button class="link-btn" title="商品情報・写真を見る" onclick="openProductByNo(\'' + esc(String(ln.no)).replace(/'/g, "&#39;") + '\')">🔍</button>' : '';
+        nameCell = thumb + esc(ln.name) + look;
+      } else {
+        nameCell = '<input value="' + esc(ln.name || "") + '" placeholder="品名(例: 修理・電池)" oninput="posEdit(' + i + ',\'name\',this.value)" style="width:12em">';
+      }
       var infoCell = ln.kind === "stock" ? esc(dash(ln.info)) : "—";
       return '<tr><td class="num">' + esc(dash(ln.no)) + '</td><td>' + nameCell +
         '</td><td>' + infoCell + '</td><td class="r num">' + (ln.list ? ln.list.toLocaleString() : "—") +
@@ -2119,7 +2126,8 @@
     }
     // ★在庫引落・購入履歴の紐付けは内部キー(p[7])で行う。商品番号(p[0])は表示・重複ありのため不可。
     var pkey = (p[7] != null && p[7] !== "") ? p[7] : p[0];
-    posLines.push({ kind: "stock", key: pkey, no: p[0], name: p[1], info: p[6], list: p[3] || 0, amount: p[3] || 0 });
+    posLines.push({ kind: "stock", key: pkey, no: p[0], name: p[1], info: p[6], list: p[3] || 0,
+                    amount: p[3] || 0, img: (p[8] != null ? p[8] : null) });  // p[8]=画像ファイル名(B-7)
     renderPosLines();
   }
   function removePosLine(i) { posLines.splice(i, 1); renderPosLines(); }
