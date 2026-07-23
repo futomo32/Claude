@@ -1774,6 +1774,15 @@ def checkout(con, payload):
 
     cid = str(payload.get("customer_id"))
     lines = payload.get("lines", [])
+    # 二重販売の防止(在庫品は1点もの)。同一商品キーの重複 / すでに売却済みの品を弾く。
+    line_keys = [l.get("product_key") for l in lines if l.get("product_key")]
+    dupes = sorted({k for k in line_keys if line_keys.count(k) > 1})
+    if dupes:
+        raise ValueError("同じ在庫品が明細に重複しています(在庫1点の品は1会計で1回だけ販売できます)")
+    for pk in dict.fromkeys(line_keys):
+        prow = con.execute("SELECT state, name FROM products WHERE product_key=?", (pk,)).fetchone()
+        if prow and prow[0] == "売上":
+            raise ValueError(f"「{prow[1] or pk}」はすでに販売済みです(在庫にありません)。返品してから再販売してください")
     total = sum(int(l.get("amount") or 0) for l in lines)
     earned = total // 200  # デモ: 200円=1pt
 

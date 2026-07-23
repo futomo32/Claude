@@ -2200,6 +2200,12 @@
     }
     // ★在庫引落・購入履歴の紐付けは内部キー(p[7])で行う。商品番号(p[0])は表示・重複ありのため不可。
     var pkey = (p[7] != null && p[7] !== "") ? p[7] : p[0];
+    // 在庫品は1点もの(在庫1)。同じ商品キーが既に明細にあれば二重販売になるためブロックする。
+    var dup = posLines.some(function (ln) { return ln.kind === "stock" && String(ln.key) === String(pkey); });
+    if (dup) {
+      showToast("「" + (p[1] || dash(p[0])) + "」はすでに明細にあります。在庫品(1点もの)は重複して追加できません。");
+      return;
+    }
     posLines.push({ kind: "stock", key: pkey, no: p[0], name: p[1], info: p[6], list: p[3] || 0,
                     amount: p[3] || 0, img: (p[8] != null ? p[8] : null) });  // p[8]=画像ファイル名(B-7)
     renderPosLines();
