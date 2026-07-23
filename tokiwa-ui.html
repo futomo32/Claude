@@ -660,6 +660,18 @@
   .op-bar .op-btn { padding: 0.45em 1em; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); cursor: pointer; font: inherit; font-size: 0.92em; }
   .op-bar .op-btn.sel { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
   .op-bar .op-add { border-style: dashed; color: var(--muted); }
+  /* レジ上部: 会計担当の帯＋顧客エリア */
+  .pos-op-row { display: flex; align-items: center; gap: 0.6em; flex-wrap: wrap; padding: 0.2em 0 0.6em; border-bottom: 1px solid var(--line); margin-bottom: 0.7rem; }
+  .pos-op-label { font-size: 0.85em; color: var(--ink-2); font-weight: 600; white-space: nowrap; }
+  .pos-cust-search { display: flex; gap: 0.7em; align-items: flex-end; }
+  .pos-cust-search .field { flex: 1; }
+  .btn.btn-newcust { padding: 0.7em 1.3em; font-size: 1.02em; font-weight: 700; white-space: nowrap; }
+  .pos-cust-card { display: flex; align-items: center; gap: 0.8em 1.2em; flex-wrap: wrap; padding: 0.7em 0.9em; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); }
+  .pos-cust-card .pc-name { font-size: 1.15em; font-weight: 700; }
+  .pos-cust-card .pc-kana { color: var(--ink-2); font-size: 0.9em; }
+  .pos-cust-card .pc-meta { color: var(--ink-2); font-size: 0.88em; display: flex; gap: 0.4em 1em; flex-wrap: wrap; }
+  .pos-cust-card .pc-bal { color: var(--danger); font-weight: 700; }
+  .pos-cust-card .pc-actions { margin-left: auto; display: flex; gap: 0.5em; }
   /* 写真プール(まとめて撮影→後で商品に割り当て) */
   .pool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 0.6rem; margin-top: 0.8rem; }
   .pool-item { position: relative; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fbfbfb; }
@@ -776,16 +788,20 @@
     <section class="content" data-screen="register">
       <div class="pos-grid">
         <div class="card">
-          <div class="search-row">
-            <div class="field search-wrap" style="flex:1.4"><label>顧客(カナ・TEL)<span class="req">必須</span></label>
+          <!-- 会計担当: 専用の細い帯(折り返しても他を歪めない) -->
+          <div class="pos-op-row">
+            <span class="pos-op-label">会計担当<span class="req">必須</span></span>
+            <div id="pos-operator-bar" class="op-bar"></div>
+          </div>
+          <!-- 顧客: 未選択=検索＋大きい新規ボタン / 選択後=情報カード -->
+          <div class="pos-cust-search" id="pos-cust-search">
+            <div class="field search-wrap"><label>顧客(カナ・TEL)<span class="req">必須</span></label>
               <input id="pos-cust-input" placeholder="カタカナ・電話番号で検索" autocomplete="off">
               <div class="search-drop" id="pos-cust-drop"></div>
             </div>
-            <div class="field" style="flex:1.6"><label>会計担当(レジを打つ人)<span class="req">必須</span></label>
-              <div id="pos-operator-bar" class="op-bar"></div>
-            </div>
-            <button class="btn" onclick="openCustModalForPos()">+ 新規顧客</button>
+            <button class="btn btn-newcust" onclick="openCustModalForPos()">＋ 新規顧客</button>
           </div>
+          <div class="pos-cust-card" id="pos-cust-card" style="display:none"></div>
           <div class="search-row" style="margin-top:0.2rem;align-items:center">
             <label style="font-size:0.85em;color:var(--ink-2);display:flex;align-items:center;gap:0.4em">
               <input type="checkbox" id="pos-backdate" onchange="togglePosBackdate()"> 過去の日付で登録する(店外イベントの後日精算など)
@@ -2642,6 +2658,7 @@
         custModalContext = null;
         posCustomer = row;
         document.getElementById("pos-cust-input").value = row[1];
+        renderPosCustomer();
         renderPosReceivable();
         showScreen("register");
       } else {
@@ -3589,6 +3606,43 @@
       loadReceivables();
       showToast("売掛を削除しました。");
     }).catch(function (e) { showToast("削除に失敗: " + (e.message || e)); });
+  }
+  // レジ顧客エリア: 未選択=検索＋新規ボタン / 選択後=情報カード(氏名・カナ・年齢・電話・最終購入・ランク・売掛残高)
+  function renderPosCustomer() {
+    var searchBox = document.getElementById("pos-cust-search");
+    var card = document.getElementById("pos-cust-card");
+    if (!searchBox || !card) return;
+    if (!posCustomer) {
+      searchBox.style.display = "";
+      card.style.display = "none";
+      card.innerHTML = "";
+      return;
+    }
+    var c = posCustomer;
+    var age = ageFrom(c[6]);
+    var uk = D.urikake[String(c[0])] || [];
+    var bal = uk.reduce(function (t, u) { return t + (parseInt(u[4], 10) || 0); }, 0);
+    var meta = [];
+    if (age != null) meta.push(age + "歳");
+    if (c[3]) meta.push(esc(String(c[3])));
+    meta.push(c[13] ? "最終購入 " + esc(String(c[13])) : "購入履歴なし");
+    if (c[18]) meta.push("ランク " + esc(String(c[18])));
+    card.innerHTML =
+      '<div><div class="pc-name">' + esc(dash(c[1])) + ' 様</div><div class="pc-kana">' + esc(dash(c[2])) + '</div></div>' +
+      '<div class="pc-meta">' + meta.map(function (m) { return '<span>' + m + '</span>'; }).join("") +
+        (bal > 0 ? '<span class="pc-bal">売掛残 ¥' + num(bal) + '</span>' : "") + '</div>' +
+      '<div class="pc-actions"><button class="btn" onclick="changePosCustomer()">変更</button></div>';
+    searchBox.style.display = "none";
+    card.style.display = "flex";
+  }
+  function changePosCustomer() {
+    posCustomer = null;
+    var inp = document.getElementById("pos-cust-input");
+    if (inp) inp.value = "";
+    renderPosCustomer();
+    renderPosReceivable();
+    if (typeof clearPosError === "function") clearPosError();
+    if (inp) inp.focus();
   }
   // レジで顧客を選んだ時、売掛残高があれば入金パネルを表示(現金授受→ドロワーがレジで完結)
   function renderPosReceivable() {
@@ -5225,7 +5279,8 @@
       showScreen("home");
     }
     // レジの顧客検索
-    setupCustSearch("pos-cust-input", "pos-cust-drop", function (c) { posCustomer = c; if (typeof clearPosError === "function") clearPosError(); renderPosReceivable(); });
+    setupCustSearch("pos-cust-input", "pos-cust-drop", function (c) { posCustomer = c; if (typeof clearPosError === "function") clearPosError(); renderPosCustomer(); renderPosReceivable(); });
+    renderPosCustomer();  // 初期表示(未選択=検索欄)
     // 修理の新規預かりモーダルの顧客検索
     setupCustSearch("rep-cust-input", "rep-cust-drop", function (c) { repairSelectedCust = c; });
     // 家族リンク(B)の顧客検索
@@ -5966,6 +6021,7 @@
     posLines = [];
     posCustomer = null;
     document.getElementById("pos-cust-input").value = "";
+    renderPosCustomer();
     renderPosReceivable();
     renderPosLines();
     payRows = [{ method: "現金", amount: 0 }];
