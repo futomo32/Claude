@@ -142,6 +142,10 @@ def main():
     if "--demo" in args:
         SRC = os.path.join(BASE, "data", "demo_csv")
         args.remove("--demo")
+    # 売掛(未回収残高・入金履歴)を取り込まない。初期運用を空で始め紙から手入力する場合に使う。
+    skip_receivables = "--no-receivables" in args
+    if skip_receivables:
+        args.remove("--no-receivables")
     if args:
         SRC = args[0]
     if not os.path.isdir(SRC) or not glob.glob(os.path.join(SRC, "*.csv")):
@@ -341,27 +345,31 @@ def main():
     log["slips"], log["lines"], log["synth_slips"] = len(slip_id_of), n_lines, synth
 
     # ── 売掛(d_kakeuri / d_kakeurihistory / d_nyukin) ──
+    # --no-receivables 指定時は取り込まない(初期運用を空で始め、紙から手入力する運用)
     recv, recve = [], []
-    for r in rows("d_kakeuri"):
-        cid = cid_of(r)
-        if cid in seen:
-            recv.append((cid, pk_of(r), None, dt(r.get("datkaidate")),
-                         n(r.get("curatamakin")), n(r.get("curzankin")), dt(r.get("datnyukindate"))))
-    for r in rows("d_kakeurihistory"):
-        cid = cid_of(r)
-        if cid in seen:
-            recve.append((cid, s(r.get("lngkakekbn")), dt(r.get("datkakedate")), None,
-                          n(r.get("curkakekin")), n(r.get("curnyukin")), s(r.get("strbiko"))))
-    for r in rows("d_nyukin"):
-        cid = cid_of(r)
-        if cid in seen:
-            recve.append((cid, "入金", dt(r.get("datnyudate")), None,
-                          None, n(r.get("curnyukin")), s(r.get("strbiko"))))
-    cur.executemany("""INSERT INTO receivables(customer_id,product_key,product_name,bought_at,down_payment,balance,last_paid_at)
-                       VALUES (?,?,?,?,?,?,?)""", recv)
-    cur.executemany("""INSERT INTO receivable_entries(customer_id,entry_type,entry_date,product_name,amount,paid,note)
-                       VALUES (?,?,?,?,?,?,?)""", recve)
+    if not skip_receivables:
+        for r in rows("d_kakeuri"):
+            cid = cid_of(r)
+            if cid in seen:
+                recv.append((cid, pk_of(r), None, dt(r.get("datkaidate")),
+                             n(r.get("curatamakin")), n(r.get("curzankin")), dt(r.get("datnyukindate"))))
+        for r in rows("d_kakeurihistory"):
+            cid = cid_of(r)
+            if cid in seen:
+                recve.append((cid, s(r.get("lngkakekbn")), dt(r.get("datkakedate")), None,
+                              n(r.get("curkakekin")), n(r.get("curnyukin")), s(r.get("strbiko"))))
+        for r in rows("d_nyukin"):
+            cid = cid_of(r)
+            if cid in seen:
+                recve.append((cid, "入金", dt(r.get("datnyudate")), None,
+                              None, n(r.get("curnyukin")), s(r.get("strbiko"))))
+        cur.executemany("""INSERT INTO receivables(customer_id,product_key,product_name,bought_at,down_payment,balance,last_paid_at)
+                           VALUES (?,?,?,?,?,?,?)""", recv)
+        cur.executemany("""INSERT INTO receivable_entries(customer_id,entry_type,entry_date,product_name,amount,paid,note)
+                           VALUES (?,?,?,?,?,?,?)""", recve)
     log["receivables"], log["receivable_entries"] = len(recv), len(recve)
+    if skip_receivables:
+        log["receivables(スキップ)"] = "--no-receivables 指定のため取り込まず"
 
     # ── ポイント(d_point 残高 / d_pointhistory 取引) ──
     pbal, ptx = [], []

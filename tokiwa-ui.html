@@ -1682,6 +1682,8 @@
       <div class="field"><label>対象</label><p id="pay-target-name" style="margin:0.2em 0 0"></p></div>
       <div class="field"><label>残高</label><p id="pay-target-balance" class="num" style="margin:0.2em 0 0"></p></div>
       <div class="field"><label>入金額</label><input class="num" id="pay-amount" inputmode="numeric" placeholder="0"></div>
+      <div class="field"><label>支払方法</label><select id="pay-method"><option>現金</option><option>銀行振込</option><option>カード</option><option>その他</option></select>
+        <p style="margin:0.3em 0 0;font-size:0.78em;color:var(--muted)">現金以外(振込・カード等)はレジの現金締め(入出金合計)には含めず、残高だけ減らします。</p></div>
       <div class="field"><label>入金日</label><input type="date" id="pay-date"></div>
       <div class="field"><label>メモ</label><input id="pay-note" placeholder="任意"></div>
       <p id="pay-error" style="display:none;color:var(--danger);font-size:0.85em;margin:0.4em 0 0"></p>
@@ -3520,7 +3522,9 @@
     if (hist.length) {
       html += '<div class="section-title">入金履歴</div><div class="table-scroll"><table class="data"><thead><tr><th>日付</th><th>区分</th><th>商品名・備考</th><th class="r">購入金額</th><th class="r">入金・頭金</th></tr></thead><tbody>' +
         hist.map(function (h) {
-          return '<tr><td class="num">' + esc(h[0]) + '</td><td>' + esc(dash(h[1])) + '</td><td>' + esc(dash(h[2])) + '</td><td class="r num">' + (h[3] ? "¥" + num(h[3]) : "—") + '</td><td class="r num">' + (h[4] ? "¥" + num(h[4]) : "—") + '</td></tr>';
+          // 入金行は支払方法(現金/振込/カード等)を区分に併記
+          var kind = dash(h[1]) + (h[1] === "入金" && h[5] ? "（" + h[5] + "）" : "");
+          return '<tr><td class="num">' + esc(h[0]) + '</td><td>' + esc(kind) + '</td><td>' + esc(dash(h[2])) + '</td><td class="r num">' + (h[3] ? "¥" + num(h[3]) : "—") + '</td><td class="r num">' + (h[4] ? "¥" + num(h[4]) : "—") + '</td></tr>';
         }).join("") + '</tbody></table></div>';
     } else {
       html += '<p style="margin:0;color:var(--muted);font-size:0.9em">売掛・入金の記録はありません。</p>';
@@ -3589,7 +3593,7 @@
       btn.disabled = false; btn.textContent = doneLabel;
       if (rv.error) throw new Error(rv.error);
       (D.urikake[cid] = D.urikake[cid] || []).push([rv.id, rv.product_name, rv.bought_at, rv.down_payment, rv.balance, rv.last_paid_at]);
-      (D.urikakeHist[cid] = D.urikakeHist[cid] || []).unshift([rv.bought_at, "掛売", rv.product_name, rv.balance, null]);
+      (D.urikakeHist[cid] = D.urikakeHist[cid] || []).unshift([rv.bought_at, "掛売", rv.product_name, rv.balance, null, null]);
       closeAddReceivable();
       var c = findCust(cid); if (c) renderPay(c);
       renderPosReceivable();
@@ -3678,6 +3682,7 @@
     document.getElementById("pay-target-name").textContent = name || "(商品名なし)";
     document.getElementById("pay-target-balance").textContent = "¥" + num(balance);
     document.getElementById("pay-amount").value = "";
+    document.getElementById("pay-method").selectedIndex = 0;  // 既定は現金
     document.getElementById("pay-date").value = TODAY_ISO;
     document.getElementById("pay-note").value = "";
     document.getElementById("pay-error").style.display = "none";
@@ -3734,6 +3739,7 @@
     err.style.display = "none";
     var paidAt = document.getElementById("pay-date").value || TODAY_ISO;
     var note = document.getElementById("pay-note").value.trim() || null;
+    var method = document.getElementById("pay-method").value || "現金";
     var target = payTarget;
     var btn = document.getElementById("pay-submit-btn");
     btn.disabled = true; btn.textContent = "処理中…";
@@ -3741,18 +3747,21 @@
       var uk = D.urikake[target.customerId] || [];
       var row = uk.filter(function (u) { return String(u[0]) === String(target.id); })[0];
       if (row) row[4] = newBalance;
-      (D.urikakeHist[target.customerId] = D.urikakeHist[target.customerId] || []).unshift([paidAt, "入金", null, null, amt]);
+      // 履歴行: [日付, 区分, 商品名, 購入金額, 入金額, 支払方法]
+      (D.urikakeHist[target.customerId] = D.urikakeHist[target.customerId] || []).unshift([paidAt, "入金", null, null, amt, method]);
       btn.disabled = false; btn.textContent = "入金する";
       closePayModal();
       var c = findCust(target.customerId);
       if (c) renderPay(c);
       renderPosReceivable(); // レジ画面から入金した場合、残高表示を即時更新
-      showToast("入金 ¥" + num(amt) + " を記録しました。ドロワーを開けて現金を受け取ってください。");
+      if (typeof renderDailyReport === "function") try { renderDailyReport(); } catch (e) {}
+      var msg = "入金 ¥" + num(amt) + "（" + method + "）を記録しました。";
+      showToast(msg + (method === "現金" ? "ドロワーを開けて現金を受け取ってください。" : "現金締めには含めていません。"));
     };
     if (window.TOKIWA_API) {
       fetch(window.TOKIWA_API + "/receivable_payment", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ receivable_id: target.id, amount: amt, paid_at: paidAt, note: note })
+        body: JSON.stringify({ receivable_id: target.id, amount: amt, paid_at: paidAt, note: note, method: method })
       }).then(function (r) {
         if (!r.ok) return r.json().then(function (e) { throw new Error(e.error || "保存に失敗しました"); });
         return r.json();
@@ -4915,7 +4924,7 @@
       (D.urikakeHist[cid] || []).forEach(function (h) {
         if (h[0] !== dateStr || !h[4]) return;
         var c = findCust(cid);
-        out.push({ cid: cid, name: c ? c[1] : cid, amount: h[4], note: h[2] });
+        out.push({ cid: cid, name: c ? c[1] : cid, amount: h[4], note: h[2], method: h[5] || "現金" });
       });
     });
     return out;
@@ -4938,7 +4947,12 @@
     var byPay = {};
     settled.forEach(function (t) { byPay[t.method] = (byPay[t.method] || 0) + t.amount; });
     var settledTotal = settled.reduce(function (t, x) { return t + x.amount; }, 0);
-    var payTotal = payments.reduce(function (t, p) { return t + p.amount; }, 0);
+    // 売掛入金は現金と現金以外(振込・カード等)を分ける。現金締め(入出金合計)には現金分のみ算入。
+    var payCash = payments.filter(function (p) { return (p.method || "現金") === "現金"; });
+    var payOther = payments.filter(function (p) { return (p.method || "現金") !== "現金"; });
+    var payCashTotal = payCash.reduce(function (t, p) { return t + p.amount; }, 0);
+    var payOtherTotal = payOther.reduce(function (t, p) { return t + p.amount; }, 0);
+    var payTotal = payCashTotal + payOtherTotal;  // 表示用の総額
     var cashTotal = cashMoves.reduce(function (t, m) { return t + (m.amount || 0); }, 0);  // レジ入出金(±)
     var tax = Math.floor(salesTotal * 10 / 110);
     var tiles = '<div class="tile"><div class="t-label">売上(税込)</div><div class="t-value num">¥' + num(salesTotal) +
@@ -4951,14 +4965,19 @@
     if (newReceivable) {
       tiles += '<div class="tile"><div class="t-label">本日発生の掛売(未回収)</div><div class="t-value num">¥' + num(newReceivable) + '</div></div>';
     }
-    tiles += '<div class="tile"><div class="t-label">売掛入金</div><div class="t-value num">¥' + num(payTotal) +
-      '</div><div class="t-sub num">' + payments.length + '件</div></div>';
+    tiles += '<div class="tile"><div class="t-label">売掛入金(現金)</div><div class="t-value num">¥' + num(payCashTotal) +
+      '</div><div class="t-sub num">' + payCash.length + '件</div></div>';
+    if (payOtherTotal) {
+      tiles += '<div class="tile"><div class="t-label">売掛入金(振込・カード等)</div><div class="t-value num">¥' + num(payOtherTotal) +
+        '</div><div class="t-sub num">' + payOther.length + '件 ※現金締め対象外</div></div>';
+    }
     if (cashMoves.length) {
       tiles += '<div class="tile"><div class="t-label">レジ入出金</div><div class="t-value num">' + (cashTotal < 0 ? "-¥" + num(-cashTotal) : "¥" + num(cashTotal)) +
         '</div><div class="t-sub num">' + cashMoves.length + '件</div></div>';
     }
-    tiles += '<div class="tile"><div class="t-label">入出金合計</div><div class="t-value num">¥' + num(settledTotal + payTotal + cashTotal) +
-      '</div><div class="t-sub num">' + (settled.length + payments.length + cashMoves.length) + '件</div></div>';
+    // 入出金合計(現金締め)＝レジ現金等＋売掛入金(現金)＋レジ入出金。振込・カードの売掛入金は含めない。
+    tiles += '<div class="tile"><div class="t-label">入出金合計(現金締め)</div><div class="t-value num">¥' + num(settledTotal + payCashTotal + cashTotal) +
+      '</div><div class="t-sub num">' + (settled.length + payCash.length + cashMoves.length) + '件</div></div>';
     return tiles;
   }
   function renderHomeTiles() {
@@ -6093,7 +6112,7 @@
       var kakeAdd = 0;
       (data.receivables || []).forEach(function (rv) {
         (D.urikake[cid] = D.urikake[cid] || []).push([rv.id, rv.product_name, rv.bought_at, rv.down_payment, rv.balance, rv.last_paid_at]);
-        (D.urikakeHist[cid] = D.urikakeHist[cid] || []).unshift([rv.bought_at, "掛売", rv.product_name, rv.balance, null]);
+        (D.urikakeHist[cid] = D.urikakeHist[cid] || []).unshift([rv.bought_at, "掛売", rv.product_name, rv.balance, null, null]);
         kakeAdd += rv.balance || 0;
       });
       showToast(nm + "様 — 伝票 #" + data.slip_id + " を保存しました(合計 ¥" + data.total.toLocaleString() +

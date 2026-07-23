@@ -127,6 +127,7 @@ def ensure_schema(con):
         ("customers", "postal", "TEXT"), ("customers", "address2", "TEXT"),
         ("customers", "email", "TEXT"),
         ("customer_families", "linked_customer_id", "TEXT"),
+        ("receivable_entries", "method", "TEXT"),  # 売掛入金の支払方法(現金/銀行振込/カード/その他。空=現金扱い)
     ]
     changed = False
     for table, col, decl in adds:
@@ -219,7 +220,7 @@ def build_blob(con):
 
     urikake = group("""SELECT customer_id, id, product_name, bought_at, down_payment, balance, last_paid_at
                        FROM receivables ORDER BY bought_at DESC, id DESC""")
-    urikake_hist = group("""SELECT customer_id, entry_date, entry_type, product_name, amount, paid
+    urikake_hist = group("""SELECT customer_id, entry_date, entry_type, product_name, amount, paid, method
                             FROM receivable_entries ORDER BY entry_date DESC""")
 
     point_tx = group("""SELECT customer_id, occurred_at, tx_type, add_points, use_points, balance
@@ -362,7 +363,7 @@ def build_blob_light(con):
                         FROM customer_families ORDER BY id""")
     urikake = group("""SELECT customer_id, id, product_name, bought_at, down_payment, balance, last_paid_at
                        FROM receivables ORDER BY bought_at DESC, id DESC""")
-    urikake_hist = group("""SELECT customer_id, entry_date, entry_type, product_name, amount, paid
+    urikake_hist = group("""SELECT customer_id, entry_date, entry_type, product_name, amount, paid, method
                             FROM receivable_entries ORDER BY entry_date DESC""")
     points = {str(r["customer_id"]): r["balance"]
               for r in cur.execute("SELECT customer_id, balance FROM point_balances")}
@@ -1625,13 +1626,15 @@ def add_receivable_payment(con, p):
         raise ValueError("対象の売掛が見つかりません")
     cid, balance = row[0], row[1] or 0
     new_balance = balance - amount
+    method = (p.get("method") or "現金").strip() or "現金"  # 現金/銀行振込/カード/その他
     cur = con.cursor()
     cur.execute("UPDATE receivables SET balance=?, last_paid_at=? WHERE id=?", (new_balance, paid_at, receivable_id))
-    cur.execute("""INSERT INTO receivable_entries(customer_id,entry_type,entry_date,product_name,amount,paid,note)
-                   VALUES (?,?,?,?,?,?,?)""",
-                (cid, "入金", paid_at, None, None, amount, p.get("note")))
+    cur.execute("""INSERT INTO receivable_entries(customer_id,entry_type,entry_date,product_name,amount,paid,note,method)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (cid, "入金", paid_at, None, None, amount, p.get("note"), method))
     con.commit()
-    return {"receivable_id": receivable_id, "new_balance": new_balance, "paid_at": paid_at, "amount": amount}
+    return {"receivable_id": receivable_id, "new_balance": new_balance, "paid_at": paid_at,
+            "amount": amount, "method": method}
 
 
 def receivable_summary(con):
