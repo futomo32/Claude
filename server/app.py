@@ -544,6 +544,12 @@ class Handler(BaseHTTPRequestHandler):
                 result = db_query.set_supplier_fucho(con, payload.get("name"), payload.get("head"))
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/consignment_add":
+                # 受託品をレジに通すための商品作成(催事)。原価は出さないためパートも可(会計操作の一部)
+                con = connect()
+                result = db_query.add_consignment(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/staff":
                 con = connect()
                 result = db_query.save_staff(con, payload)

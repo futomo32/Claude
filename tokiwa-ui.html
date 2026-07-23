@@ -821,6 +821,7 @@
           <div style="margin-top:0.7rem;display:flex;gap:0.6rem;flex-wrap:wrap">
             <button class="btn" onclick="openProductPicker()">＋ 商品番号で追加(在庫品)</button>
             <button class="btn" onclick="openFreePicker()">＋ 番号なしで追加(レンズ・修理・電池など)</button>
+            <button class="btn" onclick="openConsignModal()" title="催事などメーカーの受託品をレジに通す。メーカーと金額だけでOK(原価・正式品番は後日)">＋ 受託品(催事)</button>
             <button class="btn" onclick="openCashModal()" title="代引手数料・収入印紙・両替・経費など、買い物と無関係な現金の出入り">💴 レジ入出金</button>
           </div>
           <p style="margin:0.6rem 0 0;font-size:0.78em;color:var(--muted)">会計確定と同時に、全明細を顧客の購入履歴へ自動記録し、在庫品は在庫から引き落とします。</p>
@@ -1700,6 +1701,27 @@
   </div>
 </div>
 
+<!-- 受託品を追加(Phase1 A方式:メーカー＋金額だけ) -->
+<div class="modal-back" id="consign-modal">
+  <div class="modal" style="width:min(460px,100%)" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h3>受託品を追加(催事)</h3>
+      <button class="close" aria-label="閉じる" onclick="closeConsignModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">メーカーの受託品をその場でレジに通します。<b>メーカーと金額だけ</b>でOK。原価・正式品番は後日、納品書が届いてから受託管理で入れます。</p>
+      <div class="field"><label>メーカー(仕入先)</label><select id="cs-supplier"><option value="">選択…</option></select></div>
+      <div class="field"><label>品名(任意)</label><input id="cs-name" placeholder="未入力なら「受託品」"></div>
+      <div class="field"><label>金額(税込)</label><input id="cs-amount" class="num" inputmode="numeric" placeholder="0"></div>
+      <p id="cs-error" style="color:var(--danger);font-size:0.85em;margin:0.5rem 0 0;display:none"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeConsignModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="addConsignment(this)">明細に追加</button>
+    </div>
+  </div>
+</div>
+
 <!-- 売掛入金 モーダル -->
 <div class="modal-back" id="pay-modal">
   <div class="modal" style="width:min(420px,100%)" role="dialog" aria-modal="true">
@@ -2224,6 +2246,37 @@
   /* 番号なしピッカー(本番はマスターDBから取得) */
   function openFreePicker() { document.getElementById("free-modal").classList.add("show"); }
   function closeFreePicker() { document.getElementById("free-modal").classList.remove("show"); }
+  /* 受託品を追加(Phase1 A方式)。メーカーと金額だけで受託商品を即作成し、明細に載せる。 */
+  function openConsignModal() {
+    if (!API) { showToast("受託品はサーバー起動時に使えます。"); return; }
+    document.getElementById("cs-error").style.display = "none";
+    document.getElementById("cs-name").value = "";
+    document.getElementById("cs-amount").value = "";
+    document.getElementById("cs-supplier").selectedIndex = 0;
+    document.getElementById("consign-modal").classList.add("show");
+  }
+  function closeConsignModal() { document.getElementById("consign-modal").classList.remove("show"); }
+  function addConsignment(btn) {
+    var err = document.getElementById("cs-error");
+    err.style.display = "none";
+    var supplier = document.getElementById("cs-supplier").value;
+    if (!supplier) { err.textContent = "メーカー(仕入先)を選んでください。"; err.style.display = "block"; return; }
+    var name = document.getElementById("cs-name").value.trim();
+    var amount = parseInt(zen2han(document.getElementById("cs-amount").value).replace(/[^0-9]/g, ""), 10) || 0;
+    btn.disabled = true;
+    fetch(API + "/consignment_add", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ supplier: supplier, name: name, amount: amount })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      btn.disabled = false;
+      if (res.error) throw new Error(res.error);
+      posLines.push({ kind: "stock", key: res.product_key, no: res.product_no, name: res.name,
+                      info: "受託(" + res.supplier + ")", list: res.amount || 0, amount: res.amount || 0, img: null });
+      renderPosLines();
+      closeConsignModal();
+      showToast("受託品「" + res.name + "」(" + res.supplier + ")を明細に追加しました。金額を確認してください。");
+    }).catch(function (e) { btn.disabled = false; err.textContent = "追加に失敗: " + (e.message || e); err.style.display = "block"; });
+  }
   function pickFree(name, amount, pending) {
     posLines.push({ kind: "free", no: null, name: name, info: null, list: null, amount: amount || 0, pending: !!pending });
     renderPosLines();
@@ -2437,6 +2490,7 @@
   bindBackdropClose("master-hub-modal", closeMasterHub);
   bindBackdropClose("alert-modal", alertCancel);
   bindBackdropClose("free-modal", closeFreePicker);
+  bindBackdropClose("consign-modal", closeConsignModal);
   bindBackdropClose("rx-modal", closeRxModal);
   bindBackdropClose("label-modal", closeLabelPrint);
   bindBackdropClose("repair-modal", closeRepairModal);
@@ -4683,7 +4737,7 @@
       supplierFuchoMap = {};  // 符丁の頭カナ(メーカー)を仕入先名で引けるようにする
       (res.suppliers || []).forEach(function (s) { if (s.name) supplierFuchoMap[s.name] = s.fucho_head || ""; });
       var names = (res.suppliers || []).map(function (s) { return s.name; }).filter(Boolean).sort();
-      ["np-supplier", "pe-supplier"].forEach(function (id) {
+      ["np-supplier", "pe-supplier", "cs-supplier"].forEach(function (id) {
         var sel = document.getElementById(id);
         if (!sel) return;
         var cur = sel.value;

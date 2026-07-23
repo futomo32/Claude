@@ -137,6 +137,7 @@ def ensure_schema(con):
         ("repairs", "photo_files", "TEXT"),  # 修理お預かり品の写真ファイル名(カンマ区切り。B-6)
         ("products", "fucho", "TEXT"),  # 符丁(下代を隠す店内符牒。仕入先頭文字＋数字部)。パートには送らない
         ("supplier_master", "fucho_head", "TEXT"),  # 仕入先ごとの符丁頭カナ(漢字名対策)
+        ("products", "is_consignment", "INTEGER DEFAULT 0"),  # 受託品フラグ(売上になっても残す。後日精算の識別用)
     ]
     changed = False
     for table, col, decl in adds:
@@ -1621,6 +1622,34 @@ def add_product(con, payload):
     return {"product_key": key, "product_no": pno,
             "row": [pno, name, vals["category"], vals["list_price"], "在庫",
                     vals["location"], stone or None]}
+
+
+def add_consignment(con, payload):
+    """受託品(催事等でメーカーの品をその場でレジに通すため)を1件作成する。
+    Phase 1(A方式): メーカー(仕入先)と金額だけで即作成。原価は納品書が届くまで未確定(NULL)、
+    state='受託'・is_consignment=1。会計するとほかの商品と同じく 売上 になる。品名は任意(既定 受託品)。
+    後日、メーカーの納品書で原価・正式品番を入れて精算するのは Phase 2。"""
+    cur = con.cursor()
+    supplier = str(payload.get("supplier") or "").strip()
+    if not supplier:
+        raise ValueError("メーカー(仕入先)を選んでください")
+    name = str(payload.get("name") or "").strip() or "受託品"
+    try:
+        amount = int(str(payload.get("amount") or 0).replace(",", ""))
+    except ValueError:
+        raise ValueError("金額は数字で入力してください")
+    row = con.execute("SELECT MAX(CAST(product_key AS INTEGER)) FROM products").fetchone()
+    key = str((row[0] or 0) + 1)
+    pno = "受託" + key  # 内部キーは常にユニーク。見える番号も受託と分かる形にする
+    is_glasses = 1 if GLASS_PAT.search(name) else 0
+    cur.execute("""INSERT INTO products(product_key,product_no,name,supplier,list_price,state,
+                                        is_consignment,is_glasses,registered_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (key, pno, name, supplier, amount, "受託", 1, is_glasses,
+                 datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    con.commit()
+    return {"product_key": key, "product_no": pno, "name": name,
+            "amount": amount, "supplier": supplier}
 
 
 def get_product(con, product_key):
