@@ -396,7 +396,7 @@ class Handler(BaseHTTPRequestHandler):
         "/api/product", "/api/product_update", "/api/product_delete",
         "/api/product_image", "/api/product_image_clear",
         "/api/photo_pool", "/api/photo_pool_assign", "/api/photo_pool_delete",
-        "/api/supplier_genre", "/api/master_item", "/api/rank_apply", "/api/rank_rules",
+        "/api/supplier_genre", "/api/supplier_fucho", "/api/master_item", "/api/rank_apply", "/api/rank_rules",
         "/api/stocktake_scan", "/api/stocktake_reset",
     }
     # 管理者のみの操作(担当者マスタ・ログインユーザー管理)
@@ -537,6 +537,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/supplier_genre":
                 con = connect()
                 result = db_query.set_supplier_genre(con, payload.get("name"), payload.get("genre"))
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/supplier_fucho":
+                con = connect()
+                result = db_query.set_supplier_fucho(con, payload.get("name"), payload.get("head"))
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/staff":

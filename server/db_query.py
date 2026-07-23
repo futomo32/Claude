@@ -59,7 +59,8 @@ def ensure_schema(con):
     # 仕入先マスタ(分類フラグ付き)。無ければ作る
     con.execute("""CREATE TABLE IF NOT EXISTS supplier_master (
         name  TEXT PRIMARY KEY,   -- 仕入先名(products.supplier と一致)
-        genre TEXT                 -- 商品ジャンル: 宝石/メガネ/時計/その他(未設定はNULL)
+        genre TEXT,                -- 商品ジャンル: 宝石/メガネ/時計/その他(未設定はNULL)
+        fucho_head TEXT            -- 符丁の頭(メーカー符丁カナ)。漢字名でも正しく出すため名前と別管理
     )""")
     # 汎用マスタ(商品分類・保管場所・支払方法など「名前の一覧」型を1テーブルで管理)
     con.execute("""CREATE TABLE IF NOT EXISTS master_items (
@@ -135,6 +136,7 @@ def ensure_schema(con):
         ("receivable_entries", "method", "TEXT"),  # 売掛入金の支払方法(現金/銀行振込/カード/その他。空=現金扱い)
         ("repairs", "photo_files", "TEXT"),  # 修理お預かり品の写真ファイル名(カンマ区切り。B-6)
         ("products", "fucho", "TEXT"),  # 符丁(下代を隠す店内符牒。仕入先頭文字＋数字部)。パートには送らない
+        ("supplier_master", "fucho_head", "TEXT"),  # 仕入先ごとの符丁頭カナ(漢字名対策)
     ]
     changed = False
     for table, col, decl in adds:
@@ -658,11 +660,12 @@ def list_supplier_master(con):
     sync_supplier_master(con)
     con.row_factory = sqlite3.Row
     rows = []
-    for r in con.execute("""SELECT m.name, m.genre,
+    for r in con.execute("""SELECT m.name, m.genre, m.fucho_head,
                                    (SELECT COUNT(*) FROM products p WHERE p.supplier = m.name) cnt,
                                    (SELECT COUNT(*) FROM products p WHERE p.supplier = m.name AND p.state='在庫') stock
                             FROM supplier_master m ORDER BY m.name"""):
-        rows.append({"name": r["name"], "genre": r["genre"], "count": r["cnt"], "stock": r["stock"]})
+        rows.append({"name": r["name"], "genre": r["genre"], "fucho_head": r["fucho_head"],
+                     "count": r["cnt"], "stock": r["stock"]})
     return rows
 
 
@@ -709,6 +712,28 @@ def set_supplier_genre(con, name, genre):
                    ON CONFLICT(name) DO UPDATE SET genre=excluded.genre""", (name, genre))
     con.commit()
     return {"name": name, "genre": genre}
+
+
+def supplier_fucho_head(con, name):
+    """仕入先の符丁文字(メーカー頭カナ)を返す。未登録は ''。符丁の1文字目に使う。"""
+    name = str(name or "").strip()
+    if not name:
+        return ""
+    r = con.execute("SELECT fucho_head FROM supplier_master WHERE name=?", (name,)).fetchone()
+    return (r[0] or "") if r else ""
+
+
+def set_supplier_fucho(con, name, head):
+    """仕入先の符丁文字(メーカー頭カナ)を設定/変更する。空で解除。
+    濁点付きカナ(半角だと2文字)も許容するため2文字まで受ける。"""
+    name = str(name or "").strip()
+    if not name:
+        raise ValueError("仕入先が指定されていません")
+    head = str(head or "").strip()[:2] or None
+    con.execute("""INSERT INTO supplier_master(name, fucho_head) VALUES(?,?)
+                   ON CONFLICT(name) DO UPDATE SET fucho_head=excluded.fucho_head""", (name, head))
+    con.commit()
+    return {"name": name, "fucho_head": head}
 
 
 def sale_kind4(is_glasses, category, place):
@@ -1537,11 +1562,12 @@ _FUCHO_DIGITS = {"1": "ｴ", "2": "ﾋ", "3": "ｽ", "4": "ｱ", "5": "ｷ",
                  "6": "ﾅ", "7": "ｲ", "8": "ｶ", "9": "ﾐ", "0": "ｹ"}
 
 
-def fucho_encode(cost_price, supplier=None):
-    """下代(cost_price)と仕入先名から符丁を生成する。
-    1文字目=仕入先名の頭文字(メーカー)、以降=下代の各桁をカナ変換。
+def fucho_encode(cost_price, head=""):
+    """下代(cost_price)を『エビスアキナイカミ』で符牒化し、頭にメーカー符丁文字(head)を付ける。
+    head は仕入先マスタに登録した符丁カナ(supplier_fucho_head で取得)。漢字名対策として
+    仕入先名そのものではなく登録済みのカナを使う。
     同じ数字が連続したら 先頭1文字＋「ﾀ」1つ にまとめる(2連でも3連以上でも ﾀ は1つ)。
-    例: 仕入先ウライ・下代12200 → ｳｴﾋﾀｹﾀ / 下代10000 → ｳｴｹﾀ。cost が無ければ ''。"""
+    例: head='ｳ'・下代12200 → ｳｴﾋﾀｹﾀ / 下代10000 → ｳｴｹﾀ。cost が無ければ ''。"""
     digits = "".join(ch for ch in str(cost_price or "") if ch.isdigit())
     if not digits:
         return ""
@@ -1556,8 +1582,7 @@ def fucho_encode(cost_price, supplier=None):
         if j - i >= 2:
             out.append("ﾀ")  # 連続はまとめて ﾀ 1つ
         i = j
-    head = str(supplier or "").strip()[:1]
-    return head + "".join(out)
+    return str(head or "") + "".join(out)
 
 
 def add_product(con, payload):
@@ -1582,7 +1607,7 @@ def add_product(con, payload):
             except ValueError:
                 raise ValueError("価格は数字で入力してください")
     if not str(vals.get("fucho") or "").strip():  # 符丁が空なら下代＋仕入先から自動生成
-        vals["fucho"] = fucho_encode(vals.get("cost_price"), vals.get("supplier")) or None
+        vals["fucho"] = fucho_encode(vals.get("cost_price"), supplier_fucho_head(con, vals.get("supplier"))) or None
     is_glasses = 1 if ("メガネ" in (vals["category"] or "") or "メガネ" in name) else 0
     cols = ["product_key"] + list(PRODUCT_FIELDS) + ["state", "is_glasses", "registered_at"]
     cur.execute(
@@ -1632,7 +1657,7 @@ def update_product(con, payload):
             except ValueError:
                 raise ValueError("価格は数字で入力してください")
     if not str(vals.get("fucho") or "").strip():  # 符丁が空なら下代＋仕入先から自動生成
-        vals["fucho"] = fucho_encode(vals.get("cost_price"), vals.get("supplier")) or None
+        vals["fucho"] = fucho_encode(vals.get("cost_price"), supplier_fucho_head(con, vals.get("supplier"))) or None
     is_glasses = 1 if ("メガネ" in (vals["category"] or "") or "メガネ" in name) else 0
     sets = ",".join(f"{k}=?" for k in PRODUCT_FIELDS) + ",is_glasses=?"
     cur = con.execute(f"UPDATE products SET {sets} WHERE product_key=?",

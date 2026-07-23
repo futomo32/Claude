@@ -1207,7 +1207,7 @@
         <div class="table-scroll">
           <table class="data">
             <thead><tr><th>商品番号</th><th>商品名</th><th>保管場所</th><th class="r">上代</th></tr></thead>
-            <tbody id="st-tbody"><tr><td colspan="4" style="color:var(--muted)">読み込み中…</td></tr></tbody>
+            <tbody id="st-tbody"><tr><td colspan="5" style="color:var(--muted)">読み込み中…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1577,13 +1577,14 @@
       <button class="close" aria-label="閉じる" onclick="closeSupplierMaster()">×</button>
     </div>
     <div class="modal-body">
-      <p style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">各仕入先に商品ジャンルを設定すると、在庫一覧の「仕入先ジャンル」で絞り込めます。変更はその場で保存されます。</p>
+      <p style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">各仕入先に商品ジャンルを設定すると、在庫一覧の「仕入先ジャンル」で絞り込めます。<b>符丁文字</b>(メーカーの頭カナ)を登録すると、商品登録時に符丁の1文字目が自動で入ります(漢字名でもOK・1回登録すれば以後自動)。変更はその場で保存されます。</p>
       <div class="table-scroll" style="max-height:55vh;overflow-y:auto">
         <table class="data">
           <thead><tr>
             <th class="sortable" onclick="sortSupplierMaster('name')">仕入先<span class="ar" data-sar="name"></span></th>
             <th class="r sortable" onclick="sortSupplierMaster('count')">商品数<span class="ar" data-sar="count"></span></th>
             <th class="r sortable" onclick="sortSupplierMaster('stock')">在庫数<span class="ar" data-sar="stock"></span></th>
+            <th>符丁文字</th>
             <th>ジャンル</th>
           </tr></thead>
           <tbody id="sm-tbody"></tbody>
@@ -4666,12 +4667,12 @@
   function closeSupplierMaster() { document.getElementById("supplier-master-modal").classList.remove("show"); }
   function loadSupplierMaster() {
     var tb = document.getElementById("sm-tbody");
-    if (!API) { tb.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">仕入先マスタはサーバー起動時に利用できます。</td></tr>'; return; }
-    tb.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">読み込み中…</td></tr>';
+    if (!API) { tb.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">仕入先マスタはサーバー起動時に利用できます。</td></tr>'; return; }
+    tb.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">読み込み中…</td></tr>';
     fetch(API + "/supplier_master").then(function (r) { return r.json(); }).then(function (res) {
       smSuppliers = res.suppliers || [];
       renderSupplierMaster();
-    }).catch(function () { tb.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">読み込みに失敗しました。</td></tr>'; });
+    }).catch(function () { tb.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">読み込みに失敗しました。</td></tr>'; });
   }
   // 仕入登録・商品修正の「仕入先」プルダウンを仕入先マスタ(DB)から埋める。
   // 手入力によるデータのばらつきを防ぐため、選択式(select)にしている。
@@ -4679,6 +4680,8 @@
   function populateSupplierSelects() {
     if (!API) return;
     fetch(API + "/supplier_master").then(function (r) { return r.json(); }).then(function (res) {
+      supplierFuchoMap = {};  // 符丁の頭カナ(メーカー)を仕入先名で引けるようにする
+      (res.suppliers || []).forEach(function (s) { if (s.name) supplierFuchoMap[s.name] = s.fucho_head || ""; });
       var names = (res.suppliers || []).map(function (s) { return s.name; }).filter(Boolean).sort();
       ["np-supplier", "pe-supplier"].forEach(function (id) {
         var sel = document.getElementById(id);
@@ -4740,8 +4743,9 @@
       }).join("");
       return '<tr><td>' + esc(dash(s.name)) + '</td><td class="r num">' + num(s.count || 0) + '</td>' +
         '<td class="r num">' + num(s.stock || 0) + '</td>' +
+        '<td><input value="' + esc(s.fucho_head || "") + '" maxlength="2" placeholder="カナ" style="width:3.4em;text-align:center" title="メーカーの符丁頭カナ(例 ウライ→ｳ)。符丁の1文字目に使う。" onchange="setSupplierFucho(' + i + ',this.value)"></td>' +
         '<td><select onchange="setSupplierGenre(' + i + ',this.value)">' + opts + '</select></td></tr>';
-    }).join("") : '<tr><td colspan="4" style="color:var(--muted)">仕入先がありません。</td></tr>';
+    }).join("") : '<tr><td colspan="5" style="color:var(--muted)">仕入先がありません。</td></tr>';
     // 並び替え矢印(▲▼)を表示
     document.querySelectorAll('#supplier-master-modal [data-sar]').forEach(function (el) {
       el.textContent = (el.getAttribute("data-sar") === smSort) ? (smOrder === "asc" ? " ▲" : " ▼") : "";
@@ -4757,6 +4761,21 @@
       if (res.error) throw new Error(res.error);
       s.genre = res.genre;
       showToast(s.name + " を「" + (res.genre || "未設定") + "」にしました。");
+    }).catch(function (e) { showToast("保存に失敗: " + (e.message || e)); });
+  }
+  // 仕入先の符丁文字(メーカー頭カナ)を保存。商品登録時の符丁1文字目に使う。
+  function setSupplierFucho(i, head) {
+    var s = smSuppliers[i];
+    if (!s || !API) return;
+    head = (head || "").trim();
+    fetch(API + "/supplier_fucho", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: s.name, head: head || null })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (res.error) throw new Error(res.error);
+      s.fucho_head = res.fucho_head;
+      supplierFuchoMap[s.name] = res.fucho_head || "";  // 商品フォームの自動生成にも即反映
+      showToast(s.name + " の符丁文字を「" + (res.fucho_head || "なし") + "」にしました。");
     }).catch(function (e) { showToast("保存に失敗: " + (e.message || e)); });
   }
   // 画像を縦横比を保ったまま長辺maxEdgeに縮小し、JPEG(dataURL)にする(切り抜きなし・容量削減)
@@ -4948,7 +4967,10 @@
   // ── 符丁(下代を隠す店内符牒) ──
   // 数字→カナ「エビスアキナイカミ」。同じ数字が連続したら 先頭1文字＋「ﾀ」1つ にまとめる。
   var FUCHO_DIGITS = { "1": "ｴ", "2": "ﾋ", "3": "ｽ", "4": "ｱ", "5": "ｷ", "6": "ﾅ", "7": "ｲ", "8": "ｶ", "9": "ﾐ", "0": "ｹ" };
-  function makeFucho(cost, supplier) {
+  var supplierFuchoMap = {};  // 仕入先名 → 符丁頭カナ(仕入先マスタ由来)。商品登録の符丁1文字目に使う
+  function fuchoHeadFor(name) { return supplierFuchoMap[name] || ""; }
+  // head=メーカー符丁カナ(仕入先マスタで登録した文字)。cost=下代。
+  function makeFucho(cost, head) {
     var digits = String(cost == null ? "" : cost).replace(/[^0-9]/g, "");
     if (!digits) return "";
     var out = "", i = 0;
@@ -4958,16 +4980,15 @@
       if (j - i >= 2) out += "ﾀ";  // 連続はまとめて ﾀ 1つ
       i = j;
     }
-    var head = String(supplier || "").trim().slice(0, 1);  // 1文字目=仕入先(メーカー)の頭文字
-    return head + out;
+    return String(head || "") + out;
   }
   function updateNpFucho() {
     document.getElementById("np-fucho").value =
-      makeFucho(document.getElementById("np-cost").value, document.getElementById("np-supplier").value);
+      makeFucho(document.getElementById("np-cost").value, fuchoHeadFor(document.getElementById("np-supplier").value));
   }
   function updatePeFucho() {
     document.getElementById("pe-fucho").value =
-      makeFucho(document.getElementById("pe-cost").value, document.getElementById("pe-supplier").value);
+      makeFucho(document.getElementById("pe-cost").value, fuchoHeadFor(document.getElementById("pe-supplier").value));
   }
   // 仕入登録の種別切替(宝石 / 宝石以外)。宝石以外は宝飾専用の入力欄(宝飾情報・地金)を隠す
   var npType = "gem";
