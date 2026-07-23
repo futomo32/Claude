@@ -197,13 +197,26 @@ def stocktake_scan(con, product_no):
                 "message": "この番号の在庫は全て確認済みです"}
     con.execute("INSERT OR REPLACE INTO stocktake_checks(product_key, checked_at) VALUES (?, datetime('now','localtime'))",
                 (target["product_key"],))
+    # 開始日時が未設定なら、最初のスキャンで記録(リセットせず使い始めた場合の保険)
+    if not _stocktake_started(con):
+        _set_setting(con, "stocktake_started_at", datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
     con.commit()
     return {"result": "ok", "product_no": no, "name": target["name"],
             "location": target["location"], "product_key": target["product_key"]}
 
 
+def _set_setting(con, key, value):
+    con.execute("INSERT INTO app_settings(key,value) VALUES(?,?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+
+
+def _stocktake_started(con):
+    row = con.execute("SELECT value FROM app_settings WHERE key='stocktake_started_at'").fetchone()
+    return row[0] if row and row[0] else None
+
+
 def stocktake_summary(con):
-    """棚卸しの進捗と差異。確認済み点数 / 在庫総点数 / 未確認(在庫台帳にあるが現物未確認=紛失疑い)一覧。"""
+    """棚卸しの進捗と差異。確認済み点数 / 在庫総点数 / 未確認(在庫台帳にあるが現物未確認=紛失疑い)一覧 / 開始日時。"""
     con.row_factory = sqlite3.Row
     total = con.execute("SELECT COUNT(*) FROM products WHERE state='在庫'").fetchone()[0]
     checked = con.execute("""SELECT COUNT(*) FROM stocktake_checks s
@@ -215,12 +228,16 @@ def stocktake_summary(con):
                             ORDER BY product_no"""):
         unchecked.append({"product_no": r["product_no"], "name": r["name"],
                           "location": r["location"], "list_price": r["list_price"]})
-    return {"total": total, "checked": checked, "unchecked": unchecked, "unchecked_count": len(unchecked)}
+    # 確認が1件も無ければ「未開始」扱い(開始日時は表示しない)
+    started_at = _stocktake_started(con) if checked > 0 else None
+    return {"total": total, "checked": checked, "unchecked": unchecked,
+            "unchecked_count": len(unchecked), "started_at": started_at}
 
 
 def stocktake_reset(con):
-    """棚卸しの確認記録を全消去(新しい棚卸しを始める)。"""
+    """棚卸しの確認記録を全消去(新しい棚卸しを始める)。開始日時も引き直す。"""
     con.execute("DELETE FROM stocktake_checks")
+    _set_setting(con, "stocktake_started_at", datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
     con.commit()
     return {"ok": True}
 

@@ -4010,7 +4010,11 @@
       if (res.error) throw new Error(res.error);
       stUnchecked = res.unchecked || [];
       var remain = res.total - res.checked;
+      var started = res.started_at
+        ? '<div class="t-value" style="font-size:1.1rem">' + esc(res.started_at) + '</div>'
+        : '<div class="t-value" style="font-size:1.1rem;color:var(--muted)">未開始</div>';
       document.getElementById("st-tiles").innerHTML =
+        '<div class="tile"><div class="t-label">棚卸し開始</div>' + started + '<div class="t-sub">この回の開始日時</div></div>' +
         '<div class="tile"><div class="t-label">在庫台帳(点数)</div><div class="t-value num">' + num(res.total) + '</div></div>' +
         '<div class="tile"><div class="t-label">確認済み</div><div class="t-value num">' + num(res.checked) + '</div></div>' +
         '<div class="tile"><div class="t-label">未確認(差異)</div><div class="t-value num"' + (remain > 0 ? ' style="color:var(--danger)"' : "") + '>' + num(res.unchecked_count) + '</div></div>';
