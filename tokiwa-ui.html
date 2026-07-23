@@ -495,8 +495,9 @@
   .search-drop.show { display: block; }
   .search-opt {
     padding: 0.5em 0.8em; cursor: pointer; border-bottom: 1px solid var(--line);
-    display: flex; gap: 0.6em; align-items: baseline;
+    display: flex; gap: 0.6em; align-items: baseline; flex-wrap: wrap;
   }
+  .search-opt .ad { flex-basis: 100%; color: var(--muted); font-size: 0.82em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .search-opt:last-child { border-bottom: 0; }
   .search-opt:hover, .search-opt.active { background: var(--accent-soft); }
   .search-opt .nm { font-weight: 600; }
@@ -672,6 +673,7 @@
   .pos-cust-card .pc-meta { color: var(--ink-2); font-size: 0.88em; display: flex; gap: 0.4em 1em; flex-wrap: wrap; }
   .pos-cust-card .pc-bal { color: var(--danger); font-weight: 700; }
   .pos-cust-card .pc-actions { margin-left: auto; display: flex; gap: 0.5em; }
+  .pos-cust-card .pc-sub { flex-basis: 100%; display: flex; gap: 0.4em 1.2em; flex-wrap: wrap; color: var(--ink-2); font-size: 0.88em; border-top: 1px dashed var(--line); padding-top: 0.5em; margin-top: 0.1em; }
   /* 写真プール(まとめて撮影→後で商品に割り当て) */
   .pool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 0.6rem; margin-top: 0.8rem; }
   .pool-item { position: relative; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fbfbfb; }
@@ -2508,9 +2510,11 @@
             var age = ageFrom(c[6]);
             var last = c[13] ? "最終 " + c[13] : "購入なし";
             var meta = (age != null ? age + "歳・" : "") + last;
+            var addr = [c[5] || "", c[15] || ""].filter(Boolean).join(" ");  // 同姓同名の見分け用
             return '<div class="search-opt" data-id="' + esc(c[0]) + '"><span class="nm">' + esc(c[1]) +
               '</span><span class="kn">' + esc(c[2]) + '</span><span class="tl">' + esc(meta) +
-              '<br><span style="opacity:0.75">' + esc(dash(c[3])) + '</span></span></div>';
+              '<br><span style="opacity:0.75">' + esc(dash(c[3])) + '</span></span>' +
+              (addr ? '<span class="ad">📍 ' + esc(addr) + '</span>' : '') + '</div>';
           }).join("")
         : '<div class="search-empty">該当する顧客が見つかりません</div>';
       drop.classList.add("show");
@@ -3627,11 +3631,17 @@
     if (c[3]) meta.push(esc(String(c[3])));
     meta.push(c[13] ? "最終購入 " + esc(String(c[13])) : "購入履歴なし");
     if (c[18]) meta.push("ランク " + esc(String(c[18])));
+    // 住所(〒＋住所＋建物名)と担当。本人確認と余白埋めを兼ねる
+    var addr = [c[14] ? "〒" + c[14] : "", c[5] || "", c[15] || ""].filter(Boolean).join(" ");
+    var sub = [];
+    if (addr) sub.push('📍 ' + esc(addr));
+    if (c[4]) sub.push('担当 ' + esc(shortName(c[4])));
     card.innerHTML =
       '<div><div class="pc-name">' + esc(dash(c[1])) + ' 様</div><div class="pc-kana">' + esc(dash(c[2])) + '</div></div>' +
       '<div class="pc-meta">' + meta.map(function (m) { return '<span>' + m + '</span>'; }).join("") +
         (bal > 0 ? '<span class="pc-bal">売掛残 ¥' + num(bal) + '</span>' : "") + '</div>' +
-      '<div class="pc-actions"><button class="btn" onclick="changePosCustomer()">変更</button></div>';
+      '<div class="pc-actions"><button class="btn" onclick="changePosCustomer()">変更</button></div>' +
+      (sub.length ? '<div class="pc-sub">' + sub.map(function (s) { return '<span>' + s + '</span>'; }).join("") + '</div>' : "");
     searchBox.style.display = "none";
     card.style.display = "flex";
   }
