@@ -1379,6 +1379,7 @@ def add_family(con, p):
     if not cid:
         raise ValueError("顧客が指定されていません")
     cur = con.cursor()
+    new_id = None
     linked = str(p.get("linked_customer_id") or "").strip() or None
     if linked:
         # B: 相手顧客の情報を取得
@@ -1388,12 +1389,15 @@ def add_family(con, p):
         if linked == cid:
             raise ValueError("自分自身は家族に登録できません")
         # 既に同じリンクがあれば重複させない
-        dup = con.execute("SELECT 1 FROM customer_families WHERE customer_id=? AND linked_customer_id=?",
+        dup = con.execute("SELECT id FROM customer_families WHERE customer_id=? AND linked_customer_id=?",
                           (cid, linked)).fetchone()
-        if not dup:
+        if dup:
+            new_id = dup[0]
+        else:
             cur.execute("""INSERT INTO customer_families(customer_id,name,relation,gender,birthday,linked_customer_id)
                            VALUES (?,?,?,?,?,?)""",
                         (cid, row[0], p.get("relation"), row[1], row[2], linked))
+            new_id = cur.lastrowid
             # 双方向: 相手側にも本人を家族として登録(続柄は空。あとで相手側で編集可)
             me = con.execute("SELECT name,gender,birthday FROM customers WHERE customer_id=?", (cid,)).fetchone()
             rev = con.execute("SELECT 1 FROM customer_families WHERE customer_id=? AND linked_customer_id=?",
@@ -1408,8 +1412,42 @@ def add_family(con, p):
         cur.execute("""INSERT INTO customer_families(customer_id,name,relation,gender,birthday,linked_customer_id)
                        VALUES (?,?,?,?,?,?)""",
                     (cid, p.get("name"), p.get("relation"), p.get("gender"), p.get("birthday"), None))
+        new_id = cur.lastrowid
     con.commit()
-    return {"customer_id": cid, "ok": True}
+    return {"customer_id": cid, "ok": True, "id": new_id}
+
+
+def update_family(con, p):
+    """家族1件を修正する。リンク(B)行は続柄のみ変更(氏名等は相手顧客に追随)。自由入力(A)行は全項目。"""
+    fid = p.get("id")
+    if not fid:
+        raise ValueError("対象の家族が指定されていません")
+    row = con.execute("SELECT customer_id, linked_customer_id FROM customer_families WHERE id=?", (fid,)).fetchone()
+    if not row:
+        raise ValueError("対象の家族が見つかりません")
+    relation = p.get("relation") or None
+    if row[1]:  # リンク(B)
+        con.execute("UPDATE customer_families SET relation=? WHERE id=?", (relation, fid))
+    else:       # 自由入力(A)
+        name = (p.get("name") or "").strip()
+        if not name:
+            raise ValueError("家族の氏名を入力してください")
+        con.execute("UPDATE customer_families SET name=?, relation=?, gender=?, birthday=? WHERE id=?",
+                    (name, relation, p.get("gender") or None, p.get("birthday") or None, fid))
+    con.commit()
+    return {"id": fid, "customer_id": row[0], "linked": row[1]}
+
+
+def delete_family(con, family_id):
+    """家族1件を削除する(この顧客側の1行のみ。相手側のリンク行は残す)。"""
+    if not family_id:
+        raise ValueError("対象の家族が指定されていません")
+    row = con.execute("SELECT customer_id FROM customer_families WHERE id=?", (family_id,)).fetchone()
+    if not row:
+        raise ValueError("対象の家族が見つかりません")
+    con.execute("DELETE FROM customer_families WHERE id=?", (family_id,))
+    con.commit()
+    return {"deleted": family_id, "customer_id": row[0]}
 
 
 PRODUCT_FIELDS = ("product_no", "name", "category", "brand", "metal", "supplier", "cost_price",

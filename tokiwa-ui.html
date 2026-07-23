@@ -3190,14 +3190,19 @@
     html += '<div class="section-title" style="display:flex;justify-content:space-between;align-items:center">' +
       '<span>家族情報</span><button class="btn" onclick="openFamilyModal(\'' + esc(id) + '\')">＋ 家族を追加</button></div>';
     if (fam.length) {
-      html += '<div class="table-scroll"><table class="data"><thead><tr><th>氏名</th><th>続柄</th><th>性別</th><th>生年月日</th></tr></thead><tbody>' +
-        fam.map(function (f) {
+      html += '<div class="table-scroll"><table class="data"><thead><tr><th>氏名</th><th>続柄</th><th>性別</th><th>生年月日</th><th></th></tr></thead><tbody>' +
+        fam.map(function (f, i) {
           // f: [氏名, 続柄, 性別, 生年月日, linked_customer_id, id]
           var linkId = f[4] || findCustByExactName(f[0]);  // Bのリンク先を優先、無ければ同名一致
           var nameCell = linkId != null
             ? '<button class="link-btn" onclick="openCustomer(\'' + esc(linkId) + '\')">' + esc(f[0]) + ' →</button>'
             : esc(f[0]);
-          return '<tr><td>' + nameCell + '</td><td>' + esc(dash(f[1])) + '</td><td>' + esc(dash(f[2])) + '</td><td class="num">' + esc(dash(dispDate(f[3]))) + '</td></tr>';
+          var acts = (API && f[5] != null)
+            ? '<div style="display:flex;gap:0.3em;justify-content:flex-end">' +
+                '<button class="btn" onclick="openFamilyModal(\'' + esc(id) + '\',' + i + ')">修正</button>' +
+                '<button class="btn" onclick="deleteFamilyRow(\'' + esc(id) + '\',' + f[5] + ')">削除</button></div>'
+            : "";
+          return '<tr><td>' + nameCell + '</td><td>' + esc(dash(f[1])) + '</td><td>' + esc(dash(f[2])) + '</td><td class="num">' + esc(dash(dispDate(f[3]))) + '</td><td>' + acts + '</td></tr>';
         }).join("") +
         '</tbody></table></div>';
     } else {
@@ -3206,17 +3211,52 @@
     document.getElementById("c-basic").innerHTML = html;
   }
   /* ── 家族の追加(A:自由入力 / B:登録済み顧客とリンク) ── */
-  var familyCid = null, familyLinked = null;
-  function openFamilyModal(cid) {
-    familyCid = cid; familyLinked = null;
+  var familyCid = null, familyLinked = null, familyEdit = null;
+  function openFamilyModal(cid, editIdx) {
+    familyCid = cid; familyLinked = null; familyEdit = null;
     document.querySelector('input[name="fm-mode"][value="A"]').checked = true;
-    switchFamilyMode();
     ["fm-name", "fm-relation", "fm-gender", "fm-birth", "fm-cust-input", "fm-relation-b"].forEach(function (k) {
       document.getElementById(k).value = "";
     });
     document.getElementById("fm-linked").textContent = "";
     document.getElementById("fm-error").style.display = "none";
+    var modeRow = document.querySelector("#family-modal .era-row");
+    var title = document.querySelector("#family-modal h3");
+    var saveBtn = document.getElementById("fm-save");
+    if (editIdx != null && D.families[cid] && D.families[cid][editIdx]) {
+      // 修正モード: A(自由入力)フォームで編集。リンク行は続柄のみ(氏名等は相手に追随するため無効化)
+      var f = D.families[cid][editIdx];  // [氏名,続柄,性別,生年月日,linked,id]
+      familyEdit = { id: f[5], linked: f[4] || null };
+      title.textContent = "家族を修正";
+      saveBtn.textContent = "保存する";
+      if (modeRow) modeRow.style.display = "none";  // 修正時はA/B切替を隠す
+      document.getElementById("fm-a").style.display = "";
+      document.getElementById("fm-b").style.display = "none";
+      document.getElementById("fm-name").value = f[0] || "";
+      document.getElementById("fm-relation").value = f[1] || "";
+      document.getElementById("fm-gender").value = f[2] || "";
+      document.getElementById("fm-birth").value = f[3] || "";
+      var linkedRow = !!f[4];
+      ["fm-name", "fm-gender", "fm-birth"].forEach(function (k) { document.getElementById(k).disabled = linkedRow; });
+    } else {
+      title.textContent = "家族を追加";
+      saveBtn.textContent = "追加する";
+      if (modeRow) modeRow.style.display = "";
+      ["fm-name", "fm-gender", "fm-birth"].forEach(function (k) { document.getElementById(k).disabled = false; });
+      switchFamilyMode();
+    }
     document.getElementById("family-modal").classList.add("show");
+  }
+  function deleteFamilyRow(cid, fid) {
+    if (!API) return showToast("家族の削除はサーバー起動時に使えます。");
+    if (!confirm("この家族情報を削除します。よろしいですか?")) return;
+    fetch(API + "/family_delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: fid }) })
+      .then(function (r) { return r.json(); }).then(function (res) {
+        if (res.error) throw new Error(res.error);
+        D.families[cid] = (D.families[cid] || []).filter(function (f) { return String(f[5]) !== String(fid); });
+        var c = findCust(cid); if (c) renderBasic(c);
+        showToast("家族情報を削除しました。");
+      }).catch(function (e) { showToast("削除に失敗: " + (e.message || e)); });
   }
   function closeFamilyModal() { document.getElementById("family-modal").classList.remove("show"); }
   function switchFamilyMode() {
@@ -3225,8 +3265,37 @@
     document.getElementById("fm-b").style.display = mode === "B" ? "" : "none";
   }
   function saveFamily() {
-    var mode = document.querySelector('input[name="fm-mode"]:checked').value;
     var err = document.getElementById("fm-error");
+    // ── 修正モード ──
+    if (familyEdit) {
+      var enm = document.getElementById("fm-name").value.trim();
+      if (!familyEdit.linked && !enm) { err.textContent = "氏名を入力してください。"; err.style.display = "block"; return; }
+      err.style.display = "none";
+      var up = { id: familyEdit.id, relation: document.getElementById("fm-relation").value || null };
+      if (!familyEdit.linked) {
+        up.name = enm; up.gender = document.getElementById("fm-gender").value || null;
+        up.birthday = document.getElementById("fm-birth").value.trim() || null;
+      }
+      var eb = document.getElementById("fm-save"); eb.disabled = true; eb.textContent = "保存中…";
+      fetch(API + "/family_update", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(up) })
+        .then(function (r) { if (!r.ok) return r.json().then(function (e) { throw new Error(e.error || "保存に失敗しました"); }); return r.json(); })
+        .then(function () {
+          eb.disabled = false; eb.textContent = "保存する";
+          var arr = D.families[familyCid] || [];
+          for (var i = 0; i < arr.length; i++) {
+            if (String(arr[i][5]) === String(familyEdit.id)) {
+              arr[i][1] = up.relation;
+              if (!familyEdit.linked) { arr[i][0] = up.name; arr[i][2] = up.gender; arr[i][3] = up.birthday; }
+              break;
+            }
+          }
+          closeFamilyModal();
+          var c = findCust(familyCid); if (c) renderBasic(c);
+          showToast("家族情報を修正しました。");
+        }).catch(function (e) { eb.disabled = false; eb.textContent = "保存する"; err.textContent = "保存に失敗しました: " + fetchErrMsg(e); err.style.display = "block"; });
+      return;
+    }
+    var mode = document.querySelector('input[name="fm-mode"]:checked').value;
     var payload = { customer_id: familyCid };
     if (mode === "A") {
       var name = document.getElementById("fm-name").value.trim();
@@ -3244,13 +3313,13 @@
     err.style.display = "none";
     var btn = document.getElementById("fm-save");
     btn.disabled = true; btn.textContent = "追加中…";
-    var applyLocal = function () {
+    var applyLocal = function (newId) {
       var f = D.families[familyCid] = D.families[familyCid] || [];
       if (mode === "A") {
-        f.push([payload.name, payload.relation, payload.gender, payload.birthday, null, null]);
+        f.push([payload.name, payload.relation, payload.gender, payload.birthday, null, newId != null ? newId : null]);
       } else {
         var lc = findCust(payload.linked_customer_id);
-        f.push([lc ? lc[1] : payload.linked_customer_id, payload.relation, lc ? lc[7] : null, lc ? lc[6] : null, payload.linked_customer_id, null]);
+        f.push([lc ? lc[1] : payload.linked_customer_id, payload.relation, lc ? lc[7] : null, lc ? lc[6] : null, payload.linked_customer_id, newId != null ? newId : null]);
         var me = findCust(familyCid);
         var g2 = D.families[payload.linked_customer_id] = D.families[payload.linked_customer_id] || [];
         g2.push([me ? me[1] : familyCid, null, me ? me[7] : null, me ? me[6] : null, familyCid, null]);
@@ -3264,7 +3333,7 @@
     if (window.TOKIWA_API) {
       fetch(window.TOKIWA_API + "/family", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
         .then(function (r) { if (!r.ok) return r.json().then(function (e) { throw new Error(e.error || "保存に失敗しました"); }); return r.json(); })
-        .then(function () { applyLocal(); })
+        .then(function (resp) { applyLocal(resp && resp.id); })
         .catch(function (e) { btn.disabled = false; btn.textContent = "追加する"; err.textContent = "保存に失敗しました: " + fetchErrMsg(e); err.style.display = "block"; });
     } else {
       applyLocal();

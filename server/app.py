@@ -505,6 +505,16 @@ class Handler(BaseHTTPRequestHandler):
                 result = db_query.add_family(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/family_update":
+                con = connect()
+                result = db_query.update_family(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/family_delete":
+                con = connect()
+                result = db_query.delete_family(con, payload.get("id"))
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/document":
                 con = connect()
                 result = db_query.save_document(con, payload)
