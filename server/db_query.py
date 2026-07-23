@@ -1564,12 +1564,12 @@ _FUCHO_DIGITS = {"1": "ｴ", "2": "ﾋ", "3": "ｽ", "4": "ｱ", "5": "ｷ",
 
 
 def fucho_encode(cost_price, head=""):
-    """下代(cost_price)を『エビスアキナイカミ』で符牒化し、頭にメーカー符丁文字(head)を付ける。
+    """下代(cost_price)の【上3桁】を『エビスアキナイカミ』で符牒化し、頭にメーカー符丁文字(head)を付ける。
     head は仕入先マスタに登録した符丁カナ(supplier_fucho_head で取得)。漢字名対策として
     仕入先名そのものではなく登録済みのカナを使う。
     同じ数字が連続したら 先頭1文字＋「ﾀ」1つ にまとめる(2連でも3連以上でも ﾀ は1つ)。
-    例: head='ｳ'・下代12200 → ｳｴﾋﾀｹﾀ / 下代10000 → ｳｴｹﾀ。cost が無ければ ''。"""
-    digits = "".join(ch for ch in str(cost_price or "") if ch.isdigit())
+    例: head='ｳ'・下代30800(上3桁=308) → ｳｽｹｶ / 下代12200(上3桁=122) → ｳｴﾋﾀ。cost が無ければ ''。"""
+    digits = "".join(ch for ch in str(cost_price or "") if ch.isdigit())[:3]  # 下代の上3桁のみ
     if not digits:
         return ""
     out = []

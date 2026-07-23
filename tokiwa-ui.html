@@ -1170,7 +1170,7 @@
             <div class="field"><label>掛率</label><input class="num" id="np-rate" placeholder="自動計算" readonly></div>
             <div class="field"><label>折数</label><input class="num" id="np-ori" readonly></div>
             <div class="field"><label>店舗</label><select id="np-loc"><option>本店</option></select></div>
-            <div class="field"><label>符丁(下代・自動)</label><input id="np-fucho" placeholder="仕入先と仕入単価から自動" title="仕入先の頭文字＋下代の符牒。仕入単価と仕入先を入れると自動入力。手直しも可。"></div>
+            <div class="field"><label>符丁(下代・自動)</label><input id="np-fucho" placeholder="仕入先と仕入単価から自動" title="仕入先の頭文字＋下代(上3桁)の符牒。仕入単価と仕入先を入れると自動入力。手直しも可。"></div>
           </div>
           <div class="field" style="margin-top:0.6rem"><label>商品写真(任意)</label>
             <div style="display:flex;align-items:center;gap:0.6em;flex-wrap:wrap">
@@ -1487,7 +1487,7 @@
           <div class="field"><label>地金</label><input id="pe-metal" list="metal-datalist"></div>
           <div class="field"><label>仕入先</label><select id="pe-supplier"><option value="">選択…</option></select></div>
           <div class="field"><label>仕入単価(下代)</label><input class="num" id="pe-cost" inputmode="numeric"></div>
-          <div class="field"><label>符丁(下代・自動)</label><input id="pe-fucho" title="仕入先の頭文字＋下代の符牒。仕入単価と仕入先を変えると自動更新。手直しも可。"></div>
+          <div class="field"><label>符丁(下代・自動)</label><input id="pe-fucho" title="仕入先の頭文字＋下代(上3桁)の符牒。仕入単価と仕入先を変えると自動更新。手直しも可。"></div>
           <div class="field"><label>上代(定価)</label><input class="num" id="pe-list" inputmode="numeric"></div>
           <div class="field"><label>店舗</label><select id="pe-loc"><option value="">—</option><option>本店</option></select></div>
           <div class="field"><label>中石(石種)</label><input id="pe-stone"></div>
@@ -5023,9 +5023,9 @@
   var FUCHO_DIGITS = { "1": "ｴ", "2": "ﾋ", "3": "ｽ", "4": "ｱ", "5": "ｷ", "6": "ﾅ", "7": "ｲ", "8": "ｶ", "9": "ﾐ", "0": "ｹ" };
   var supplierFuchoMap = {};  // 仕入先名 → 符丁頭カナ(仕入先マスタ由来)。商品登録の符丁1文字目に使う
   function fuchoHeadFor(name) { return supplierFuchoMap[name] || ""; }
-  // head=メーカー符丁カナ(仕入先マスタで登録した文字)。cost=下代。
+  // head=メーカー符丁カナ(仕入先マスタで登録した文字)。cost=下代。符牒化するのは下代の上3桁のみ。
   function makeFucho(cost, head) {
-    var digits = String(cost == null ? "" : cost).replace(/[^0-9]/g, "");
+    var digits = String(cost == null ? "" : cost).replace(/[^0-9]/g, "").slice(0, 3);  // 下代の上3桁
     if (!digits) return "";
     var out = "", i = 0;
     while (i < digits.length) {
