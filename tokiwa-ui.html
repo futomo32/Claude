@@ -4349,7 +4349,7 @@
     else { var set = {}; D.customers.forEach(function (c) { if (c[4]) set[c[4]] = 1; }); names = Object.keys(set); }
     if (!ordered) names.sort();  // フォールバック(番号情報が無い場合)は名前順
     posOpNames = names;
-    if (!posOperator) { try { posOperator = localStorage.getItem("tokiwa_pos_operator") || null; } catch (e) {} }
+    // 会計担当は毎回リセットする運用(既定なし)。前回の選択を復元しない=打つ本人が毎回選ぶことを意識づける。
     if (posOperator && names.indexOf(posOperator) < 0) posOperator = null;  // 停止/削除された人は解除
     var btns = names.map(function (n, i) {
       // 苗字が同じ担当者を区別できるよう、レジ表示はフルネーム(姓名)で出す
@@ -4360,8 +4360,7 @@
   function selectPosOperator(i) {
     var name = posOpNames[i];
     if (name == null) return;
-    posOperator = name;
-    try { localStorage.setItem("tokiwa_pos_operator", name); } catch (e) {}
+    posOperator = name;  // 保存しない(毎回選び直す運用)
     renderPosOperatorBar();
     if (typeof clearPosError === "function") clearPosError();
   }
@@ -6057,6 +6056,8 @@
   function resetPosAfterSale() {
     posLines = [];
     posCustomer = null;
+    posOperator = null;  // 会計担当も毎回リセット(次の会計で打つ本人が選び直す)
+    renderPosOperatorBar();
     document.getElementById("pos-cust-input").value = "";
     renderPosCustomer();
     renderPosReceivable();
