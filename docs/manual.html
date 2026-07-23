@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>トキワ 操作マニュアル</title>
+<style>
+  :root{ --ink:#1a1c1f; --muted:#5a6270; --line:#d9dee5; --accent:#7a1f2b; --soft:#f5f2ee; --warn:#8a5a00; --warnbg:#fff6e0; }
+  *{ box-sizing:border-box; }
+  html{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body{ font-family:"Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",system-ui,sans-serif;
+        color:var(--ink); line-height:1.7; margin:0; font-size:14px; background:#fff; }
+  .page{ max-width:820px; margin:0 auto; padding:28px 32px; }
+  h1{ font-size:30px; margin:0 0 4px; letter-spacing:.02em; }
+  h2{ font-size:21px; margin:34px 0 10px; padding:6px 12px; background:var(--accent); color:#fff; border-radius:4px; }
+  h3{ font-size:16.5px; margin:20px 0 6px; padding-bottom:3px; border-bottom:2px solid var(--line); }
+  h4{ font-size:14.5px; margin:14px 0 4px; color:var(--accent); }
+  p{ margin:6px 0; }
+  ul,ol{ margin:6px 0 10px; padding-left:1.4em; }
+  li{ margin:3px 0; }
+  code{ background:var(--soft); padding:1px 5px; border-radius:3px; font-family:"SFMono-Regular",Consolas,Menlo,monospace; font-size:.92em; }
+  table{ border-collapse:collapse; width:100%; margin:10px 0; font-size:13px; }
+  th,td{ border:1px solid var(--line); padding:5px 8px; text-align:left; vertical-align:top; }
+  th{ background:var(--soft); }
+  .lead{ color:var(--muted); font-size:14px; }
+  .note{ background:var(--warnbg); border-left:4px solid var(--warn); padding:8px 12px; margin:10px 0; border-radius:0 4px 4px 0; }
+  .note b{ color:var(--warn); }
+  .tip{ background:#eef4ee; border-left:4px solid #3a7d44; padding:8px 12px; margin:10px 0; border-radius:0 4px 4px 0; }
+  .cover{ text-align:center; padding:120px 0 40px; }
+  .cover .sub{ color:var(--muted); font-size:15px; margin-top:8px; }
+  .cover .ver{ margin-top:40px; color:var(--muted); font-size:13px; }
+  .chip{ display:inline-block; background:var(--soft); border:1px solid var(--line); border-radius:999px; padding:1px 9px; font-size:12px; margin:0 2px; }
+  .toc{ background:var(--soft); border:1px solid var(--line); border-radius:6px; padding:14px 22px; }
+  .toc ol{ margin:0; }
+  .toc a{ color:var(--ink); text-decoration:none; }
+  .steps{ counter-reset:step; list-style:none; padding-left:0; }
+  .steps>li{ counter-increment:step; position:relative; padding-left:34px; margin:8px 0; }
+  .steps>li::before{ content:counter(step); position:absolute; left:0; top:0; width:23px; height:23px;
+        background:var(--accent); color:#fff; border-radius:50%; text-align:center; line-height:23px; font-size:12.5px; font-weight:700; }
+  .kbd{ border:1px solid #bbb; border-bottom-width:2px; border-radius:4px; padding:0 5px; background:#fafafa; font-size:.9em; }
+  .role td:first-child{ white-space:nowrap; font-weight:600; }
+  hr.br{ border:0; border-top:1px dashed var(--line); margin:22px 0; }
+  @media print{
+    .page{ max-width:none; padding:0 6mm; }
+    h2{ page-break-after:avoid; }
+    h3,h4{ page-break-after:avoid; }
+    table,ul,ol,.note,.tip{ page-break-inside:avoid; }
+    .page-break{ page-break-before:always; }
+    a{ color:inherit; text-decoration:none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- 表紙 -->
+  <div class="cover">
+    <h1>トキワ 操作マニュアル</h1>
+    <div class="sub">宝石・メガネ・時計 ヤナセ 店舗管理システム「トキワ」</div>
+    <div class="sub">簡潔版(クイックスタート) ＋ 詳細版</div>
+    <div class="ver">現時点の機能まで収録 ／ 発行日: 2026-07-23</div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- 目次 -->
+  <h2 id="toc">目次</h2>
+  <div class="toc">
+    <p><b>第1部 簡潔版(これだけ覚えれば使える)</b></p>
+    <ol>
+      <li><a href="#q-login">ログインと画面の見かた</a></li>
+      <li><a href="#q-register">レジで会計する</a></li>
+      <li><a href="#q-customer">顧客を探す・新しく登録する</a></li>
+      <li><a href="#q-uriage">売掛の入金を記録する</a></li>
+      <li><a href="#q-product">商品を登録する(符丁は自動)</a></li>
+      <li><a href="#q-consign">催事で受託品を打つ</a></li>
+      <li><a href="#q-repair">修理を預かる</a></li>
+      <li><a href="#q-stock">棚卸しをする</a></li>
+    </ol>
+    <p style="margin-top:14px"><b>第2部 詳細版(画面ごとの説明)</b></p>
+    <ol start="9">
+      <li><a href="#d-basic">全体像・ログイン・権限</a></li>
+      <li><a href="#d-register">レジ(売上登録)</a></li>
+      <li><a href="#d-customer">顧客管理</a></li>
+      <li><a href="#d-search">検索・分析</a></li>
+      <li><a href="#d-recv">売掛管理</a></li>
+      <li><a href="#d-products">商品・在庫(仕入登録・符丁)</a></li>
+      <li><a href="#d-stocktake">棚卸し</a></li>
+      <li><a href="#d-repair">修理伝票</a></li>
+      <li><a href="#d-estimate">見積・請求</a></li>
+      <li><a href="#d-reports">日報・帳票</a></li>
+      <li><a href="#d-settings">設定・マスター</a></li>
+      <li><a href="#d-fucho">符丁の仕組み</a></li>
+      <li><a href="#d-consign">受託(催事)の運用</a></li>
+      <li><a href="#d-maint">メンテナンス(バックアップ等)</a></li>
+    </ol>
+  </div>
+
+  <!-- ============ 第1部 簡潔版 ============ -->
+  <div class="page-break"></div>
+  <h2 id="part1">第1部　簡潔版(クイックスタート)</h2>
+  <p class="lead">よく使う操作を手順だけまとめました。細かい説明は第2部を見てください。</p>
+
+  <h3 id="q-login">1. ログインと画面の見かた</h3>
+  <ul>
+    <li>自分のユーザーでログインします。初回はパスワードを設定します。</li>
+    <li>左のメニューで画面を切り替えます:<br>
+      <span class="chip">￥ レジ</span><span class="chip">👤 顧客管理</span><span class="chip">🔍 検索・分析</span><span class="chip">💳 売掛管理</span><span class="chip">◆ 商品・在庫</span><span class="chip">📋 棚卸し</span><span class="chip">🔧 修理伝票</span><span class="chip">📄 見積・請求</span><span class="chip">▤ 日報・帳票</span><span class="chip">⚙ 設定・マスター</span></li>
+    <li>権限が<b>パート</b>の人は、原価(下代)・粗利・符丁・商品在庫画面・設定は見えません。</li>
+  </ul>
+
+  <h3 id="q-register">2. レジで会計する</h3>
+  <ol class="steps">
+    <li><b>お客様を選ぶ</b> … カタカナ名や電話番号で検索。新規なら「＋新規顧客」。</li>
+    <li><b>商品を明細に足す</b> … 「＋商品番号で追加(在庫品)」でスキャン/番号入力。修理・電池などは「＋番号なしで追加」。</li>
+    <li><b>金額を確認</b> … 値引きは買上金額をその場で書き換えればOK。</li>
+    <li><b>会計担当を選ぶ</b> … レジを打つ人を毎回選びます。</li>
+    <li><b>支払方法を選ぶ</b> … 現金/クレジット/PayPay/掛売/分割。分割払いは「＋支払方法を追加」。</li>
+    <li><b>お預かりを入れて「会計を確定」</b> … 釣銭が出ます。確定で購入履歴・在庫引落・(掛売なら)売掛計上まで自動。</li>
+  </ol>
+  <div class="tip">掛売にすると、その分がお客様の<b>売掛残</b>になります。現金は入っていないので、その日の現金締めには数えません。</div>
+
+  <h3 id="q-customer">3. 顧客を探す・新しく登録する</h3>
+  <ul>
+    <li><b>探す</b>: 「👤 顧客管理」で<b>カナ</b>・電話番号・担当者・ランク・誕生月から検索(半角/全角・大小文字は気にしなくてOK)。</li>
+    <li><b>詳細</b>: 顧客を開くと、基本情報／購入・アプローチ履歴／入金管理／ポイント／メガネ処方箋のタブがあります。</li>
+    <li><b>新規登録</b>: 「＋新規顧客」。郵便番号から住所を呼び出せます。</li>
+    <li><b>家族</b>: 基本情報から家族を追加・修正・削除できます。</li>
+  </ul>
+
+  <h3 id="q-uriage">4. 売掛の入金を記録する</h3>
+  <ol class="steps">
+    <li>「💳 売掛管理」で対象のお客様を開く(残高の多い順に並びます)。</li>
+    <li>「入金」で<b>入金額</b >と<b>方法</b>(現金/銀行振込/カード/その他)を入れる。</li>
+    <li>残高が自動で減り、入金履歴に1行残ります。</li>
+  </ol>
+  <div class="note"><b>訂正・削除</b>: 入力ミスは「修正」で残高を直す、または「削除」。過去の紙の売掛は「＋売掛を追加」で手入力できます。</div>
+
+  <h3 id="q-product">5. 商品を登録する(符丁は自動)</h3>
+  <ol class="steps">
+    <li>「◆ 商品・在庫」→「仕入登録」タブ。</li>
+    <li>品名・分類・仕入先・<b>仕入単価(下代)</b>・上代などを入力。</li>
+    <li><b>符丁</b>は、仕入先と仕入単価を入れると<b>自動</b>で入ります(手直しも可)。</li>
+    <li>「登録」で在庫に入ります。写真も付けられます。</li>
+  </ol>
+  <div class="tip">符丁の頭文字(メーカー)は、先に「設定・マスター → 仕入先マスタ」で<b>符丁文字</b>を1回登録しておくと自動で付きます。</div>
+
+  <h3 id="q-consign">6. 催事で受託品を打つ</h3>
+  <ol class="steps">
+    <li>レジで「＋受託品(催事)」を押す。</li>
+    <li><b>メーカー(仕入先)</b>を選び、<b>金額</b>を入れる(品名は任意)。</li>
+    <li>明細に載るので、そのまま会計。原価・正式品番は後日、納品書が来てから入れます。</li>
+  </ol>
+
+  <h3 id="q-repair">7. 修理を預かる</h3>
+  <ol class="steps">
+    <li>「🔧 修理伝票」→「＋新規預かり」。</li>
+    <li>お客様・品物・内容を入力。<b>写真</b>も撮って添付できます。</li>
+    <li>預かり伝票を印刷してお渡し。進行状況(未引渡/引渡済み)で管理します。</li>
+  </ol>
+
+  <h3 id="q-stock">8. 棚卸しをする</h3>
+  <ol class="steps">
+    <li>「📋 棚卸し」を開く(開始日時が記録されます)。</li>
+    <li>現物を1点ずつ<b>商品番号でスキャン/入力</b>して「確認」。</li>
+    <li>最後まで「未確認」に残った在庫が<b>差異</b>(紛失・登録漏れの疑い)。CSVに出せます。</li>
+    <li>やり直すときは「最初からやり直す」。</li>
+  </ol>
+
+  <!-- ============ 第2部 詳細版 ============ -->
+  <div class="page-break"></div>
+  <h2 id="part2">第2部　詳細版(画面ごとの説明)</h2>
+
+  <h3 id="d-basic">9. 全体像・ログイン・権限</h3>
+  <p>トキワは、宝飾ナビに代わる店舗の販売・顧客・在庫の管理システムです。1台のPCで動かし、ブラウザで使います。</p>
+  <h4>ログイン</h4>
+  <ul>
+    <li>ユーザーごとにログインします。パスワードは<b>本人が初回ログイン時に設定</b>します(管理者がリセットすると、次回ログインで再設定)。</li>
+  </ul>
+  <h4>権限(役割)</h4>
+  <table class="role">
+    <tr><th>役割</th><th>できること</th></tr>
+    <tr><td>管理者</td><td>すべて可(ユーザー管理・担当者マスタを含む)。</td></tr>
+    <tr><td>社員</td><td>ユーザー管理・担当者マスタ以外はほぼ可。</td></tr>
+    <tr><td>パート</td><td><b>原価(下代)・粗利・符丁・商品在庫画面・設定は見えません。</b>レジ・接客まわりが中心。</td></tr>
+  </table>
+  <div class="note"><b>符丁・原価の保護</b>: 符丁は下代そのものを表すため、パート権限には送られません(画面にも出ません)。</div>
+
+  <h3 id="d-register">10. レジ(売上登録)</h3>
+  <p>お客様を選び、明細を作り、支払を確定する画面です。</p>
+  <h4>明細の作り方</h4>
+  <ul>
+    <li><b>＋商品番号で追加(在庫品)</b>: 在庫の商品を番号で追加。スキャナまたは手入力。</li>
+    <li><b>＋番号なしで追加</b>: 電池交換・レンズ・各種修理など、在庫品でないものを品名・金額で追加。</li>
+    <li><b>＋受託品(催事)</b>: メーカーの受託品をその場で追加(→ 22章)。</li>
+    <li><b>💴 レジ入出金</b>: 代引手数料・収入印紙・両替・経費など、買い物と無関係な現金の出入り。</li>
+  </ul>
+  <h4>金額・値引き</h4>
+  <p>各明細の<b>買上金額は書き換え可能</b>です。値引きはここで金額を下げて表現します。定価との差から割引率が表示されます。</p>
+  <h4>お会計</h4>
+  <ul>
+    <li><b>会計担当</b>: レジを打つ人を毎回選びます(打ち手の意識づけのため、毎回リセットされます)。</li>
+    <li><b>支払方法</b>: 現金 / クレジット / PayPay / 掛売 / 分割。「＋支払方法を追加」で分割払い(複数方法)に対応。</li>
+    <li><b>掛売</b>: 選ぶとその金額が<b>売掛残</b>になります。現金締めには数えません。</li>
+    <li><b>使用ポイント</b>: 会計でポイントを使う枠があります。</li>
+    <li><b>お預かり・釣銭</b>: 現金分のお預かりを入れると釣銭が出ます。テンキーで入力できます。</li>
+    <li><b>会計を確定</b>: 購入履歴へ記録、在庫品は在庫から引落、掛売は売掛へ計上——までを自動で行います。</li>
+  </ul>
+
+  <h3 id="d-customer">11. 顧客管理</h3>
+  <h4>検索</h4>
+  <p>顧客名・カナ・電話番号・担当者(番号でも可)・ランク・誕生月で絞り込めます。カナ検索は半角/全角・大小文字を自動でそろえて照合します。</p>
+  <h4>顧客詳細(タブ)</h4>
+  <table>
+    <tr><th>タブ</th><th>内容</th></tr>
+    <tr><td>基本情報</td><td>住所・連絡先・担当・ランク・家族など。編集や家族の追加/修正/削除。</td></tr>
+    <tr><td>購入・アプローチ履歴</td><td>買上の履歴と、お声がけ(来店/DM/TEL/手紙)の記録。</td></tr>
+    <tr><td>入金管理</td><td>そのお客様の売掛と入金の状況。</td></tr>
+    <tr><td>ポイント</td><td>ポイントの残高・加算/使用の履歴。</td></tr>
+    <tr><td>メガネ処方箋</td><td>度数などの処方箋情報。</td></tr>
+  </table>
+  <h4>新規登録</h4>
+  <p>「＋新規顧客」から登録。郵便番号→住所の呼び出しに対応。</p>
+
+  <h3 id="d-search">12. 検索・分析</h3>
+  <table>
+    <tr><th>タブ</th><th>内容</th></tr>
+    <tr><td>詳細検索</td><td>顧客の属性 × 買った商品 × 処方箋を<b>掛け合わせ(AND)</b>で絞り込む横断検索。「同一商品を買った人」「特定条件の人」を抽出。</td></tr>
+    <tr><td>購入順位ランキング</td><td>買上金額などの順位付け。</td></tr>
+    <tr><td>メガネ処方箋検索</td><td>処方箋の条件で顧客を探す。</td></tr>
+  </table>
+
+  <h3 id="d-recv">13. 売掛管理</h3>
+  <p>売掛(未回収残高)のあるお客様を、残高の多い順に一覧します。誰がいくら・件数・最古買上日・最終入金日が見えます。</p>
+  <ul>
+    <li><b>入金</b>: 入金額と方法(現金/銀行振込/カード/その他)を記録。残高が減り、履歴に残ります。</li>
+    <li><b>＋売掛を追加</b>: レジを通さない過去分(紙の売掛)を手入力。</li>
+    <li><b>修正 / 削除</b>: 入力ミスの訂正用。</li>
+  </ul>
+  <div class="note"><b>今後の予定</b>: 売掛を立てた「後から」の値引き・ポイント使用は、専用の操作として追加予定です(現金入金とは区別して扱います)。</div>
+
+  <h3 id="d-products">14. 商品・在庫(仕入登録・符丁)</h3>
+  <h4>在庫一覧</h4>
+  <p>状態(在庫/売上/受託/返品)・仕入先・ジャンル(宝石/メガネ/時計/その他)で絞り込み。商品を開くと詳細・写真が見られ、修正できます。</p>
+  <div class="tip"><b>在庫数</b>は「状態＝在庫」の商品だけを数えます。売れた品・受託品は在庫数に混ざりません。</div>
+  <h4>仕入登録</h4>
+  <ul>
+    <li>品名・分類・ブランド・地金・仕入先・仕入単価(下代)・上代・店舗などを入力。宝石以外は宝飾専用の項目が隠れます。</li>
+    <li><b>掛率・折数</b>は自動計算。</li>
+    <li><b>符丁</b>は仕入先と仕入単価から自動入力(→ 21章)。手直しも可。</li>
+    <li>商品写真をその場で撮る/選ぶことができます。</li>
+  </ul>
+
+  <h3 id="d-stocktake">15. 棚卸し</h3>
+  <p>店頭・金庫の現物を1点ずつ「商品番号」で読み取り、在庫台帳と照合します。</p>
+  <ul>
+    <li><b>開始日時</b>が記録されます。</li>
+    <li>スキャン/入力→「確認」で現物確認済みに。緑=確認、赤=注意(番号なし/売却済み)、既に確認済みの再スキャンはお知らせのみ。</li>
+    <li>同じ番号の在庫が複数あるときは、スキャンのたびに1点ずつ確認します。</li>
+    <li>最後まで「未確認」に残った在庫が<b>差異</b>(紛失・盗難・登録漏れの疑い)。<b>CSV出力</b>できます。</li>
+    <li>「最初からやり直す」で確認記録をリセット。</li>
+  </ul>
+  <div class="note">棚卸しは<b>パート権限では使えません</b>。</div>
+
+  <h3 id="d-repair">16. 修理伝票</h3>
+  <p>宝飾ナビには無かった新機能。お預かりした修理品を管理します。</p>
+  <ul>
+    <li>「＋新規預かり」でお客様・品物・内容・見込みなどを登録。</li>
+    <li><b>写真</b>を撮って添付(お預かり品の状態記録)。</li>
+    <li>預かり伝票を<b>印刷</b>してお渡し。</li>
+    <li>状態(進行中/引渡済み)で絞り込み・管理。</li>
+  </ul>
+
+  <h3 id="d-estimate">17. 見積・請求</h3>
+  <p>品名・金額の明細を作り、見積書・請求書として出力します。在庫商品から明細に取り込むこともできます。</p>
+
+  <h3 id="d-reports">18. 日報・帳票</h3>
+  <ul>
+    <li><b>日報</b>: その日の売上・現金の締め。現金と、振込・カードなど非現金を分けて確認できます。掛売(未回収)は現金に数えません。</li>
+    <li><b>売上伝票明細表</b>: 期間・担当などで売上明細を一覧。</li>
+  </ul>
+
+  <h3 id="d-settings">19. 設定・マスター</h3>
+  <h4>マスタ管理</h4>
+  <p>担当者・仕入先・商品分類・ブランド・石種・地金・購入動機・保管場所・支払方法・顧客ランク・地区を1画面で管理します。</p>
+  <ul>
+    <li><b>仕入先マスタ</b>: ジャンル(宝石/メガネ/時計/その他)と、<b>符丁文字</b>(メーカーの頭カナ)を登録。符丁文字を入れておくと、商品登録時に符丁の1文字目が自動で入ります(漢字名のメーカーでもOK)。</li>
+  </ul>
+  <h4>ログインユーザーと権限(管理者のみ)</h4>
+  <p>ユーザーの追加、役割(管理者/社員/パート)の設定、パスワードのリセット。</p>
+
+  <h3 id="d-fucho">20. 符丁の仕組み</h3>
+  <p>符丁は、下代(仕入値)を店内だけで読める形に隠した符牒です。トキワは<b>下代の上3桁</b>を、下の表でカナに置き換えます。</p>
+  <table>
+    <tr><th>数字</th><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td><td>0</td></tr>
+    <tr><th>カナ</th><td>ｴ</td><td>ﾋ</td><td>ｽ</td><td>ｱ</td><td>ｷ</td><td>ﾅ</td><td>ｲ</td><td>ｶ</td><td>ﾐ</td><td>ｹ</td></tr>
+  </table>
+  <ul>
+    <li><b>1文字目</b>はメーカー(仕入先マスタの符丁文字)。</li>
+    <li>同じ数字が連続したら、先頭1文字＋「<b>ﾀ</b>」1つにまとめます。</li>
+  </ul>
+  <p><b>例(頭文字ｳ)</b>: 下代30800 → 上3桁308 → <code>ｳｽｹｶ</code> ／ 下代12200 → 上3桁122 → <code>ｳｴﾋﾀ</code> ／ 下代10000 → 100 → <code>ｳｴｹﾀ</code></p>
+  <div class="note">符丁は原価が分かってしまうため、<b>パート権限には表示されません</b>。</div>
+
+  <h3 id="d-consign">21. 受託(催事)の運用</h3>
+  <p>催事などで、メーカーの品(自店の在庫でない品)をその場でレジに通すための機能です。<b>売上が先・納品書は後</b>という流れに合わせています。</p>
+  <h4>使い方(A方式)</h4>
+  <ol class="steps">
+    <li>レジで「＋受託品(催事)」を押す。</li>
+    <li><b>メーカー(仕入先)</b>を選び、<b>金額</b>を入れる(品名は任意=既定「受託品」)。</li>
+    <li>明細に載るので、通常どおり会計。会計すると売上になります。</li>
+  </ol>
+  <ul>
+    <li>受託品は<b>在庫数には数えません</b>(自店の持ち物でないため)。</li>
+    <li>原価・正式品番は、後日メーカーの<b>納品書</b>が届いてから入れます(後日精算=Phase 2で対応予定)。</li>
+  </ul>
+
+  <h3 id="d-maint">22. メンテナンス(バックアップ等)</h3>
+  <h4>バックアップ</h4>
+  <p>データはPC内のデータベース1ファイルにまとまっています。定期的にバックアップを取ってください(火災・故障・盗難に備え、店外にも複製が理想)。</p>
+  <p><code>python3 scripts/backup_db.py</code>(タイムスタンプ付きで複製)</p>
+  <h4>売掛のクリア(初期化)</h4>
+  <ul>
+    <li><code>python3 scripts/clear_receivables.py</code> … 売掛残高のみ消去(入金履歴は残す)。実行前に自動バックアップ。</li>
+    <li><code>--with-history</code> … 入金履歴も消す。 <code>--yes</code> … 確認省略。</li>
+    <li>再取込で復活します。恒久的に空で始めるなら取込時に <code>import_csv.py --no-receivables</code>。</li>
+  </ul>
+  <div class="note"><b>注意</b>: スクリプトはサーバーを止めてから実行してください。復元はバックアップファイルを <code>db/tokiwa.db</code> に戻します。</div>
+
+  <hr class="br">
+  <p class="lead">このマニュアルは現時点の機能までを収録しています。機能追加に合わせて更新します。</p>
+
+</div>
+</body>
+</html>
