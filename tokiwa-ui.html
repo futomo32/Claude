@@ -4317,10 +4317,12 @@
     var bar = document.getElementById("pos-operator-bar");
     if (!bar) return;
     // レジに出すのは「レジ表示ON」の担当者だけ(D.registerStaff)。旧タグは出さない。
-    var names = (D.registerStaff && D.registerStaff.length) ? D.registerStaff.slice()
-      : ((D.staff && D.staff.length) ? D.staff.slice() : []);
-    if (!names.length) { var set = {}; D.customers.forEach(function (c) { if (c[4]) set[c[4]] = 1; }); names = Object.keys(set); }
-    names.sort();
+    // D.registerStaffはサーバーが担当者番号順で返すため、その順を保つ(名前で並べ替えない)。
+    var names, ordered = false;
+    if (D.registerStaff && D.registerStaff.length) { names = D.registerStaff.slice(); ordered = true; }
+    else if (D.staff && D.staff.length) { names = D.staff.slice(); }
+    else { var set = {}; D.customers.forEach(function (c) { if (c[4]) set[c[4]] = 1; }); names = Object.keys(set); }
+    if (!ordered) names.sort();  // フォールバック(番号情報が無い場合)は名前順
     posOpNames = names;
     if (!posOperator) { try { posOperator = localStorage.getItem("tokiwa_pos_operator") || null; } catch (e) {} }
     if (posOperator && names.indexOf(posOperator) < 0) posOperator = null;  // 停止/削除された人は解除

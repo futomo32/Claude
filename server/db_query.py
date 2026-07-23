@@ -395,9 +395,11 @@ def build_blob_light(con):
         staff = [r["staff_name"] for r in cur.execute(
             "SELECT DISTINCT staff_name FROM customers WHERE staff_name IS NOT NULL AND staff_name<>'' ORDER BY staff_name")]
     # レジ会計担当のワンタップバーに出す担当者(is_register=1 の有効な人だけ。デフォルトOFF)。
+    # 並び順は担当者番号(staff_code)順。番号の無い人は末尾に名前順で。
     # 誰も設定していない(全部OFF)場合に限り staff 全体にフォールバック(会計不能を防ぐ安全策)。
     register_staff = [r["name"] for r in cur.execute(
-        "SELECT name FROM staff WHERE active=1 AND COALESCE(is_register,0)=1 ORDER BY name")]
+        "SELECT name FROM staff WHERE active=1 AND COALESCE(is_register,0)=1 "
+        "ORDER BY (staff_code IS NULL OR staff_code=''), CAST(staff_code AS INTEGER), name")]
     if not register_staff:
         register_staff = staff
     # 担当者の「番号」入力(コード検索)用。有効な担当者のcode/nameペア
