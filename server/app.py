@@ -368,6 +368,7 @@ class Handler(BaseHTTPRequestHandler):
                                 row[9] = None
                     elif path == "/api/product" and isinstance(result, dict):
                         result.pop("cost_price", None)
+                        result.pop("fucho", None)  # 符丁は下代そのものなのでパートには送らない
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/postal":
                 # 郵便番号→住所検索(zipcloudへの中継)。オフライン時はエラーを返すだけ

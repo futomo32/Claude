@@ -134,6 +134,7 @@ def ensure_schema(con):
         ("customer_families", "linked_customer_id", "TEXT"),
         ("receivable_entries", "method", "TEXT"),  # 売掛入金の支払方法(現金/銀行振込/カード/その他。空=現金扱い)
         ("repairs", "photo_files", "TEXT"),  # 修理お預かり品の写真ファイル名(カンマ区切り。B-6)
+        ("products", "fucho", "TEXT"),  # 符丁(下代を隠す店内符牒。仕入先頭文字＋数字部)。パートには送らない
     ]
     changed = False
     for table, col, decl in adds:
@@ -1529,7 +1530,34 @@ def delete_family(con, family_id):
 
 PRODUCT_FIELDS = ("product_no", "name", "category", "brand", "metal", "supplier", "cost_price",
                   "list_price", "location", "center_stone", "center_carat",
-                  "color", "clarity", "cut", "cert_no", "info")
+                  "color", "clarity", "cut", "cert_no", "info", "fucho")
+
+# 符丁(下代を隠す店内符牒)。数字→カナ「エビスアキナイカミ」対応表。
+_FUCHO_DIGITS = {"1": "ｴ", "2": "ﾋ", "3": "ｽ", "4": "ｱ", "5": "ｷ",
+                 "6": "ﾅ", "7": "ｲ", "8": "ｶ", "9": "ﾐ", "0": "ｹ"}
+
+
+def fucho_encode(cost_price, supplier=None):
+    """下代(cost_price)と仕入先名から符丁を生成する。
+    1文字目=仕入先名の頭文字(メーカー)、以降=下代の各桁をカナ変換。
+    同じ数字が連続したら 先頭1文字＋「ﾀ」1つ にまとめる(2連でも3連以上でも ﾀ は1つ)。
+    例: 仕入先ウライ・下代12200 → ｳｴﾋﾀｹﾀ / 下代10000 → ｳｴｹﾀ。cost が無ければ ''。"""
+    digits = "".join(ch for ch in str(cost_price or "") if ch.isdigit())
+    if not digits:
+        return ""
+    out = []
+    i = 0
+    while i < len(digits):
+        d = digits[i]
+        out.append(_FUCHO_DIGITS.get(d, ""))
+        j = i + 1
+        while j < len(digits) and digits[j] == d:
+            j += 1
+        if j - i >= 2:
+            out.append("ﾀ")  # 連続はまとめて ﾀ 1つ
+        i = j
+    head = str(supplier or "").strip()[:1]
+    return head + "".join(out)
 
 
 def add_product(con, payload):
@@ -1553,6 +1581,8 @@ def add_product(con, payload):
                 vals[k] = int(str(vals[k]).replace(",", ""))
             except ValueError:
                 raise ValueError("価格は数字で入力してください")
+    if not str(vals.get("fucho") or "").strip():  # 符丁が空なら下代＋仕入先から自動生成
+        vals["fucho"] = fucho_encode(vals.get("cost_price"), vals.get("supplier")) or None
     is_glasses = 1 if ("メガネ" in (vals["category"] or "") or "メガネ" in name) else 0
     cols = ["product_key"] + list(PRODUCT_FIELDS) + ["state", "is_glasses", "registered_at"]
     cur.execute(
@@ -1577,7 +1607,7 @@ def get_product(con, product_key):
     con.row_factory = sqlite3.Row
     r = con.execute(
         "SELECT product_key,product_no,name,category,brand,metal,supplier,cost_price,list_price,location,"
-        "center_stone,center_carat,color,clarity,cut,cert_no,info,state,image_file "
+        "center_stone,center_carat,color,clarity,cut,cert_no,info,fucho,state,image_file "
         "FROM products WHERE product_key=?", (pk,)).fetchone()
     if not r:
         raise ValueError("商品が見つかりません")
@@ -1601,6 +1631,8 @@ def update_product(con, payload):
                 vals[k] = int(str(vals[k]).replace(",", ""))
             except ValueError:
                 raise ValueError("価格は数字で入力してください")
+    if not str(vals.get("fucho") or "").strip():  # 符丁が空なら下代＋仕入先から自動生成
+        vals["fucho"] = fucho_encode(vals.get("cost_price"), vals.get("supplier")) or None
     is_glasses = 1 if ("メガネ" in (vals["category"] or "") or "メガネ" in name) else 0
     sets = ",".join(f"{k}=?" for k in PRODUCT_FIELDS) + ",is_glasses=?"
     cur = con.execute(f"UPDATE products SET {sets} WHERE product_key=?",

@@ -1169,6 +1169,7 @@
             <div class="field"><label>掛率</label><input class="num" id="np-rate" placeholder="自動計算" readonly></div>
             <div class="field"><label>折数</label><input class="num" id="np-ori" readonly></div>
             <div class="field"><label>店舗</label><select id="np-loc"><option>本店</option></select></div>
+            <div class="field"><label>符丁(下代・自動)</label><input id="np-fucho" placeholder="仕入先と仕入単価から自動" title="仕入先の頭文字＋下代の符牒。仕入単価と仕入先を入れると自動入力。手直しも可。"></div>
           </div>
           <div class="field" style="margin-top:0.6rem"><label>商品写真(任意)</label>
             <div style="display:flex;align-items:center;gap:0.6em;flex-wrap:wrap">
@@ -1485,6 +1486,7 @@
           <div class="field"><label>地金</label><input id="pe-metal" list="metal-datalist"></div>
           <div class="field"><label>仕入先</label><select id="pe-supplier"><option value="">選択…</option></select></div>
           <div class="field"><label>仕入単価(下代)</label><input class="num" id="pe-cost" inputmode="numeric"></div>
+          <div class="field"><label>符丁(下代・自動)</label><input id="pe-fucho" title="仕入先の頭文字＋下代の符牒。仕入単価と仕入先を変えると自動更新。手直しも可。"></div>
           <div class="field"><label>上代(定価)</label><input class="num" id="pe-list" inputmode="numeric"></div>
           <div class="field"><label>店舗</label><select id="pe-loc"><option value="">—</option><option>本店</option></select></div>
           <div class="field"><label>中石(石種)</label><input id="pe-stone"></div>
@@ -4215,6 +4217,7 @@
       document.getElementById("pe-metal").value = pr.metal || "";
       _setSelectPreserving("pe-supplier", pr.supplier);
       document.getElementById("pe-cost").value = pr.cost_price || "";
+      document.getElementById("pe-fucho").value = pr.fucho || "";
       document.getElementById("pe-list").value = pr.list_price || "";
       _setSelectPreserving("pe-loc", pr.location);
       document.getElementById("pe-stone").value = pr.center_stone || "";
@@ -4254,6 +4257,7 @@
       supplier: document.getElementById("pe-supplier").value.trim(),
       cost_price: numval("pe-cost"),
       list_price: numval("pe-list"),
+      fucho: document.getElementById("pe-fucho").value.trim(),
       location: document.getElementById("pe-loc").value.trim(),
       center_stone: document.getElementById("pe-stone").value.trim(),
       center_carat: zen2han(document.getElementById("pe-carat").value).trim(),
@@ -4941,6 +4945,30 @@
     // 折数 = 上代(定価)の半額(店独自の参考値。DBには保存しない・説明文言は付けない)
     document.getElementById("np-ori").value = list ? "¥" + num(Math.round(list / 2)) : "";
   }
+  // ── 符丁(下代を隠す店内符牒) ──
+  // 数字→カナ「エビスアキナイカミ」。同じ数字が連続したら 先頭1文字＋「ﾀ」1つ にまとめる。
+  var FUCHO_DIGITS = { "1": "ｴ", "2": "ﾋ", "3": "ｽ", "4": "ｱ", "5": "ｷ", "6": "ﾅ", "7": "ｲ", "8": "ｶ", "9": "ﾐ", "0": "ｹ" };
+  function makeFucho(cost, supplier) {
+    var digits = String(cost == null ? "" : cost).replace(/[^0-9]/g, "");
+    if (!digits) return "";
+    var out = "", i = 0;
+    while (i < digits.length) {
+      var d = digits[i]; out += (FUCHO_DIGITS[d] || "");
+      var j = i + 1; while (j < digits.length && digits[j] === d) j++;
+      if (j - i >= 2) out += "ﾀ";  // 連続はまとめて ﾀ 1つ
+      i = j;
+    }
+    var head = String(supplier || "").trim().slice(0, 1);  // 1文字目=仕入先(メーカー)の頭文字
+    return head + out;
+  }
+  function updateNpFucho() {
+    document.getElementById("np-fucho").value =
+      makeFucho(document.getElementById("np-cost").value, document.getElementById("np-supplier").value);
+  }
+  function updatePeFucho() {
+    document.getElementById("pe-fucho").value =
+      makeFucho(document.getElementById("pe-cost").value, document.getElementById("pe-supplier").value);
+  }
   // 仕入登録の種別切替(宝石 / 宝石以外)。宝石以外は宝飾専用の入力欄(宝飾情報・地金)を隠す
   var npType = "gem";
   function setPurchaseType(t) {
@@ -4992,7 +5020,7 @@
     });
   })();
   function resetProductForm() {
-    ["np-no", "np-name", "np-brand", "np-metal", "np-stone", "np-carat", "np-side", "np-cert", "np-cost", "np-list", "np-rate", "np-ori"].forEach(function (id) {
+    ["np-no", "np-name", "np-brand", "np-metal", "np-stone", "np-carat", "np-side", "np-cert", "np-cost", "np-list", "np-rate", "np-ori", "np-fucho"].forEach(function (id) {
       document.getElementById(id).value = "";
     });
     ["np-supplier", "np-color", "np-clarity", "np-cut", "np-loc"].forEach(function (id) { document.getElementById(id).selectedIndex = 0; });
@@ -5034,6 +5062,7 @@
       supplier: document.getElementById("np-supplier").value,
       cost_price: numval("np-cost"),
       list_price: numval("np-list"),
+      fucho: document.getElementById("np-fucho").value.trim(),
       location: document.getElementById("np-loc").value,
       center_stone: gem ? document.getElementById("np-stone").value.trim() : "",
       center_carat: gem ? zen2han(document.getElementById("np-carat").value).trim() : "",
@@ -5541,6 +5570,11 @@
     // 仕入登録フォーム: 日付デフォルト今日・掛率の自動計算
     document.getElementById("np-date").value = new Date().toISOString().slice(0, 10);
     ["np-cost", "np-list"].forEach(function (id) { document.getElementById(id).addEventListener("input", updateNpRate); });
+    // 符丁の自動入力(下代・仕入先が変わるたびに生成。手直しも可)
+    document.getElementById("np-cost").addEventListener("input", updateNpFucho);
+    document.getElementById("np-supplier").addEventListener("change", updateNpFucho);
+    document.getElementById("pe-cost").addEventListener("input", updatePeFucho);
+    document.getElementById("pe-supplier").addEventListener("change", updatePeFucho);
     // ログインユーザーのロールに合わせてUIを出し分け(サーバー側の制御の補助)
     applyRoleUI();
     // サーバーで既にログイン済みなら、埋め込みのモックログイン画面は出さず直接アプリへ
