@@ -287,7 +287,7 @@ class Handler(BaseHTTPRequestHandler):
                         "/api/product", "/api/daily_sales", "/api/slip_lines", "/api/documents",
                         "/api/customer_ranking", "/api/prescription_search", "/api/rank_preview",
                         "/api/rank_rules", "/api/receivables_summary", "/api/stock_stats",
-                        "/api/search_options", "/api/detailed_search"):
+                        "/api/search_options", "/api/detailed_search", "/api/stocktake_summary"):
                 qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
 
                 def q1(name, default=""):
@@ -340,6 +340,8 @@ class Handler(BaseHTTPRequestHandler):
                             ss.pop("costTotal", None)
                             ss.pop("marginRate", None)
                         result = {"stockStats": ss}
+                    elif path == "/api/stocktake_summary":
+                        result = db_query.stocktake_summary(con)
                     elif path == "/api/search_options":
                         result = db_query.search_options(con)
                     elif path == "/api/detailed_search":
@@ -394,6 +396,7 @@ class Handler(BaseHTTPRequestHandler):
         "/api/product_image", "/api/product_image_clear",
         "/api/photo_pool", "/api/photo_pool_assign", "/api/photo_pool_delete",
         "/api/supplier_genre", "/api/master_item", "/api/rank_apply", "/api/rank_rules",
+        "/api/stocktake_scan", "/api/stocktake_reset",
     }
     # 管理者のみの操作(担当者マスタ・ログインユーザー管理)
     ADMIN_ONLY_POSTS = {"/api/staff", "/api/app_user"}
@@ -513,6 +516,16 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/family_delete":
                 con = connect()
                 result = db_query.delete_family(con, payload.get("id"))
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/stocktake_scan":
+                con = connect()
+                result = db_query.stocktake_scan(con, payload.get("product_no"))
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/stocktake_reset":
+                con = connect()
+                result = db_query.stocktake_reset(con)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/document":

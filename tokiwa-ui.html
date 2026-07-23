@@ -723,6 +723,7 @@
     <button class="nav-item" data-screen="search"><span class="ic">🔍</span>検索・分析</button>
     <button class="nav-item" data-screen="receivables"><span class="ic">💳</span>売掛管理</button>
     <button class="nav-item" data-screen="products"><span class="ic">◆</span>商品・在庫</button>
+    <button class="nav-item" data-screen="stocktake"><span class="ic">📋</span>棚卸し</button>
     <button class="nav-item" data-screen="repairs"><span class="ic">🔧</span>修理伝票</button>
     <button class="nav-item" data-screen="estimate"><span class="ic">📄</span>見積・請求</button>
     <button class="nav-item" data-screen="reports"><span class="ic">▤</span>日報・帳票</button>
@@ -1182,6 +1183,31 @@
             <button class="btn" onclick="resetProductForm()">中止</button>
             <button class="btn btn-primary" onclick="saveProduct(this)">登録する</button>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 棚卸し(実地在庫の照合。タスク④) ── -->
+    <section class="content" data-screen="stocktake">
+      <div class="card">
+        <p style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">店頭・金庫の現物を1点ずつ「商品番号」で読み取り(スキャナまたは手入力→Enter)、在庫台帳と照合します。最後まで「未確認」に残った在庫が、紛失・盗難・登録漏れの疑い(差異)です。パート権限では利用できません。</p>
+        <div class="tiles report-tiles" id="st-tiles"></div>
+        <div class="search-row" style="align-items:flex-end;margin:0.6rem 0">
+          <div class="field" style="flex:1"><label>商品番号を読み取り(スキャン/入力してEnter)</label>
+            <input id="st-scan" placeholder="商品番号" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();stocktakeScan();}"></div>
+          <button class="btn btn-primary" onclick="stocktakeScan()">確認</button>
+          <button class="btn" onclick="stocktakeReset()">棚卸しを最初からやり直す</button>
+        </div>
+        <p id="st-scan-msg" style="margin:0 0 0.6rem;min-height:1.4em;font-weight:600"></p>
+        <div style="display:flex;gap:0.6em;align-items:center;margin:0.2rem 0 0.6rem">
+          <div class="section-title" style="margin:0">差異(在庫台帳にあるが現物未確認)</div>
+          <button class="btn" style="margin-left:auto" onclick="exportStocktakeCsv()">差異をCSV出力</button>
+        </div>
+        <div class="table-scroll">
+          <table class="data">
+            <thead><tr><th>商品番号</th><th>商品名</th><th>保管場所</th><th class="r">上代</th></tr></thead>
+            <tbody id="st-tbody"><tr><td colspan="4" style="color:var(--muted)">読み込み中…</td></tr></tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -2017,7 +2043,7 @@
 
   var screenTitles = {
     home: "ホーム", register: "レジ(売上登録)", customers: "顧客管理",
-    "customer-detail": "顧客詳細", search: "検索・分析", receivables: "売掛管理", products: "商品・在庫", repairs: "修理伝票",
+    "customer-detail": "顧客詳細", search: "検索・分析", receivables: "売掛管理", products: "商品・在庫", stocktake: "棚卸し", repairs: "修理伝票",
     estimate: "見積・請求", reports: "日報・帳票", settings: "設定・マスター"
   };
 
@@ -2047,8 +2073,8 @@
       document.getElementById("logout-btn").style.display = "";
     }
     if (!canProducts()) {
-      // パート: 商品・在庫画面と設定(マスタ・ランク更新)への導線ごと隠す
-      ["products", "settings"].forEach(function (s) {
+      // パート: 商品・在庫・棚卸し画面と設定(マスタ・ランク更新)への導線ごと隠す
+      ["products", "stocktake", "settings"].forEach(function (s) {
         var el = document.querySelector('.nav-item[data-screen="' + s + '"]');
         if (el) el.style.display = "none";
       });
@@ -2059,7 +2085,7 @@
     }
   }
   function showScreen(name) {
-    if ((name === "products" || name === "settings") && !canProducts()) {
+    if ((name === "products" || name === "settings" || name === "stocktake") && !canProducts()) {
       showToast("この画面を開く権限がありません(パート権限)。");
       return;
     }
@@ -2084,6 +2110,7 @@
       else if (name === "reports") renderDailyReport();
       else if (name === "repairs") renderRepairs();
       else if (name === "products") renderProducts();
+      else if (name === "stocktake") loadStocktake();
       else if (name === "search") loadSearchOptions();
     } catch (e) { /* 初期化前の呼び出しは無視 */ }
     window.scrollTo(0, 0);
@@ -3974,6 +4001,75 @@
     refreshStockStats();    // サーバーから取り直して最新化(会計後もリロード不要で正しい在庫数に)
     prodRows = [];
     loadProductsPage(false);
+  }
+  /* ── 棚卸し(実地在庫の照合。タスク④) ── */
+  var stUnchecked = [];
+  function loadStocktake() {
+    if (!API) { document.getElementById("st-tbody").innerHTML = '<tr><td colspan="4" style="color:var(--muted)">棚卸しはサーバー起動時に使えます。</td></tr>'; return; }
+    fetch(API + "/stocktake_summary").then(function (r) { return r.json(); }).then(function (res) {
+      if (res.error) throw new Error(res.error);
+      stUnchecked = res.unchecked || [];
+      var remain = res.total - res.checked;
+      document.getElementById("st-tiles").innerHTML =
+        '<div class="tile"><div class="t-label">在庫台帳(点数)</div><div class="t-value num">' + num(res.total) + '</div></div>' +
+        '<div class="tile"><div class="t-label">確認済み</div><div class="t-value num">' + num(res.checked) + '</div></div>' +
+        '<div class="tile"><div class="t-label">未確認(差異)</div><div class="t-value num"' + (remain > 0 ? ' style="color:var(--danger)"' : "") + '>' + num(res.unchecked_count) + '</div></div>';
+      renderStocktakeTable();
+    }).catch(function (e) { document.getElementById("st-tbody").innerHTML = '<tr><td colspan="4" style="color:var(--muted)">読み込みに失敗: ' + esc(e.message || e) + '</td></tr>'; });
+  }
+  function renderStocktakeTable() {
+    var tb = document.getElementById("st-tbody");
+    tb.innerHTML = stUnchecked.length ? stUnchecked.map(function (u) {
+      return '<tr><td class="num">' + esc(dash(u.product_no)) + '</td><td>' + esc(dash(u.name)) +
+        '</td><td>' + esc(dash(u.location)) + '</td><td class="r num">' + (u.list_price ? "¥" + num(u.list_price) : "—") + '</td></tr>';
+    }).join("") : '<tr><td colspan="4" style="color:var(--ok,#2a8)">未確認の在庫はありません(全て確認済み、または在庫0)。</td></tr>';
+  }
+  function stocktakeScan() {
+    if (!API) return;
+    var inp = document.getElementById("st-scan");
+    var no = (inp.value || "").trim();
+    var msg = document.getElementById("st-scan-msg");
+    if (!no) return;
+    fetch(API + "/stocktake_scan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ product_no: no }) })
+      .then(function (r) { return r.json(); }).then(function (res) {
+        if (res.error) throw new Error(res.error);
+        if (res.result === "ok") {
+          msg.style.color = "var(--ok,#2a8)";
+          msg.textContent = "✓ 確認: " + dash(res.name) + "（" + no + (res.location ? " / " + res.location : "") + "）";
+          loadStocktake();  // 進捗・差異を更新
+        } else {
+          msg.style.color = "var(--danger)";
+          msg.textContent = "⚠ " + (res.message || "確認できませんでした") + "（" + no + "）";
+        }
+        inp.value = ""; inp.focus();
+      }).catch(function (e) { msg.style.color = "var(--danger)"; msg.textContent = "エラー: " + (e.message || e); });
+  }
+  function stocktakeReset() {
+    if (!API) return;
+    if (!confirm("棚卸しの確認記録をすべて消去して、最初からやり直します。よろしいですか?")) return;
+    fetch(API + "/stocktake_reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then(function (r) { return r.json(); }).then(function (res) {
+        if (res.error) throw new Error(res.error);
+        document.getElementById("st-scan-msg").textContent = "";
+        loadStocktake();
+        showToast("棚卸しをリセットしました。");
+      }).catch(function (e) { showToast("リセットに失敗: " + (e.message || e)); });
+  }
+  function exportStocktakeCsv() {
+    if (!stUnchecked.length) return showToast("未確認(差異)はありません。");
+    var head = ["商品番号", "商品名", "保管場所", "上代"];
+    var lines = [head.join(",")].concat(stUnchecked.map(function (u) {
+      return [u.product_no, u.name, u.location, u.list_price].map(function (x) {
+        var s = (x == null ? "" : String(x)).replace(/"/g, '""');
+        return /[",\n]/.test(s) ? '"' + s + '"' : s;
+      }).join(",");
+    }));
+    var blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "棚卸し差異_" + TODAY_ISO + ".csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
   function loadProductsPage(append) {
     var q = (document.getElementById("q-prod").value || "").trim();

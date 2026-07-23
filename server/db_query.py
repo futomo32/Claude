@@ -89,6 +89,11 @@ def ensure_schema(con):
         key   TEXT PRIMARY KEY,
         value TEXT
     )""")
+    # 棚卸し(実地在庫の照合)。現物を確認した商品を記録し、在庫台帳との差異を出す。
+    con.execute("""CREATE TABLE IF NOT EXISTS stocktake_checks (
+        product_key TEXT PRIMARY KEY,
+        checked_at  TEXT
+    )""")
     # ログインユーザー(ロール別アクセス制御④)。schema.sql と同形。無いDBでも動くように。
     con.execute("""CREATE TABLE IF NOT EXISTS app_users (
         user_id      TEXT PRIMARY KEY,
@@ -166,6 +171,58 @@ def stock_stats(con):
     s_margin = round((1 - (s_cost * (1 + TAX_RATE)) / s_list) * 100, 1) if s_list else 0
     return {"count": s_count, "listTotal": s_list, "costTotal": s_cost,
             "marginRate": s_margin, "taxRate": TAX_RATE}
+
+
+def stocktake_scan(con, product_no):
+    """棚卸しのスキャン: 商品番号で在庫品を1点、現物確認済みにする(棚卸台帳に記録)。
+    ・在庫状態の同番号のうち、まだ未確認の1点を確認済みにする(同番号が複数あれば繰り返しスキャンで順に)。
+    ・在庫状態でない番号(売却済み等)は警告を返す。存在しない番号はエラー。"""
+    con.row_factory = sqlite3.Row
+    no = str(product_no or "").strip()
+    if not no:
+        raise ValueError("商品番号を入力してください")
+    rows = con.execute("SELECT product_key, name, state, location FROM products WHERE product_no=?", (no,)).fetchall()
+    if not rows:
+        return {"result": "not_found", "product_no": no, "message": "その商品番号は台帳にありません"}
+    instock = [r for r in rows if r["state"] == "在庫"]
+    if not instock:
+        return {"result": "not_instock", "product_no": no, "name": rows[0]["name"],
+                "message": "この番号は在庫状態ではありません(売却済み等)"}
+    checked_keys = {r[0] for r in con.execute(
+        "SELECT product_key FROM stocktake_checks WHERE product_key IN (%s)" %
+        ",".join("?" * len(instock)), [r["product_key"] for r in instock])}
+    target = next((r for r in instock if r["product_key"] not in checked_keys), None)
+    if not target:
+        return {"result": "already", "product_no": no, "name": instock[0]["name"],
+                "message": "この番号の在庫は全て確認済みです"}
+    con.execute("INSERT OR REPLACE INTO stocktake_checks(product_key, checked_at) VALUES (?, datetime('now','localtime'))",
+                (target["product_key"],))
+    con.commit()
+    return {"result": "ok", "product_no": no, "name": target["name"],
+            "location": target["location"], "product_key": target["product_key"]}
+
+
+def stocktake_summary(con):
+    """棚卸しの進捗と差異。確認済み点数 / 在庫総点数 / 未確認(在庫台帳にあるが現物未確認=紛失疑い)一覧。"""
+    con.row_factory = sqlite3.Row
+    total = con.execute("SELECT COUNT(*) FROM products WHERE state='在庫'").fetchone()[0]
+    checked = con.execute("""SELECT COUNT(*) FROM stocktake_checks s
+                             JOIN products p ON p.product_key=s.product_key AND p.state='在庫'""").fetchone()[0]
+    unchecked = []
+    for r in con.execute("""SELECT product_no, name, location, list_price
+                            FROM products p WHERE p.state='在庫'
+                              AND p.product_key NOT IN (SELECT product_key FROM stocktake_checks)
+                            ORDER BY product_no"""):
+        unchecked.append({"product_no": r["product_no"], "name": r["name"],
+                          "location": r["location"], "list_price": r["list_price"]})
+    return {"total": total, "checked": checked, "unchecked": unchecked, "unchecked_count": len(unchecked)}
+
+
+def stocktake_reset(con):
+    """棚卸しの確認記録を全消去(新しい棚卸しを始める)。"""
+    con.execute("DELETE FROM stocktake_checks")
+    con.commit()
+    return {"ok": True}
 
 
 def build_blob(con):
