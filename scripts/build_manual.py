@@ -78,6 +78,7 @@ CSS = """
   .screen .nav .it{ padding:3px 6px; border-radius:5px; color:#5a6673; margin:1px 0; }
   .screen .nav .it.on{ background:var(--accent); color:#fff; font-weight:800; }
   .screen .main{ flex:1; padding:11px 13px; background:#fff; }
+  .shot{ display:block; width:100%; border:1px solid var(--line); border-radius:8px; box-shadow:0 1px 5px rgba(0,0,0,.14); margin:16px 0 4px; }
   .cap{ text-align:center; font-size:15px; color:var(--muted); margin:0 0 14px; }
   /* モック内部 */
   .mk-btns{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
@@ -131,6 +132,11 @@ def screen(active, main, cap):
             f'<div class="rowx"><div class="nav">{nav}</div>'
             f'<div class="main">{main}</div></div></div>'
             f'<div class="cap">▲ {cap}(画面イメージ)</div>')
+
+
+def img(name, cap):
+    return (f'<img class="shot" src="manual-img/{name}" alt="{cap}">'
+            f'<div class="cap">▲ {cap}(実際の画面)</div>')
 
 
 MENUGRID = """
@@ -208,7 +214,7 @@ def build_quick():
     b.append('<div class="note"><b>権限がパートの人</b>は、原価(下代)・粗利・商品在庫画面・設定は表示されません。</div>')
 
     b.append('<h2>1. レジで会計する</h2>')
-    b.append(screen("register", MK_REGISTER, "レジ画面"))
+    b.append(img("register.png", "レジ画面"))
     b.append(flow([
         ("お客様を選ぶ", "カタカナ名や電話番号で検索。新規は「＋新規顧客」。"),
         ("商品を明細に足す", "「＋商品番号で追加」でスキャン/入力。修理・電池は「＋番号なしで追加」。"),
@@ -220,7 +226,7 @@ def build_quick():
     b.append('<div class="tip"><b>掛売</b>にすると、その分がお客様の<b>売掛残</b>になります(現金締めには数えません)。</div>')
 
     b.append('<h2>2. 顧客を探す・登録する</h2>')
-    b.append(screen("customers", MK_CUSTOMER, "顧客管理画面"))
+    b.append(img("customers.png", "顧客管理画面"))
     b.append(flow([
         ("「👤 顧客管理」を開く", None),
         ("カナ・電話などで検索", "半角/全角・大小文字は気にしなくてOK。"),
@@ -229,7 +235,7 @@ def build_quick():
     ]))
 
     b.append('<h2>3. 売掛の入金を記録する</h2>')
-    b.append(screen("recv", MK_RECV, "売掛管理画面"))
+    b.append(img("receivables.png", "売掛管理画面"))
     b.append(flow([
         ("「💳 売掛管理」を開く", "残高の多い順に並びます。"),
         ("お客様の「入金」を押す", None),
@@ -238,7 +244,7 @@ def build_quick():
     ]))
 
     b.append('<h2>4. 商品を登録する</h2>')
-    b.append(screen("products", MK_PRODUCT, "商品・在庫(仕入登録)画面"))
+    b.append(img("products_purchase.png", "商品・在庫(仕入登録)画面"))
     b.append(flow([
         ("「◆ 商品・在庫」→「仕入登録」", None),
         ("品名・分類・仕入先・価格を入力", "宝石以外は宝飾専用の項目が隠れます。"),
@@ -253,7 +259,7 @@ def build_quick():
     ]))
 
     b.append('<h2>6. 修理を預かる</h2>')
-    b.append(screen("repair", MK_REPAIR, "修理伝票画面"))
+    b.append(img("repairs.png", "修理伝票画面"))
     b.append(flow([
         ("「🔧 修理伝票」→「＋新規預かり」", None),
         ("お客様・品物・内容を入力", "写真も撮って添付できます。"),
@@ -261,7 +267,7 @@ def build_quick():
     ]))
 
     b.append('<h2>7. 棚卸しをする</h2>')
-    b.append(screen("stocktake", MK_STOCK, "棚卸し画面"))
+    b.append(img("stocktake.png", "棚卸し画面"))
     b.append(flow([
         ("「📋 棚卸し」を開く", "開始日時が記録されます。"),
         ("現物を1点ずつスキャン", "商品番号を読み取り→「確認」。"),
@@ -301,7 +307,7 @@ def build_full():
 
     b.append('<h2>2. レジ(売上登録)</h2>')
     b.append('<p>お客様を選び、明細を作り、支払を確定する画面です。</p>')
-    b.append(screen("register", MK_REGISTER, "レジ画面"))
+    b.append(img("register.png", "レジ画面"))
     b.append('<h3>明細の作り方(ボタン)</h3>')
     b.append('<table>'
              '<tr><th>ボタン</th><th>使う場面</th></tr>'
@@ -323,7 +329,7 @@ def build_full():
              '</ul>')
 
     b.append('<h2>3. 顧客管理</h2>')
-    b.append(screen("customers", MK_CUSTOMER, "顧客管理画面"))
+    b.append(img("customers.png", "顧客管理画面"))
     b.append('<h3>検索</h3>')
     b.append('<p>顧客名・カナ・電話番号・担当者(番号でも可)・ランク・誕生月で絞り込めます。カナ検索は半角/全角・大小文字を自動でそろえて照合します。</p>')
     b.append('<h3>顧客詳細(タブ)</h3>')
@@ -338,6 +344,7 @@ def build_full():
     b.append('<h3>新規登録</h3><p>「＋新規顧客」から登録。郵便番号→住所の呼び出しに対応。</p>')
 
     b.append('<h2>4. 検索・分析</h2>')
+    b.append(img('search.png','検索・分析画面'))
     b.append('<table>'
              '<tr><th>タブ</th><th>内容</th></tr>'
              '<tr><td>詳細検索</td><td>顧客の属性 × 買った商品 × 処方箋を<b>掛け合わせ(AND)</b>で絞り込む横断検索。「同じ商品を買った人」「特定条件の人」を抽出。</td></tr>'
@@ -346,7 +353,7 @@ def build_full():
              '</table>')
 
     b.append('<h2>5. 売掛管理</h2>')
-    b.append(screen("recv", MK_RECV, "売掛管理画面"))
+    b.append(img("receivables.png", "売掛管理画面"))
     b.append('<p>売掛(未回収残高)のあるお客様を、残高の多い順に一覧します。誰がいくら・件数・最古買上日・最終入金日が見えます。</p>')
     b.append('<ul>'
              '<li><b>入金</b>: 入金額と方法(現金/銀行振込/カード/その他)を記録。残高が減り、履歴に残ります。</li>'
@@ -356,15 +363,16 @@ def build_full():
     b.append('<div class="note"><b>今後の予定</b>: 売掛を立てた「後から」の値引き・ポイント使用は、専用の操作として追加予定です(現金入金とは区別して扱います)。</div>')
 
     b.append('<h2>6. 商品・在庫(仕入登録)</h2>')
-    b.append(screen("products", MK_PRODUCT, "商品・在庫(仕入登録)画面"))
+    b.append(img("products_purchase.png", "商品・在庫(仕入登録)画面"))
     b.append('<h3>在庫一覧</h3>')
+    b.append(img('products_stock.png','商品・在庫(在庫一覧)画面'))
     b.append('<p>状態(在庫/売上/受託/返品)・仕入先・ジャンル(宝石/メガネ/時計/その他)で絞り込み。商品を開くと詳細・写真が見られ、修正できます。</p>')
     b.append('<div class="tip"><b>在庫数</b>は「状態＝在庫」の商品だけを数えます。売れた品・受託品は在庫数に混ざりません。</div>')
     b.append('<h3>仕入登録</h3>')
     b.append('<p>品名・分類・ブランド・地金・仕入先・仕入単価(下代)・上代・店舗などを入力します。宝石以外は宝飾専用の項目が隠れ、掛率・折数は自動計算です。商品写真もその場で撮る/選べます。</p>')
 
     b.append('<h2>7. 棚卸し</h2>')
-    b.append(screen("stocktake", MK_STOCK, "棚卸し画面"))
+    b.append(img("stocktake.png", "棚卸し画面"))
     b.append('<p>店頭・金庫の現物を1点ずつ「商品番号」で読み取り、在庫台帳と照合します。開始日時が記録されます。</p>')
     b.append('<ul>'
              '<li>スキャン/入力→「確認」で現物確認済みに。緑=確認、赤=注意(番号なし/売却済み)、既に確認済みの再スキャンはお知らせのみ。</li>'
@@ -374,7 +382,7 @@ def build_full():
     b.append('<div class="note">棚卸しは<b>パート権限では使えません</b>。</div>')
 
     b.append('<h2>8. 修理伝票</h2>')
-    b.append(screen("repair", MK_REPAIR, "修理伝票画面"))
+    b.append(img("repairs.png", "修理伝票画面"))
     b.append('<p>宝飾ナビには無かった新機能。お預かりした修理品を管理します。「＋新規預かり」でお客様・品物・内容・見込みを登録し、<b>写真</b>を撮って添付できます。預かり伝票を<b>印刷</b>して手渡し、状態(進行中/引渡済み)で管理します。</p>')
 
     b.append('<h2>9. 見積・請求</h2>')
@@ -387,6 +395,7 @@ def build_full():
              '</ul>')
 
     b.append('<h2>11. 設定・マスター</h2>')
+    b.append(img('settings.png','設定・マスター画面'))
     b.append('<p><b>マスタ管理</b>: 担当者・仕入先・商品分類・ブランド・石種・地金・購入動機・保管場所・支払方法・顧客ランク・地区を1画面で管理します。仕入先にはジャンル(宝石/メガネ/時計/その他)を設定でき、在庫一覧の絞り込みに使えます。</p>')
     b.append('<p><b>ログインユーザーと権限(管理者のみ)</b>: ユーザーの追加、役割(管理者/社員/パート)の設定、パスワードのリセット。</p>')
 
