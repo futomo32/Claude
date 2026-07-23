@@ -128,6 +128,7 @@ def ensure_schema(con):
         ("customers", "email", "TEXT"),
         ("customer_families", "linked_customer_id", "TEXT"),
         ("receivable_entries", "method", "TEXT"),  # 売掛入金の支払方法(現金/銀行振込/カード/その他。空=現金扱い)
+        ("repairs", "photo_files", "TEXT"),  # 修理お預かり品の写真ファイル名(カンマ区切り。B-6)
     ]
     changed = False
     for table, col, decl in adds:
@@ -284,7 +285,7 @@ def build_blob(con):
 
     repairs = []
     for r in cur.execute("""SELECT id,repair_no,customer_id,item_name,issue,estimate,
-                                   received_at,promised_at,status,completed_at,staff_name,note
+                                   received_at,promised_at,status,completed_at,staff_name,note,photo_files
                             FROM repairs ORDER BY id DESC"""):
         repairs.append({
             "id": r["id"], "repair_no": r["repair_no"], "customer_id": r["customer_id"],
@@ -292,6 +293,7 @@ def build_blob(con):
             "received_at": r["received_at"], "promised_at": r["promised_at"],
             "status": r["status"], "completed_at": r["completed_at"],
             "staff_name": r["staff_name"], "note": r["note"],
+            "photos": [x for x in (r["photo_files"] or "").split(",") if x],
         })
 
     # 在庫サマリ(状態=在庫の商品のみ)。会計確定・返品でリアルタイムに変わるため /api/stock_stats でも取り直せる。
@@ -370,7 +372,7 @@ def build_blob_light(con):
 
     repairs = []
     for r in cur.execute("""SELECT id,repair_no,customer_id,item_name,issue,estimate,
-                                   received_at,promised_at,status,completed_at,staff_name,note
+                                   received_at,promised_at,status,completed_at,staff_name,note,photo_files
                             FROM repairs ORDER BY id DESC"""):
         repairs.append({
             "id": r["id"], "repair_no": r["repair_no"], "customer_id": r["customer_id"],
@@ -378,6 +380,7 @@ def build_blob_light(con):
             "received_at": r["received_at"], "promised_at": r["promised_at"],
             "status": r["status"], "completed_at": r["completed_at"],
             "staff_name": r["staff_name"], "note": r["note"],
+            "photos": [x for x in (r["photo_files"] or "").split(",") if x],
         })
 
     stock_summary = stock_stats(con)
@@ -1636,6 +1639,20 @@ def add_repair(con, p):
          p.get("staff_name"), p.get("note")))
     con.commit()
     return {"id": cur.lastrowid, "repair_no": repair_no, "status": "預かり中"}
+
+
+def add_repair_photos(con, repair_id, filenames):
+    """修理伝票に写真ファイル名を追加する(既存に追記)。戻り値は更新後の全ファイル名リスト。"""
+    if not repair_id:
+        raise ValueError("修理伝票が指定されていません")
+    row = con.execute("SELECT photo_files FROM repairs WHERE id=?", (repair_id,)).fetchone()
+    if not row:
+        raise ValueError("対象の修理伝票が見つかりません")
+    cur = [x for x in (row[0] or "").split(",") if x]
+    cur.extend([f for f in (filenames or []) if f])
+    con.execute("UPDATE repairs SET photo_files=? WHERE id=?", (",".join(cur), repair_id))
+    con.commit()
+    return {"id": repair_id, "photos": cur}
 
 
 def update_repair_status(con, p):

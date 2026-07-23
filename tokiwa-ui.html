@@ -1948,6 +1948,14 @@
         <div class="field"><label>担当者</label><div style="display:flex;gap:0.3em"><input type="number" id="rep-staff-handler-code" class="num" placeholder="番号" style="width:4.5em;flex:none" title="担当者番号で選択"><select id="rep-staff-handler"></select></div></div>
       </div>
       <div class="field"><label>備考</label><input id="rep-note"></div>
+      <div class="field"><label>お預かり品の写真(任意・複数可)</label>
+        <input type="file" id="rep-photo-file" accept="image/*" capture="environment" multiple style="display:none">
+        <div style="display:flex;gap:0.5em;align-items:center;flex-wrap:wrap">
+          <button type="button" class="btn" id="rep-photo-btn">📷 写真を撮る / 選ぶ</button>
+          <span id="rep-photo-status" style="color:var(--muted);font-size:0.85em"></span>
+        </div>
+        <div id="rep-photo-thumbs" style="display:flex;gap:0.4em;flex-wrap:wrap;margin-top:0.5em"></div>
+      </div>
       <p id="repair-error" style="color:var(--danger);font-size:0.85em;margin:0.8rem 0 0;display:none"></p>
     </div>
     <div class="modal-foot">
@@ -4864,6 +4872,25 @@
       });
     });
   })();
+  // 修理お預かり品の写真(複数可。撮影/選択→リサイズ→repairPhotosへ)。B-6
+  (function () {
+    var f = document.getElementById("rep-photo-file"), btn = document.getElementById("rep-photo-btn");
+    if (!f || !btn) return;
+    btn.addEventListener("click", function () { f.click(); });
+    f.addEventListener("change", function () {
+      var files = Array.prototype.slice.call(f.files || []); f.value = "";
+      if (!files.length) return;
+      var st = document.getElementById("rep-photo-status");
+      var pending = files.length;
+      if (st) st.textContent = "画像を処理中…";
+      files.forEach(function (file) {
+        resizeImageToDataUrl(file, 1200, 0.8, function (d) {
+          if (d) repairPhotos.push(d);
+          if (--pending === 0) renderRepairPhotoThumbs();
+        });
+      });
+    });
+  })();
   function resetProductForm() {
     ["np-no", "np-name", "np-brand", "np-metal", "np-stone", "np-carat", "np-side", "np-cert", "np-cost", "np-list", "np-rate", "np-ori"].forEach(function (id) {
       document.getElementById(id).value = "";
@@ -5187,10 +5214,25 @@
     document.getElementById("rep-received").value = TODAY_ISO;
     document.getElementById("rep-promised").value = TODAY_ISO;
     document.getElementById("repair-error").style.display = "none";
+    repairPhotos = [];
+    renderRepairPhotoThumbs();
     document.getElementById("repair-modal").classList.add("show");
   }
   function closeRepairModal() { document.getElementById("repair-modal").classList.remove("show"); }
   function repairError(msg) { var e = document.getElementById("repair-error"); e.textContent = msg; e.style.display = "block"; }
+  /* 修理お預かり品の写真(撮影/選択→ブラウザでリサイズ→登録時にアップロード。B-6) */
+  var repairPhotos = [];  // dataURLの配列
+  function renderRepairPhotoThumbs() {
+    var box = document.getElementById("rep-photo-thumbs"); if (!box) return;
+    box.innerHTML = repairPhotos.map(function (d, i) {
+      return '<span style="position:relative;display:inline-block">' +
+        '<img src="' + d + '" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--line)">' +
+        '<button type="button" title="削除" onclick="removeRepairPhoto(' + i + ')" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:0;background:var(--danger);color:#fff;cursor:pointer;font-size:11px;line-height:1">×</button></span>';
+    }).join("");
+    var st = document.getElementById("rep-photo-status");
+    if (st) st.textContent = repairPhotos.length ? repairPhotos.length + "枚" : "";
+  }
+  function removeRepairPhoto(i) { repairPhotos.splice(i, 1); renderRepairPhotoThumbs(); }
   function saveRepair() {
     document.getElementById("repair-error").style.display = "none";
     if (!repairSelectedCust) { repairError("顧客を検索して選択してください。"); return; }
@@ -5210,19 +5252,31 @@
     var btn = document.getElementById("rep-save");
     btn.disabled = true; btn.textContent = "登録中…";
     function done(id, repairNo) {
-      D.repairs.unshift({
+      var rec = {
         id: id, repair_no: repairNo, customer_id: payload.customer_id, item_name: payload.item_name,
         issue: payload.issue, estimate: payload.estimate, received_at: payload.received_at,
         promised_at: payload.promised_at, status: "預かり中", completed_at: null,
-        staff_name: payload.staff_name, note: payload.note || null
-      });
-      btn.disabled = false; btn.textContent = "預かり登録して伝票を印刷";
-      closeRepairModal();
-      showToast(repairSelectedCust[1] + "様の修理を預かりました(" + repairNo + ")。" +
-        (window.TOKIWA_API ? "データベースに保存済み。" : ""));
-      renderRepairs();
-      renderHomeTiles();
-      printRepairSlip(D.repairs[0]);
+        staff_name: payload.staff_name, note: payload.note || null, photos: []
+      };
+      D.repairs.unshift(rec);
+      var finish = function () {
+        btn.disabled = false; btn.textContent = "預かり登録して伝票を印刷";
+        closeRepairModal();
+        showToast(repairSelectedCust[1] + "様の修理を預かりました(" + repairNo + ")。" +
+          (window.TOKIWA_API ? "データベースに保存済み。" : ""));
+        renderRepairs();
+        renderHomeTiles();
+        printRepairSlip(rec);
+      };
+      // 写真があればアップロードしてから完了(サーバー稼働時のみ)
+      if (window.TOKIWA_API && id && repairPhotos.length) {
+        fetch(window.TOKIWA_API + "/repair_photo", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repair_id: id, images: repairPhotos })
+        }).then(function (r) { return r.json(); }).then(function (res) {
+          if (res && res.photos) rec.photos = res.photos;
+        }).catch(function () {}).then(finish);
+      } else { finish(); }
     }
     if (window.TOKIWA_API) {
       fetch(window.TOKIWA_API + "/repair", {
@@ -5270,6 +5324,11 @@
       '<tr><th>引渡予定日</th><td>' + esc(dash(r.promised_at)) + '</td></tr>' +
       '<tr><th>担当者</th><td>' + esc(shortName(r.staff_name) || "—") + '</td></tr>' +
       '</tbody></table>' +
+      ((r.photos && r.photos.length)
+        ? '<div style="margin:0.6rem 0;display:flex;gap:0.4em;flex-wrap:wrap">' + r.photos.map(function (fn) {
+            var u = prodImgUrl(fn); return u ? '<img src="' + esc(u) + '" style="width:120px;height:120px;object-fit:cover;border:1px solid #ccc;border-radius:4px">' : "";
+          }).join("") + '</div>'
+        : "") +
       '<p class="doc-note">お預かりした品物は引渡予定日頃にご連絡いたします。本状は引渡時にご提示ください。</p>';
     printDocument(buildDocHtml("修理お預かり票", r.repair_no, c ? c[1] : r.customer_id, body));
   }
@@ -5291,8 +5350,15 @@
       var actions = '<button class="btn" onclick="printRepairSlip(D.repairs.filter(function(x){return x.id===' + r.id + ';})[0])">伝票印刷</button>' +
         ' <select id="rst-' + r.id + '" style="margin-left:0.3em">' + opts + '</select>' +
         ' <button class="btn btn-primary" onclick="setRepairStatus(' + r.id + ',document.getElementById(\'rst-' + r.id + '\').value)">更新</button>';
+      var photos = r.photos || [];
+      var pcell = esc(dash(r.item_name));
+      if (photos.length) {
+        var turl = prodImgUrl(photos[0]);
+        pcell = (turl ? '<img class="pm-thumb" loading="lazy" src="' + esc(turl) + '" onerror="this.style.display=\'none\'" style="vertical-align:middle;margin-right:0.4em">' : '') +
+          esc(dash(r.item_name)) + (photos.length > 1 ? ' <span class="chip chip-plain">📷' + photos.length + '</span>' : ' <span class="chip chip-plain">📷</span>');
+      }
       return '<tr><td class="num">' + esc(r.repair_no) + '</td><td>' + esc(c ? c[1] : r.customer_id) +
-        '</td><td>' + esc(dash(r.item_name)) + '</td><td>' + esc(dash(r.issue)) +
+        '</td><td>' + pcell + '</td><td>' + esc(dash(r.issue)) +
         '</td><td class="num">' + esc(dash(r.received_at)) + '</td><td class="num">' + esc(dash(r.promised_at)) +
         '</td><td class="r num">¥' + num(r.estimate || 0) + '</td><td><span class="chip ' +
         (REPAIR_CHIP[r.status] || "chip-plain") + '">' + esc(r.status) + '</span></td><td>' + actions + '</td></tr>';

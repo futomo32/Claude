@@ -655,6 +655,27 @@ class Handler(BaseHTTPRequestHandler):
                 result = db_query.add_repair(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/repair_photo":
+                # 修理お預かり品の写真登録(ブラウザでリサイズ済みJPEGのdataURLを複数受け取り保存)。B-6
+                rid = payload.get("repair_id")
+                images = payload.get("images") or []
+                if not rid or not isinstance(images, list) or not images:
+                    raise ValueError("修理伝票と画像を指定してください")
+                if len(images) > 20:
+                    raise ValueError("一度にアップロードできるのは20枚までです")
+                os.makedirs(IMAGES, exist_ok=True)
+                saved = []
+                for data in images:
+                    raw = _decode_image_b64(data)
+                    fname = f"repair_{int(rid)}_{uuid.uuid4().hex}.jpg"
+                    with open(os.path.join(IMAGES, fname), "wb") as f:
+                        f.write(raw)
+                    saved.append(fname)
+                reset_img_index()
+                con = connect()
+                result = db_query.add_repair_photos(con, rid, saved)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/repair_status":
                 con = connect()
                 result = db_query.update_repair_status(con, payload)
