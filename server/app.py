@@ -76,6 +76,7 @@ def connect():
     # 店内共有(複数PC同時アクセス)でも読み書きが衝突しにくいようWALモード
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA busy_timeout=5000")
+    con.create_function("normjp", 1, db_query.normjp)  # 検索の正規化(半角全角・大小文字)をSQLで使えるように
     db_query.ensure_schema(con)  # pull後にmigrate忘れでも動くよう不足列を自動補完
     return con
 

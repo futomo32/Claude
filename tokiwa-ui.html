@@ -777,7 +777,7 @@
       <div class="pos-grid">
         <div class="card">
           <div class="search-row">
-            <div class="field search-wrap" style="flex:1.4"><label>顧客(カナ・TEL・会員証)<span class="req">必須</span></label>
+            <div class="field search-wrap" style="flex:1.4"><label>顧客(カナ・TEL)<span class="req">必須</span></label>
               <input id="pos-cust-input" placeholder="カタカナ・電話番号で検索" autocomplete="off">
               <div class="search-drop" id="pos-cust-drop"></div>
             </div>
@@ -2400,10 +2400,19 @@
   D.cashMovements = D.cashMovements || [];
   var API = window.TOKIWA_API || null;         // サーバー経由か(nullなら単体HTML=全データ埋め込み)
   var _loadedDetail = {};                        // 顧客詳細を取得済みの顧客ID
+  var _loadingDetail = {};                        // 取得中の顧客ID → 待機中コールバック配列
   // 顧客詳細(売上/処方箋/ポイント履歴等)を必要時に取得してから cb を呼ぶ。
+  // ★ダブルクリック連打対策: 取得中は新たなfetchを始めず進行中の取得に相乗りし、
+  //   完了時にまとめて1回だけ処理する(多重fetch・多重描画を防ぐ)。
   function ensureCustomerDetail(id, cb) {
     id = String(id);
     if (!API || _loadedDetail[id]) { cb(); return; }
+    if (_loadingDetail[id]) { _loadingDetail[id].push(cb); return; }  // 取得中: 相乗り
+    _loadingDetail[id] = [cb];
+    var runAll = function () {
+      var cbs = _loadingDetail[id] || []; delete _loadingDetail[id];
+      cbs.forEach(function (f) { try { f(); } catch (e) { console.error(e); } });
+    };
     fetch(API + "/customer_detail?id=" + encodeURIComponent(id))
       .then(function (r) { return r.json(); })
       .then(function (d) {
@@ -2411,13 +2420,13 @@
         (D.salesVoided = D.salesVoided || {})[id] = d.salesVoided || [];  // 取消済み明細(監査ログ)
         D.rxCandidates[id] = d.rxCandidates || []; D.pointTx[id] = d.pointTx || [];
         D.approach[id] = d.approach || [];
-        _loadedDetail[id] = true; cb();
+        _loadedDetail[id] = true; runAll();
       })
       .catch(function (e) {
         console.error("顧客詳細の取得に失敗", e);
         // 失敗しても空で画面は開く(全滅より安全)
         ["sales", "rx", "rxCandidates", "pointTx", "approach"].forEach(function (k) { D[k][id] = D[k][id] || []; });
-        cb();
+        runAll();
       });
   }
   if (!D.repairs) D.repairs = [];
@@ -2451,12 +2460,24 @@
   function setupCustSearch(inputId, dropId, onSelect) {
     var input = document.getElementById(inputId), drop = document.getElementById(dropId);
     if (!input) return;
-    function close() { drop.classList.remove("show"); drop.innerHTML = ""; }
-    input.addEventListener("input", function () {
+    var hits = [], activeIdx = -1;   // activeIdx=-1: どれも選んでいない(Enterで勝手に先頭を選ばない)
+    function close() { drop.classList.remove("show"); drop.innerHTML = ""; hits = []; activeIdx = -1; }
+    function paintActive() {
+      var opts = drop.querySelectorAll(".search-opt");
+      opts.forEach(function (el, i) { el.classList.toggle("active", i === activeIdx); });
+      if (activeIdx >= 0 && opts[activeIdx] && opts[activeIdx].scrollIntoView) opts[activeIdx].scrollIntoView({ block: "nearest" });
+    }
+    function choose(c) {
+      if (!c) return;
+      input.value = c[1];  // IDは覚えていない・打ち直し時に邪魔になるため表示しない
+      close();
+      if (onSelect) onSelect(c);
+    }
+    function runSearch() {
       var q = input.value.trim();
       if (!q) { close(); if (onSelect) onSelect(null); return; }
       var nq = normKana(q), dq = q.replace(/[^0-9]/g, "");
-      var hits = D.customers.filter(function (c) {
+      hits = D.customers.filter(function (c) {
         if (String(c[0]) === q) return true;  // 顧客ID完全一致(カード読取=ユニークキーで1名に確定)
         if (nq && (normKana(c[1]).indexOf(nq) >= 0 || normKana(c[2]).indexOf(nq) >= 0)) return true;
         if (dq && String(c[3]).replace(/[^0-9]/g, "").indexOf(dq) >= 0) return true;
@@ -2464,8 +2485,9 @@
       });
       var many = hits.length > 1;  // 同姓同名など複数該当時は識別情報を強調
       hits = hits.slice(0, 15);
+      activeIdx = -1;  // 打つたびに選択をリセット(誤確定防止)
       drop.innerHTML = hits.length
-        ? (many ? '<div class="search-empty" style="border-bottom:1px solid var(--line)">' + hits.length + '件が該当。年齢・最終購入日で見分けてください</div>' : "") +
+        ? (many ? '<div class="search-empty" style="border-bottom:1px solid var(--line)">' + hits.length + '件が該当。↑↓で選んでEnter(年齢・最終購入日で見分け)</div>' : "") +
           hits.map(function (c) {
             var age = ageFrom(c[6]);
             var last = c[13] ? "最終 " + c[13] : "購入なし";
@@ -2476,17 +2498,26 @@
           }).join("")
         : '<div class="search-empty">該当する顧客が見つかりません</div>';
       drop.classList.add("show");
-      drop.querySelectorAll(".search-opt").forEach(function (el) {
-        el.addEventListener("click", function () {
-          var c = findCust(el.getAttribute("data-id"));
-          input.value = c[1]; // IDは覚えていない・打ち直し時に邪魔になるため表示しない
-          close();
-          if (onSelect) onSelect(c);
-        });
+      drop.querySelectorAll(".search-opt").forEach(function (el, i) {
+        el.addEventListener("click", function () { choose(hits[i]); });
+        el.addEventListener("mousemove", function () { if (activeIdx !== i) { activeIdx = i; paintActive(); } });
       });
-    });
+    }
+    input.addEventListener("input", runSearch);
     input.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") { var first = drop.querySelector(".search-opt"); if (first) { e.preventDefault(); first.click(); } }
+      var open = drop.classList.contains("show") && hits.length;
+      if (e.key === "Escape") { close(); return; }
+      if (!open) return;
+      if (e.key === "ArrowDown") { e.preventDefault(); activeIdx = Math.min(hits.length - 1, activeIdx + 1); paintActive(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); activeIdx = Math.max(0, activeIdx - 1); paintActive(); }
+      else if (e.key === "Enter") {
+        e.preventDefault();
+        // 案B: ハイライト中があればそれを確定 / 案C: 候補が1件だけなら確定 /
+        //      複数候補で未選択なら確定しない(勝手に先頭にしない=誤確定防止)
+        if (activeIdx >= 0) choose(hits[activeIdx]);
+        else if (hits.length === 1) choose(hits[0]);
+        // それ以外は何もしない(↑↓で選んでもらう)
+      }
     });
     document.addEventListener("click", function (e) {
       if (!input.contains(e.target) && !drop.contains(e.target)) close();

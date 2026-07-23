@@ -2,9 +2,18 @@
 
 UIの描画コードを変えずに済むよう、埋め込み版と同じ配列の並びで返す。
 """
-import hashlib, json, re, secrets, sqlite3, datetime
+import hashlib, json, re, secrets, sqlite3, datetime, unicodedata
 
 GLASS_PAT = re.compile(r"メガネ|眼鏡|レンズ|フレーム|ﾒｶﾞﾈ|ﾚﾝｽﾞ|ﾌﾚｰﾑ")
+
+
+def normjp(s):
+    """検索照合用の正規化(1か所に集約)。全角/半角・半角カナ/全角カナ・大文字/小文字の
+    違いを吸収する。NFKC(全角英数→半角・半角カナ→全角カナ等)＋casefold(大小文字)。
+    ここを直せば、これを使う全項目の照合ルールが一斉に変わる。SQLiteにも関数登録して使う。"""
+    if s is None:
+        return None
+    return unicodedata.normalize("NFKC", str(s)).casefold()
 FRAME_PAT = re.compile(r"フレーム|ﾌﾚｰﾑ|frame", re.I)
 LENS_PAT = re.compile(r"レンズ|ﾚﾝｽﾞ|lens|非球面|累進", re.I)
 
@@ -766,8 +775,9 @@ def detailed_customer_search(con, p):
     if g("exclude") != "0":  # 既定で集計対象外(ななし等)を除外
         where.append("COALESCE(c.exclude_stats,0)=0")
     if g("name"):
-        where.append("(c.name LIKE ? OR c.kana LIKE ? OR c.customer_id = ?)")
-        args += ["%" + g("name") + "%", "%" + g("name") + "%", g("name")]
+        nn = "%" + normjp(g("name")) + "%"
+        where.append("(normjp(c.name) LIKE ? OR normjp(c.kana) LIKE ? OR c.customer_id = ?)")
+        args += [nn, nn, g("name")]
     if g("staff"):
         where.append("c.staff_name = ?"); args.append(g("staff"))
     if g("rank"):
@@ -778,7 +788,7 @@ def detailed_customer_search(con, p):
         except ValueError:
             pass
     if g("district"):
-        where.append("c.district LIKE ?"); args.append("%" + g("district") + "%")
+        where.append("normjp(c.district) LIKE ?"); args.append("%" + normjp(g("district")) + "%")
     if g("gender"):
         where.append("c.gender = ?"); args.append(g("gender"))
     if g("dm_ok") == "1":
@@ -807,11 +817,11 @@ def detailed_customer_search(con, p):
         if g("p_metal"):
             conds.append("pr.metal = ?"); a.append(g("p_metal"))
         if g("p_stone"):
-            conds.append("pr.center_stone LIKE ?"); a.append("%" + g("p_stone") + "%")
+            conds.append("normjp(pr.center_stone) LIKE ?"); a.append("%" + normjp(g("p_stone")) + "%")
         if g("p_supplier"):
             conds.append("pr.supplier = ?"); a.append(g("p_supplier"))
         if g("p_name"):
-            conds.append("COALESCE(sl.free_name, pr.name) LIKE ?"); a.append("%" + g("p_name") + "%")
+            conds.append("normjp(COALESCE(sl.free_name, pr.name)) LIKE ?"); a.append("%" + normjp(g("p_name")) + "%")
         return conds, a
 
     def exists_sale(extra_conds, extra_args):
@@ -849,8 +859,9 @@ def detailed_customer_search(con, p):
     if g("rx_purpose"):
         rxc.append("rx.purpose = ?"); rxa.append(g("rx_purpose"))
     if g("rx_lens"):
-        rxc.append("(rx.lens_name LIKE ? OR rx.frame_name LIKE ?)")
-        rxa += ["%" + g("rx_lens") + "%", "%" + g("rx_lens") + "%"]
+        rl = "%" + normjp(g("rx_lens")) + "%"
+        rxc.append("(normjp(rx.lens_name) LIKE ? OR normjp(rx.frame_name) LIKE ?)")
+        rxa += [rl, rl]
     if g("rx_from"):
         rxc.append("rx.rx_date >= ?"); rxa.append(g("rx_from"))
     if g("rx_to"):
