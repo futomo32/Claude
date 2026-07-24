@@ -1713,6 +1713,8 @@
       <div class="field"><label>メーカー(仕入先)</label><select id="cs-supplier"><option value="">選択…</option></select></div>
       <div class="field"><label>品名(任意)</label><input id="cs-name" placeholder="未入力なら「受託品」"></div>
       <div class="field"><label>金額(税込)</label><input id="cs-amount" class="num" inputmode="numeric" placeholder="0"></div>
+      <label style="display:flex;align-items:center;gap:0.4em;margin:0.5rem 0 0;font-size:0.9em;cursor:pointer">
+        <input type="checkbox" id="cs-fix"> このメーカーで固定(催事モード：金額だけで連続追加)</label>
       <p id="cs-error" style="color:var(--danger);font-size:0.85em;margin:0.5rem 0 0;display:none"></p>
     </div>
     <div class="modal-foot">
@@ -2247,13 +2249,19 @@
   function openFreePicker() { document.getElementById("free-modal").classList.add("show"); }
   function closeFreePicker() { document.getElementById("free-modal").classList.remove("show"); }
   /* 受託品を追加(Phase1 A方式)。メーカーと金額だけで受託商品を即作成し、明細に載せる。 */
+  var consignMaker = "";   // 直前に選んだメーカー(次回の既定に使う)
+  var consignFix = false;  // 催事モード:メーカー固定
   function openConsignModal() {
     if (!API) { showToast("受託品はサーバー起動時に使えます。"); return; }
     document.getElementById("cs-error").style.display = "none";
     document.getElementById("cs-name").value = "";
     document.getElementById("cs-amount").value = "";
-    document.getElementById("cs-supplier").selectedIndex = 0;
+    document.getElementById("cs-fix").checked = consignFix;
+    if (consignMaker) _setSelectPreserving("cs-supplier", consignMaker);  // 直前/固定メーカーを既定
+    else document.getElementById("cs-supplier").selectedIndex = 0;
     document.getElementById("consign-modal").classList.add("show");
+    // メーカーが決まっていれば金額へ、無ければメーカー選択へフォーカス
+    setTimeout(function () { (consignMaker ? document.getElementById("cs-amount") : document.getElementById("cs-supplier")).focus(); }, 50);
   }
   function closeConsignModal() { document.getElementById("consign-modal").classList.remove("show"); }
   function addConsignment(btn) {
@@ -2273,8 +2281,17 @@
       posLines.push({ kind: "stock", key: res.product_key, no: res.product_no, name: res.name,
                       info: "受託(" + res.supplier + ")", list: res.amount || 0, amount: res.amount || 0, img: null });
       renderPosLines();
-      closeConsignModal();
+      consignMaker = res.supplier;  // 直前メーカーを記憶(次回の既定)
+      consignFix = document.getElementById("cs-fix").checked;
       showToast("受託品「" + res.name + "」(" + res.supplier + ")を明細に追加しました。金額を確認してください。");
+      if (consignFix) {
+        // 催事モード:モーダルは開いたまま、金額・品名だけクリアして連続入力
+        document.getElementById("cs-name").value = "";
+        document.getElementById("cs-amount").value = "";
+        document.getElementById("cs-amount").focus();
+      } else {
+        closeConsignModal();
+      }
     }).catch(function (e) { btn.disabled = false; err.textContent = "追加に失敗: " + (e.message || e); err.style.display = "block"; });
   }
   function pickFree(name, amount, pending) {
@@ -4406,8 +4423,22 @@
       return '<tr' + (u.active ? '' : ' style="color:var(--muted)"') + '><td class="num">' + esc(u.id) + '</td><td>' + esc(u.name) +
         '</td><td>' + esc(ROLE_LABELS[u.role] || u.role) + '</td><td>' + (u.active ? "有効" : '<span class="chip chip-danger">無効</span>') +
         '</td><td>' + (u.has_pw ? "設定済み" : '<span class="chip chip-warn">未設定(初回ログインで設定)</span>') +
-        '</td><td><button class="btn" onclick="editAppUser(' + i + ')">編集</button></td></tr>';
+        '</td><td style="white-space:nowrap"><button class="btn" onclick="editAppUser(' + i + ')">編集</button> ' +
+        '<button class="btn" onclick="logoutAppUser(' + i + ')" title="この人がログイン中の全端末をログアウト。パスワードは変わらず入り直せます">全端末ログアウト</button></td></tr>';
     }).join("") || '<tr><td colspan="6" style="color:var(--muted)">ユーザーがいません。</td></tr>';
+  }
+  function logoutAppUser(i) {
+    var u = uaUsers[i];
+    if (!u || !API) return;
+    if (!confirm(u.name + "(" + u.id + ") を全端末からログアウトします。よろしいですか?\n※パスワードは変わりません。本人は入り直せます。")) return;
+    fetch(API + "/app_user_logout", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: u.id })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (res.error) throw new Error(res.error);
+      uaUsers = res.users || uaUsers;
+      renderAppUsers();
+      showToast(u.name + " を全端末からログアウトしました。");
+    }).catch(function (e) { showToast("ログアウトに失敗: " + (e.message || e)); });
   }
   function editAppUser(i) {
     var u = uaUsers[i];

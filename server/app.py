@@ -400,7 +400,7 @@ class Handler(BaseHTTPRequestHandler):
         "/api/stocktake_scan", "/api/stocktake_reset",
     }
     # 管理者のみの操作(担当者マスタ・ログインユーザー管理)
-    ADMIN_ONLY_POSTS = {"/api/staff", "/api/app_user"}
+    ADMIN_ONLY_POSTS = {"/api/staff", "/api/app_user", "/api/app_user_logout"}
 
     def do_POST(self):
         try:
@@ -450,6 +450,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/app_user":
                 con = connect()
                 result = db_query.save_app_user(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/app_user_logout":
+                con = connect()
+                result = db_query.logout_user_all(con, payload.get("id"))
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/checkout":

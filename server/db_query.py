@@ -2269,3 +2269,14 @@ def save_app_user(con, p):
         con.execute("DELETE FROM app_sessions WHERE user_id=?", (uid,))  # 無効化=即ログアウト
     con.commit()
     return {"users": list_app_users(con)}
+
+
+def logout_user_all(con, uid):
+    """指定ユーザーを全端末から強制ログアウト(セッションを全破棄)。
+    パスワード・有効状態は変えないので、本人は同じパスワードで入り直せる。"""
+    uid = str(uid or "").strip()
+    if not uid:
+        raise ValueError("ユーザーが指定されていません")
+    con.execute("DELETE FROM app_sessions WHERE user_id=?", (uid,))
+    con.commit()
+    return {"users": list_app_users(con), "logged_out": uid}
