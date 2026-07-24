@@ -732,9 +732,9 @@ def main():
     print(f"トキワ起動: http://localhost:{port}/")
     if lan:
         ip = lan_ip()
-        print("【店内共有モード】他のPCからは下のURLで開けます:")
+        print("【店内共有モード】他のPC・スマホ・iPadから下のURLで開けます(同じLAN内):")
         print(f"  http://{ip or 'このPCのIPアドレス'}:{port}/")
-        print("  ※他PCではレジ(会計)は使えません(閲覧・顧客登録・商品登録のみ)")
+        print("  ※各端末でログインが必要です。使える範囲はログインした人の権限(管理者/社員/パート)で決まります")
         print("  ※初回はWindowsファイアウォールの許可画面が出たら「アクセスを許可」してください")
     else:
         print("  → このPC専用です。他のPCから使う場合は「店内共有で起動.bat」を使ってください。")
