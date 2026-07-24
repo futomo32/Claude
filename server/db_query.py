@@ -185,7 +185,9 @@ def stocktake_scan(con, product_no):
     no = str(product_no or "").strip()
     if not no:
         raise ValueError("商品番号を入力してください")
-    rows = con.execute("SELECT product_key, name, state, location FROM products WHERE product_no=?", (no,)).fetchall()
+    where, wargs = _resolve_code_conditions(no)  # バーコード(EAN-13)は先頭10桁で照合
+    rows = con.execute(
+        f"SELECT product_key, name, state, location FROM products WHERE {where}", wargs).fetchall()
     if not rows:
         return {"result": "not_found", "product_no": no, "message": "その商品番号は台帳にありません"}
     instock = [r for r in rows if r["state"] == "在庫"]
@@ -586,6 +588,32 @@ PRODUCT_SORT_COLS = {"no": "product_no", "name": "name", "cat": "category",
                      "loc": "location", "supplier": "supplier"}
 
 
+def _ean13_base(code):
+    """スキャン値が EAN-13(13桁の数字・チェックデジット一致)なら、商品識別に使う
+    先頭10桁を返す。宝飾ナビのタグは 管理番号の先頭4区画(XXXXX-Y-ZZ-WW=10桁)＋'00'＋
+    チェックデジット の EAN-13。末尾区画(VVV)はバーコードに入らないため先頭10桁で照合する。
+    手入力の商品番号(R-5000 / 17543-1-01-20-130 等)は EAN-13 でないので None を返す。"""
+    s = str(code or "").strip()
+    if len(s) != 13 or not s.isdigit():
+        return None
+    digs = [int(c) for c in s]
+    chk = (10 - sum(d * (3 if i % 2 else 1) for i, d in enumerate(digs[:12])) % 10) % 10
+    if chk != digs[12]:
+        return None
+    return s[:10]
+
+
+def _resolve_code_conditions(code):
+    """スキャン/入力値から products.product_no 照合用の (whereSQL, args) を返す。
+    EAN-13 バーコードなら先頭10桁で前方一致(ハイフン有無に依らない)、
+    そうでなければ商品番号の完全一致。"""
+    raw = str(code or "").strip()
+    base = _ean13_base(raw)
+    if base:
+        return ("(product_no = ? OR REPLACE(product_no,'-','') LIKE ?)", [raw, base + "%"])
+    return ("product_no = ?", [raw])
+
+
 def search_products(con, q="", cat="", state="", supplier="", genre="", sort="no", order="desc", limit=50, offset=0):
     """商品検索(在庫一覧・レジの商品ピッカー用)。全商品(21万件)を送らずサーバーで絞り込む。
     戻り値 {rows:[...], total:N}。rows は
@@ -600,9 +628,14 @@ def search_products(con, q="", cat="", state="", supplier="", genre="", sort="no
         limit, offset = 50, 0
     where, args = [], []
     if q:
-        where.append("(product_no LIKE ? OR name LIKE ?)")
         like = "%" + q.replace("%", "").replace("_", "") + "%"
-        args += [like, like]
+        base = _ean13_base(q)  # バーコード(EAN-13)なら先頭10桁で管理番号に前方一致
+        if base:
+            where.append("(product_no LIKE ? OR name LIKE ? OR REPLACE(product_no,'-','') LIKE ?)")
+            args += [like, like, base + "%"]
+        else:
+            where.append("(product_no LIKE ? OR name LIKE ?)")
+            args += [like, like]
     if cat:
         where.append("category = ?"); args.append(cat)
     if state:
