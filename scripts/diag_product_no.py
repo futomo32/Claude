@@ -75,6 +75,24 @@ def main():
     except sqlite3.Error as e:
         print("  取得不可:", e)
 
+    print("\n[採番ルール決めの参考]")
+    for n in (5, 6):
+        mx = one(con, f"SELECT MAX(CAST(product_no AS INTEGER)) FROM products "
+                      f"WHERE {numeric} AND LENGTH(product_no)={n}")
+        print(f"  {n}桁の商品番号の最大値: {mx}")
+    print("  現在の在庫(state=在庫)の5桁商品番号・大きい順10件:")
+    try:
+        rows = con.execute(
+            "SELECT product_no, name FROM products WHERE state='在庫' "
+            "AND product_no GLOB '[0-9]*' AND LENGTH(product_no)=5 "
+            "ORDER BY CAST(product_no AS INTEGER) DESC LIMIT 10").fetchall()
+        for pno, name in rows:
+            print(f"     {pno} : {name}")
+        if not rows:
+            print("     (該当なし)")
+    except sqlite3.Error as e:
+        print("     取得不可:", e)
+
     con.close()
     print("\n※ 内部キー(product_key)は常に一意なので、表示番号(product_no)が重複・9桁でも")
     print("   売上・在庫・売掛のリンクは壊れません。番号の振り直しも安全です。")
