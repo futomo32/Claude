@@ -311,6 +311,11 @@ class Handler(BaseHTTPRequestHandler):
                         result = {"brands": db_query.product_brands(con)}
                     elif path == "/api/supplier_master":
                         result = {"suppliers": db_query.list_supplier_master(con)}
+                    elif path == "/api/consignment_list":
+                        if role == "part":  # 原価を含むためパートには出さない
+                            result = {"rows": []}
+                        else:
+                            result = db_query.consignment_list(con)
                     elif path == "/api/staff":
                         result = {"staff": db_query.list_staff(con)}
                     elif path == "/api/staff_junk":
@@ -397,7 +402,7 @@ class Handler(BaseHTTPRequestHandler):
         "/api/product_image", "/api/product_image_clear",
         "/api/photo_pool", "/api/photo_pool_assign", "/api/photo_pool_delete",
         "/api/supplier_genre", "/api/supplier_fucho", "/api/master_item", "/api/rank_apply", "/api/rank_rules",
-        "/api/stocktake_scan", "/api/stocktake_reset",
+        "/api/stocktake_scan", "/api/stocktake_reset", "/api/settle_consignment",
     }
     # 管理者のみの操作(担当者マスタ・ログインユーザー管理)
     ADMIN_ONLY_POSTS = {"/api/staff", "/api/app_user", "/api/app_user_logout"}
@@ -553,6 +558,11 @@ class Handler(BaseHTTPRequestHandler):
                 # 受託品をレジに通すための商品作成(催事)。原価は出さないためパートも可(会計操作の一部)
                 con = connect()
                 result = db_query.add_consignment(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/settle_consignment":
+                con = connect()
+                result = db_query.settle_consignment(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/staff":

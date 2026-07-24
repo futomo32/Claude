@@ -1095,6 +1095,7 @@
       <div class="tabs" data-tabgroup="prod">
         <button class="tab active" data-tab="p-stock">在庫一覧</button>
         <button class="tab" data-tab="p-purchase">仕入登録</button>
+        <button class="tab" data-tab="p-consign" onclick="loadConsignment()">受託精算</button>
         <button class="btn" style="margin-left:auto" onclick="openPhotoPool('manage')" title="スマホでまとめて撮った商品写真を先にアップロード・整理できます">📷 写真プール</button>
       </div>
 
@@ -1184,6 +1185,19 @@
           <div class="form-actions">
             <button class="btn" onclick="resetProductForm()">中止</button>
             <button class="btn btn-primary" onclick="saveProduct(this)">登録する</button>
+          </div>
+        </div>
+      </div>
+      <!-- 受託精算(Phase2): 催事で売った受託品の原価を後日入力して確定 -->
+      <div class="tabpane" id="p-consign">
+        <div class="card">
+          <p style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">催事などで売った<b>受託品</b>の後日精算です。メーカーの<b>納品書</b>が届いたら、各品の<b>原価(下代)</b>を入れて「精算」を押してください。精算すると<b>粗利が正しく計算</b>されます。未精算を上に表示します。</p>
+          <div class="tiles report-tiles" id="cn-tiles"></div>
+          <div class="table-scroll" style="margin-top:0.6rem">
+            <table class="data">
+              <thead><tr><th>メーカー</th><th>品名</th><th>売れた日</th><th class="r">売価</th><th class="r">原価(下代)</th><th>状態</th><th></th></tr></thead>
+              <tbody id="cn-tbody"><tr><td colspan="7" style="color:var(--muted)">「受託精算」タブを開くと読み込みます。</td></tr></tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -2293,6 +2307,59 @@
         closeConsignModal();
       }
     }).catch(function (e) { btn.disabled = false; err.textContent = "追加に失敗: " + (e.message || e); err.style.display = "block"; });
+  }
+  /* 受託精算(Phase2): 催事で売った受託品の原価を後日入力して確定 */
+  var cnRows = [];
+  function loadConsignment() {
+    var tb = document.getElementById("cn-tbody");
+    if (!API) { tb.innerHTML = '<tr><td colspan="7" style="color:var(--muted)">サーバー起動時に使えます。</td></tr>'; return; }
+    tb.innerHTML = '<tr><td colspan="7" style="color:var(--muted)">読み込み中…</td></tr>';
+    fetch(API + "/consignment_list").then(function (r) { return r.json(); }).then(function (res) {
+      cnRows = res.rows || [];
+      renderConsignment();
+    }).catch(function () { tb.innerHTML = '<tr><td colspan="7" style="color:var(--muted)">読み込みに失敗しました。</td></tr>'; });
+  }
+  function cnTile(label, value, cls) {
+    return '<div class="tile"><div class="t-label">' + label + '</div><div class="t-value num"' +
+      (cls ? ' style="color:var(--warn)"' : "") + '>' + value + '</div></div>';
+  }
+  function renderConsignment() {
+    var tb = document.getElementById("cn-tbody");
+    var unsettled = 0, settled = 0, makers = {}, margin = 0;
+    cnRows.forEach(function (r) {
+      if (r.settled) { settled++; if (r.list_price != null && r.cost_price != null) margin += (r.list_price - r.cost_price); }
+      else unsettled++;
+      if (r.supplier) makers[r.supplier] = 1;
+    });
+    document.getElementById("cn-tiles").innerHTML =
+      cnTile("未精算", unsettled + "件", unsettled > 0) +
+      cnTile("精算済み", settled + "件", false) +
+      cnTile("メーカー数", Object.keys(makers).length + "", false) +
+      cnTile("粗利(精算済)", "¥" + num(margin), false);
+    tb.innerHTML = cnRows.length ? cnRows.map(function (r, i) {
+      var costVal = (r.cost_price != null ? r.cost_price : "");
+      var chip = r.settled ? '<span class="chip chip-green">精算済</span>' : '<span class="chip chip-warn">未精算</span>';
+      return '<tr><td>' + esc(dash(r.supplier)) + '</td><td>' + esc(dash(r.name)) + '</td>' +
+        '<td>' + esc(dash(r.sold_at)) + '</td><td class="r num">' + (r.list_price != null ? "¥" + num(r.list_price) : "—") + '</td>' +
+        '<td class="r"><input class="num" inputmode="numeric" id="cn-cost-' + i + '" value="' + costVal + '" placeholder="下代" style="width:6.5em;text-align:right"></td>' +
+        '<td>' + chip + '</td>' +
+        '<td><button class="btn btn-primary" onclick="settleConsignment(' + i + ')">' + (r.settled ? "更新" : "精算") + '</button></td></tr>';
+    }).join("") : '<tr><td colspan="7" style="color:var(--muted)">受託品はありません。</td></tr>';
+  }
+  function settleConsignment(i) {
+    var r = cnRows[i];
+    if (!r || !API) return;
+    var v = zen2han(document.getElementById("cn-cost-" + i).value).replace(/[^0-9]/g, "");
+    if (v === "") { showToast("原価(下代)を入力してください。"); return; }
+    fetch(API + "/settle_consignment", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ product_key: r.product_key, cost: v })
+    }).then(function (rr) { return rr.json(); }).then(function (res) {
+      if (res.error) throw new Error(res.error);
+      cnRows = res.rows || cnRows;
+      renderConsignment();
+      showToast(r.name + " を精算しました(原価 ¥" + num(parseInt(v, 10)) + ")。");
+    }).catch(function (e) { showToast("精算に失敗: " + (e.message || e)); });
   }
   function pickFree(name, amount, pending) {
     posLines.push({ kind: "free", no: null, name: name, info: null, list: null, amount: amount || 0, pending: !!pending });

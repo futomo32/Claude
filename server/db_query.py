@@ -138,6 +138,7 @@ def ensure_schema(con):
         ("products", "fucho", "TEXT"),  # 符丁(下代を隠す店内符牒。仕入先頭文字＋数字部)。パートには送らない
         ("supplier_master", "fucho_head", "TEXT"),  # 仕入先ごとの符丁頭カナ(漢字名対策)
         ("products", "is_consignment", "INTEGER DEFAULT 0"),  # 受託品フラグ(売上になっても残す。後日精算の識別用)
+        ("products", "consign_settled", "INTEGER DEFAULT 0"),  # 受託の後日精算(原価入力)が済んだか
     ]
     changed = False
     for table, col, decl in adds:
@@ -1686,6 +1687,45 @@ def add_consignment(con, payload):
     con.commit()
     return {"product_key": key, "product_no": pno, "name": name,
             "amount": amount, "supplier": supplier}
+
+
+def consignment_list(con):
+    """受託品(is_consignment=1)の一覧。後日精算(納品書で原価入力)用。
+    未精算(原価未確定)を先頭に、メーカー別・新しい順。売れた日も付ける。"""
+    con.row_factory = sqlite3.Row
+    rows = []
+    for r in con.execute("""
+        SELECT p.product_key, p.name, p.supplier, p.list_price, p.cost_price,
+               COALESCE(p.consign_settled,0) settled, p.state,
+               (SELECT MAX(s.sold_at) FROM sale_lines l JOIN sales_slips s ON s.slip_id=l.slip_id
+                WHERE l.product_key=p.product_key AND COALESCE(l.voided,0)=0) sold_at
+        FROM products p
+        WHERE COALESCE(p.is_consignment,0)=1
+        ORDER BY settled ASC, p.supplier, CAST(p.product_key AS INTEGER) DESC"""):
+        rows.append({"product_key": r["product_key"], "name": r["name"], "supplier": r["supplier"],
+                     "list_price": r["list_price"], "cost_price": r["cost_price"],
+                     "settled": r["settled"], "state": r["state"], "sold_at": r["sold_at"]})
+    return {"rows": rows}
+
+
+def settle_consignment(con, p):
+    """受託品の後日精算: 原価(下代)を入れて確定。以降は粗利が正しく計算される。
+    精算済みでも原価を入れ直せば更新できる(訂正用)。"""
+    pk = str(p.get("product_key") or "").strip()
+    if not pk:
+        raise ValueError("対象が指定されていません")
+    try:
+        cost = int(str(p.get("cost") or 0).replace(",", ""))
+    except ValueError:
+        raise ValueError("原価は数字で入力してください")
+    if cost < 0:
+        raise ValueError("原価は0以上で入力してください")
+    row = con.execute("SELECT COALESCE(is_consignment,0) FROM products WHERE product_key=?", (pk,)).fetchone()
+    if not row or not row[0]:
+        raise ValueError("対象の受託品が見つかりません")
+    con.execute("UPDATE products SET cost_price=?, consign_settled=1 WHERE product_key=?", (cost, pk))
+    con.commit()
+    return consignment_list(con)
 
 
 def get_product(con, product_key):
