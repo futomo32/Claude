@@ -4098,8 +4098,11 @@
           msg.style.color = "var(--ok,#2a8)";
           msg.textContent = "✓ 確認: " + dash(res.name) + "（" + no + (res.location ? " / " + res.location : "") + "）";
           loadStocktake();  // 進捗・差異を更新
+        } else if (res.result === "already") {
+          msg.style.color = "var(--muted)";  // 正常な重複(もう確認済み)はお知らせ色。驚かせない
+          msg.textContent = "ℹ " + (res.message || "確認済みです") + "（" + no + "）";
         } else {
-          msg.style.color = "var(--danger)";
+          msg.style.color = "var(--danger)";  // 番号なし/売却済み=本当に注意が必要
           msg.textContent = "⚠ " + (res.message || "確認できませんでした") + "（" + no + "）";
         }
         inp.value = ""; inp.focus();

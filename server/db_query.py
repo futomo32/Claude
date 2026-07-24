@@ -1630,8 +1630,11 @@ def add_product(con, payload):
     key = str((row[0] or 0) + 1)
     pno = str(vals["product_no"] or "").strip()
     if not pno:
+        # 自動採番は店の5桁系列(22XXX)の続き。6桁以上(別系列)・9桁(過去メガネ)・
+        # "*"等のプレースホルダ番号は基準から除外する(それらに引っ張られて桁が増えるのを防ぐ)。
         row = con.execute(
-            "SELECT MAX(CAST(product_no AS INTEGER)) FROM products WHERE product_no GLOB '[0-9]*'").fetchone()
+            "SELECT MAX(CAST(product_no AS INTEGER)) FROM products "
+            "WHERE product_no GLOB '[0-9]*' AND LENGTH(product_no)<=5").fetchone()
         pno = str((row[0] or 0) + 1).zfill(5)
     vals["product_no"] = pno
     for k in ("cost_price", "list_price"):
