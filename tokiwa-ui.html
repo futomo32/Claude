@@ -513,6 +513,11 @@
     white-space: nowrap; cursor: pointer;
   }
   .chk-row .chk input { width: 1.05em; height: 1.05em; }
+  /* 購入履歴の商品サムネイル(何を買ったか一目で分かるように) */
+  .hist-thumb {
+    width: 52px; height: 52px; object-fit: cover; border-radius: 6px;
+    border: 1px solid var(--line); display: block;
+  }
   .modal-back {
     position: fixed; inset: 0; background: rgba(20,25,20,0.45);
     display: none; align-items: flex-start; justify-content: center;
@@ -682,7 +687,7 @@
   .pos-cust-card .pc-actions { margin-left: auto; display: flex; gap: 0.5em; }
   .pos-cust-card .pc-sub { flex-basis: 100%; display: flex; gap: 0.4em 1.2em; flex-wrap: wrap; color: var(--ink-2); font-size: 0.88em; border-top: 1px dashed var(--line); padding-top: 0.5em; margin-top: 0.1em; }
   /* 写真プール(まとめて撮影→後で商品に割り当て) */
-  .pool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 0.6rem; margin-top: 0.8rem; }
+  .pool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.6rem; margin-top: 0.8rem; }
   .pool-item { position: relative; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fbfbfb; }
   .pool-item img { width: 100%; height: 110px; object-fit: cover; display: block; cursor: pointer; }
   .pool-del { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; line-height: 1; border-radius: 50%; border: none; background: rgba(0,0,0,0.55); color: #fff; cursor: pointer; font-size: 0.8em; }
@@ -1639,7 +1644,17 @@
         <span id="pool-upload-status" style="color:var(--muted);font-size:0.85em"></span>
         <span id="pool-count" style="margin-left:auto;color:var(--muted);font-size:0.85em"></span>
       </div>
-      <div class="pool-grid" id="pool-grid" style="max-height:50vh;overflow-y:auto"></div>
+      <!-- 大きなプレビュー: 小さなサムネイルだけでは商品を見分けられないため、
+           タップした写真を必ず大きく表示し、確認してから決定する(誤って別の写真を
+           紐づけるのを防ぐ)。 -->
+      <div id="pool-preview" style="display:none;margin-top:0.7rem;text-align:center;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:0.6rem">
+        <img id="pool-preview-img" alt="選択中の写真" style="max-width:100%;max-height:52vh;border-radius:8px;display:block;margin:0 auto">
+        <div id="pool-preview-actions" style="display:flex;gap:0.5em;justify-content:center;align-items:center;flex-wrap:wrap;margin-top:0.6rem">
+          <button type="button" class="btn btn-primary" id="pool-use-btn" onclick="usePoolPreview()">この写真を使う</button>
+          <button type="button" class="btn" onclick="clearPoolPreview()">選び直す</button>
+        </div>
+      </div>
+      <div class="pool-grid" id="pool-grid" style="max-height:40vh;overflow-y:auto"></div>
     </div>
     <div class="modal-foot"><button class="btn" onclick="closePhotoPool()">閉じる</button></div>
   </div>
@@ -2706,11 +2721,12 @@
       hits = hits.slice(0, 15);
       activeIdx = -1;  // 打つたびに選択をリセット(誤確定防止)
       drop.innerHTML = hits.length
-        ? (many ? '<div class="search-empty" style="border-bottom:1px solid var(--line)">' + hits.length + '件が該当。↑↓で選んでEnter(年齢・最終購入日で見分け)</div>' : "") +
+        ? (many ? '<div class="search-empty" style="border-bottom:1px solid var(--line)">' + hits.length + '件が該当。↑↓で選んでEnter(担当者・年齢・最終購入日で見分け)</div>' : "") +
           hits.map(function (c) {
             var age = ageFrom(c[6]);
             var last = c[13] ? "最終 " + c[13] : "購入なし";
-            var meta = (age != null ? age + "歳・" : "") + last;
+            // 担当者も出す。同姓同名は「担当が誰か」で見分けるのが一番早いという要望による
+            var meta = (c[4] ? "担当 " + shortName(c[4]) + "・" : "") + (age != null ? age + "歳・" : "") + last;
             var addr = [c[5] || "", c[15] || ""].filter(Boolean).join(" ");  // 同姓同名の見分け用
             return '<div class="search-opt" data-id="' + esc(c[0]) + '"><span class="nm">' + esc(c[1]) +
               '</span><span class="kn">' + esc(c[2]) + '</span><span class="tl">' + esc(meta) +
@@ -3550,8 +3566,8 @@
       var toggle = voided.length
         ? '<label style="float:right;font-size:0.82em;color:var(--muted);font-weight:400;cursor:pointer"><input type="checkbox" id="hist-show-voided" ' + (histShowVoided ? "checked" : "") + ' onchange="toggleHistVoided(\'' + esc(id) + '\')"> 取消済みも表示(' + voided.length + '件)</label>'
         : '';
-      html += '<p style="margin:0 0 0.4rem;color:var(--muted);font-size:0.8em">※商品名をダブルクリックすると、その商品の情報・写真を表示します(在庫商品のみ)。返品・訂正は右の「取消」から。' + toggle + '</p>' +
-        '<div class="table-scroll"><table class="data"><thead><tr><th>買上日</th><th>商品名</th><th>商品情報</th><th class="r">購入金額</th><th>支払</th><th>担当</th><th></th></tr></thead><tbody>' +
+      html += '<p style="margin:0 0 0.4rem;color:var(--muted);font-size:0.8em">※商品名をダブルクリックすると、その商品の情報・写真を表示します。返品・訂正は右の「取消」から。' + toggle + '</p>' +
+        '<div class="table-scroll"><table class="data"><thead><tr><th></th><th>買上日</th><th>商品名</th><th>商品情報</th><th class="r">購入金額</th><th>支払</th><th>担当</th><th></th></tr></thead><tbody>' +
         sales.map(function (s) {
           var nm = String(s[1] == null ? "" : s[1]);
           var amount = (nm.indexOf("種類未定") >= 0 && !s[3]) ? "未定" : "¥" + num(s[3]);
@@ -3562,14 +3578,18 @@
           var voidCell = (API && s[7] != null)
             ? '<button class="btn" style="color:var(--danger);padding:0.2em 0.6em" onclick="voidSaleLine(' + s[7] + ',' + (parseInt(s[3], 10) || 0) + ',\'' + esc(id) + '\')">取消</button>'
             : '';
-          return '<tr><td class="num">' + esc(s[0]) + '</td><td' + attr + '>' + nameCell + '</td><td>' + esc(dash(s[2])) + '</td><td class="r num">' + amount + '</td><td>' + esc(dash(s[4])) + '</td><td>' + esc(shortName(s[5])) + '</td><td>' + voidCell + '</td></tr>';
+          // s[9]=商品画像。買った品が一目で分かるようにサムネイルを出す(写真が無ければ空欄)
+          var thumb = s[9] ? '<img class="hist-thumb" loading="lazy" src="' + esc(prodImgUrl(s[9])) + '"' +
+            (pno ? ' style="cursor:pointer" onclick="openProductByNo(\'' + esc(String(pno)) + '\')"' : '') +
+            ' onerror="this.style.display=\'none\'">' : '';
+          return '<tr><td>' + thumb + '</td><td class="num">' + esc(s[0]) + '</td><td' + attr + '>' + nameCell + '</td><td>' + esc(dash(s[2])) + '</td><td class="r num">' + amount + '</td><td>' + esc(dash(s[4])) + '</td><td>' + esc(shortName(s[5])) + '</td><td>' + voidCell + '</td></tr>';
         }).join("") +
         // 取消済み明細(監査ログ)。トグルON時のみ、グレー＋打ち消し線＋取消バッジで表示
         (histShowVoided ? voided.map(function (s) {
-          return '<tr style="color:var(--muted);text-decoration:line-through;background:#fafafa"><td class="num">' + esc(s[0]) +
+          return '<tr style="color:var(--muted);text-decoration:line-through;background:#fafafa"><td></td><td class="num">' + esc(s[0]) +
             '</td><td>' + esc(dash(s[1])) + ' <span class="chip chip-danger" style="text-decoration:none">取消' + (s[9] ? " " + esc(s[9]) : "") + '</span></td><td>' + esc(dash(s[2])) +
             '</td><td class="r num">¥' + num(s[3]) + '</td><td>' + esc(dash(s[4])) + '</td><td>' + esc(shortName(s[5])) + '</td><td></td></tr>';
-        }).join("") : "") +
+        }).join("") : "") +  /* 取消済みは列数を購入一覧に合わせる(先頭にサムネイル用の空セル) */
         '</tbody></table></div>';
     } else {
       html += '<p style="margin:0;color:var(--muted);font-size:0.9em">購入履歴はありません。</p>';
@@ -5064,13 +5084,18 @@
   function openPhotoPool(mode, cb) {
     photoPoolMode = mode || "manage";
     photoPoolCallback = cb || null;
+    document.getElementById("pool-hint").textContent = photoPoolMode === "pick"
+      ? "使う写真をタップすると大きく表示します。内容を確認して「この写真を使う」を押してください。"
+      : "";
     document.getElementById("pool-hint").style.display = photoPoolMode === "pick" ? "block" : "none";
+    clearPoolPreview();  // 前回開いた時のプレビューを残さない
     document.getElementById("photo-pool-modal").classList.add("show");
     loadPhotoPool();
   }
   function closePhotoPool() {
     document.getElementById("photo-pool-modal").classList.remove("show");
     photoPoolCallback = null;
+    clearPoolPreview();
   }
   function loadPhotoPool() {
     var grid = document.getElementById("pool-grid");
@@ -5090,9 +5115,26 @@
         '<button type="button" class="pool-del" onclick="deletePoolPhoto(' + i + ')" title="この写真をプールから削除">✕</button></div>';
     }).join("") : '<p style="color:var(--muted)">プールに写真がありません。上の「まとめてアップロード」から追加してください。</p>';
   }
+  // サムネイルをタップしたら「まず大きく表示」。決定は「この写真を使う」で行う。
+  // (小さな候補写真では宝石・メガネの見分けが付かず、別の写真を紐づけてしまうため)
+  var poolPreviewIdx = -1;
   function pickPoolPhoto(i) {
-    if (photoPoolMode !== "pick") return;  // 閲覧・整理モードではタップしても選択しない
     var p = photoPool[i]; if (!p) return;
+    poolPreviewIdx = i;
+    document.getElementById("pool-preview-img").src = prodImgUrl(p.filename);
+    document.getElementById("pool-preview").style.display = "block";
+    // 閲覧・整理モードでは「使う」ボタンを出さない(大きく見るだけ)
+    document.getElementById("pool-use-btn").style.display = photoPoolMode === "pick" ? "" : "none";
+    document.getElementById("pool-preview").scrollIntoView({ block: "nearest" });
+  }
+  function clearPoolPreview() {
+    poolPreviewIdx = -1;
+    document.getElementById("pool-preview").style.display = "none";
+    document.getElementById("pool-preview-img").removeAttribute("src");
+  }
+  function usePoolPreview() {
+    if (photoPoolMode !== "pick") return;
+    var p = photoPool[poolPreviewIdx]; if (!p) return;
     var cb = photoPoolCallback;
     closePhotoPool();
     if (cb) cb(p);
@@ -5103,6 +5145,7 @@
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pool_id: p.id })
     }).then(function (r) { return r.json(); }).then(function (res) {
       if (res.error) throw new Error(res.error);
+      clearPoolPreview();  // 削除で並び順が変わるので、プレビューの選択は解除する
       loadPhotoPool();
     }).catch(function (e) { showToast("削除に失敗: " + (e.message || e)); });
   }

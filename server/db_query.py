@@ -549,6 +549,43 @@ def _rx_row(r):
     }
 
 
+def pay_fallback(pay_method, credit_kind=None):
+    """支払方法の表示文字列を作る。移行データは「掛売区分」が空のことが多く、そのまま出すと
+    購入履歴の支払が「—」になってしまう。宝飾ナビの運用では
+      掛売区分あり→その区分 / クレジット種別あり→クレジット / どちらも空→現金
+    なので、この順で埋める(日報の `pay_method or "現金"` と表示を揃える)。"""
+    pm = str(pay_method or "").strip()
+    ck = str(credit_kind or "").strip()
+    if pm and ck and ck not in pm:
+        return f"{pm}({ck})"
+    if pm:
+        return pm
+    if ck:
+        return f"クレジット({ck})" if ck != "クレジット" else ck
+    return "現金"
+
+
+def slip_pay_texts(con, where_sql="", args=()):
+    """伝票ごとの支払表示 {slip_id: "現金 ¥50,000 / クレジット ¥50,000"} を返す。
+    現金＋クレジットの併用払いは sale_payments に内訳が入っているので、
+    2種類以上あるときだけ金額つきで並べる(1種類なら金額は伝票合計と同じなので方法だけ)。"""
+    rows = con.execute(
+        "SELECT sp.slip_id, sp.method, sp.amount FROM sale_payments sp "
+        "JOIN sales_slips s ON s.slip_id = sp.slip_id " + where_sql +
+        " ORDER BY sp.slip_id, sp.id", args).fetchall()
+    by_slip = {}
+    for r in rows:
+        by_slip.setdefault(r["slip_id"], []).append((r["method"] or "現金", int(r["amount"] or 0)))
+    out = {}
+    for sid, parts in by_slip.items():
+        parts = [(m, a) for m, a in parts if a]
+        if len(parts) > 1:
+            out[sid] = " / ".join(f"{m} ¥{a:,}" for m, a in parts)
+        elif parts:
+            out[sid] = parts[0][0]
+    return out
+
+
 def customer_detail(con, cid):
     """1顧客ぶんの重い明細(売上/処方箋/処方箋候補/ポイント履歴/アプローチ)を返す。
     顧客詳細を開いた時にだけ呼ぶ(遅延取得)。UIの D.sales[id] 等と同じ形状。"""
@@ -564,23 +601,35 @@ def customer_detail(con, cid):
                COALESCE((SELECT COALESCE(NULLIF(rx.lens_name,''), NULLIF(rx.frame_name,''))
                          FROM prescriptions rx WHERE rx.sale_line_id = l.line_id LIMIT 1),
                         l.free_name, p.name) AS disp_name,
-               l.info, l.amount, s.pay_method, s.staff_name, p.product_no, l.line_id, s.slip_id
+               l.info, l.amount, s.pay_method, s.staff_name, p.product_no, l.line_id, s.slip_id,
+               s.credit_kind, p.image_file
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         WHERE s.customer_id = ?
               AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0
         ORDER BY s.sold_at DESC""", (cid,))]
 
+    # 支払表示を埋める(移行データの空欄対策＋現金/クレジット併用の内訳)。
+    # 行の並びは [0]買上日 [1]品名 [2]商品情報 [3]金額 [4]支払 [5]担当 [6]商品番号
+    #            [7]line_id [8]slip_id [9]credit_kind [10]画像 → [4]を表示用に置き換え、
+    # [9]は画像ファイル名に詰め替えてUIへ渡す(UIの列番号を増やさない)。
+    pay_texts = slip_pay_texts(con, "WHERE s.customer_id = ?", (cid,))
+    for row in sales:
+        row[4] = pay_texts.get(row[8]) or pay_fallback(row[4], row[9])
+        row[9] = row.pop(10)  # [9]=商品画像(サムネイル用)
+
     # 取消(返品)済みの明細。監査ログとして「取消済みも表示」トグルON時のみ画面に出す。
     # 形状は sales と同じ並び＋末尾に取消日(voided_at)。
     sales_voided = [list(r) for r in cur.execute("""
         SELECT s.sold_at, COALESCE(l.free_name, p.name) AS disp_name,
                l.info, l.amount, s.pay_method, s.staff_name, p.product_no, l.line_id, s.slip_id,
-               l.voided_at
+               l.voided_at, s.credit_kind
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         WHERE s.customer_id = ? AND (COALESCE(l.voided,0)=1 OR COALESCE(s.voided,0)=1)
         ORDER BY s.sold_at DESC""", (cid,))]
+    for row in sales_voided:  # 取消済み一覧も支払の表示を揃える([9]=取消日は維持)
+        row[4] = pay_texts.get(row[8]) or pay_fallback(row[4], row.pop())
 
     point_tx = [list(r) for r in cur.execute("""
         SELECT occurred_at, tx_type, add_points, use_points, balance
