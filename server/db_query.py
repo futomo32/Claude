@@ -149,6 +149,7 @@ def ensure_schema(con):
         ("products", "is_consignment", "INTEGER DEFAULT 0"),  # 受託品フラグ(売上になっても残す。後日精算の識別用)
         ("products", "consign_settled", "INTEGER DEFAULT 0"),  # 受託の後日精算(原価入力)が済んだか
         ("prescriptions", "frame_type", "TEXT"),  # フレームの種類(セル/メタル/ツーポ/ナイロール)
+        ("receivables", "slip_id", "INTEGER"),    # 起票元の売上伝票(併用払いの内訳を辿るため)
         ("products", "ring_fingers", "TEXT"),  # はめる指(複数可。カンマ区切り)
         ("products", "ring_size", "TEXT"),     # リングサイズ(フリー入力。#10.5 や 12号 等)
     ]
@@ -319,8 +320,15 @@ def build_blob(con):
     families = group("""SELECT customer_id, name, relation, gender, birthday, linked_customer_id, id
                         FROM customer_families ORDER BY id""")
 
-    urikake = group("""SELECT customer_id, id, product_name, bought_at, down_payment, balance, last_paid_at
+    urikake = group("""SELECT customer_id, id, product_name, bought_at, down_payment, balance, last_paid_at,
+                              slip_id
                        FROM receivables ORDER BY bought_at DESC, id DESC""")
+    # 売掛行の末尾に「同じ会計での支払内訳」を入れる(現金＋クレジット＋掛売の併用払いで、
+    # 現金/クレジットをいくら受け取ったかを売掛明細から確認できるようにする)
+    _pt = slip_pay_texts(con)
+    for _rows in urikake.values():
+        for _r in _rows:
+            _r[6] = _pt.get(_r[6]) or None
     urikake_hist = group("""SELECT customer_id, entry_date, entry_type, product_name, amount, paid, method
                             FROM receivable_entries ORDER BY entry_date DESC""")
 
@@ -463,8 +471,15 @@ def build_blob_light(con):
     # 起動時に持っておく(遅延化しても効果が薄く、集計側の作り直しが増えるため)
     families = group("""SELECT customer_id, name, relation, gender, birthday, linked_customer_id, id
                         FROM customer_families ORDER BY id""")
-    urikake = group("""SELECT customer_id, id, product_name, bought_at, down_payment, balance, last_paid_at
+    urikake = group("""SELECT customer_id, id, product_name, bought_at, down_payment, balance, last_paid_at,
+                              slip_id
                        FROM receivables ORDER BY bought_at DESC, id DESC""")
+    # 売掛行の末尾に「同じ会計での支払内訳」を入れる(現金＋クレジット＋掛売の併用払いで、
+    # 現金/クレジットをいくら受け取ったかを売掛明細から確認できるようにする)
+    _pt = slip_pay_texts(con)
+    for _rows in urikake.values():
+        for _r in _rows:
+            _r[6] = _pt.get(_r[6]) or None
     urikake_hist = group("""SELECT customer_id, entry_date, entry_type, product_name, amount, paid, method
                             FROM receivable_entries ORDER BY entry_date DESC""")
     points = {str(r["customer_id"]): r["balance"]
@@ -877,19 +892,52 @@ def daily_sales(con, date):
     """指定日のレジ売上明細(日報・ホームタイル用)。全売上をブラウザに持たずサーバーで集計。"""
     con.row_factory = sqlite3.Row
     out = []
+    # 現金＋クレジット併用の内訳(sale_payments)を先に引いておき、支払欄に金額つきで出す
+    pay_texts = slip_pay_texts(con, "WHERE s.sold_at = ?", (str(date),))
     for r in con.execute("""
-        SELECT s.customer_id cid, c.name cname,
-               COALESCE(l.free_name, p.name) item, l.info, l.amount, s.pay_method, s.staff_name,
-               p.is_glasses ig, p.category cat, s.place place
+        SELECT s.slip_id, s.customer_id cid, c.name cname,
+               COALESCE(l.free_name, p.name) item, l.info, l.amount, s.pay_method, s.credit_kind,
+               s.staff_name, p.is_glasses ig, p.category cat, s.place place
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         LEFT JOIN customers c ON c.customer_id = s.customer_id
         WHERE s.sold_at = ? AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0""", (str(date),)):
         out.append({"cid": r["cid"], "name": r["cname"] or r["cid"], "item": r["item"],
                     "info": r["info"], "amount": r["amount"] or 0,
-                    "pay": r["pay_method"] or "現金", "staff": r["staff_name"],
+                    "pay": pay_texts.get(r["slip_id"]) or pay_fallback(r["pay_method"], r["credit_kind"]),
+                    "staff": r["staff_name"],
                     "kind4": sale_kind4(r["ig"], r["cat"], r["place"])})
     return out
+
+
+def payment_totals(con, frm, to=None):
+    """期間の支払方法別の合計(日報の「内訳」用)。現金＋クレジット併用でも、
+    sale_payments の内訳ごとに集計するので「現金がいくら/クレジットがいくら」が分かる。
+    sale_payments に内訳が無い伝票(移行データ)は、伝票の支払方法で明細金額を寄せる。"""
+    con.row_factory = sqlite3.Row
+    to = to or frm
+    totals, seen = {}, set()
+    for r in con.execute("""
+        SELECT sp.method m, COALESCE(SUM(sp.amount),0) t, GROUP_CONCAT(DISTINCT s.slip_id) ids
+        FROM sale_payments sp JOIN sales_slips s ON s.slip_id = sp.slip_id
+        WHERE s.sold_at >= ? AND s.sold_at <= ? AND COALESCE(s.voided,0)=0
+        GROUP BY sp.method""", (str(frm), str(to))):
+        totals[r["m"] or "現金"] = totals.get(r["m"] or "現金", 0) + int(r["t"] or 0)
+        for i in str(r["ids"] or "").split(","):
+            if i:
+                seen.add(int(i))
+    for r in con.execute("""
+        SELECT s.slip_id, s.pay_method pm, s.credit_kind ck, COALESCE(SUM(l.amount),0) t
+        FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
+        WHERE s.sold_at >= ? AND s.sold_at <= ?
+              AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0
+        GROUP BY s.slip_id""", (str(frm), str(to))):
+        if r["slip_id"] in seen:
+            continue  # 内訳がある伝票は二重計上しない
+        k = pay_fallback(r["pm"], r["ck"])
+        totals[k] = totals.get(k, 0) + int(r["t"] or 0)
+    return [{"method": k, "amount": v} for k, v in
+            sorted(totals.items(), key=lambda kv: -kv[1]) if v]
 
 
 def slip_lines(con, frm, to, staff=""):
@@ -901,9 +949,10 @@ def slip_lines(con, frm, to, staff=""):
         staffsql = " AND s.staff_name = ?"
         args.append(staff)
     out = []
+    pay_texts = slip_pay_texts(con, "WHERE s.sold_at >= ? AND s.sold_at <= ?", (str(frm), str(to)))
     for r in con.execute("""
-        SELECT s.sold_at, s.customer_id cid, c.name cname,
-               COALESCE(l.free_name, p.name) item, l.amount, s.pay_method, s.staff_name,
+        SELECT s.slip_id, s.sold_at, s.customer_id cid, c.name cname,
+               COALESCE(l.free_name, p.name) item, l.amount, s.pay_method, s.credit_kind, s.staff_name,
                p.is_glasses ig, p.category cat, s.place place
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
@@ -912,7 +961,9 @@ def slip_lines(con, frm, to, staff=""):
               AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0""" + staffsql + """
         ORDER BY s.sold_at""", args):
         out.append({"date": r["sold_at"], "name": r["cname"] or r["cid"], "item": r["item"],
-                    "amount": r["amount"] or 0, "pay": r["pay_method"] or "", "staff": r["staff_name"],
+                    "amount": r["amount"] or 0,
+                    "pay": pay_texts.get(r["slip_id"]) or pay_fallback(r["pay_method"], r["credit_kind"]),
+                    "staff": r["staff_name"],
                     "kind4": sale_kind4(r["ig"], r["cat"], r["place"])})
     return out
 
@@ -2205,6 +2256,11 @@ def checkout(con, payload):
     if summary_name and len(summary_name) > 60:
         summary_name = summary_name[:59] + "…"
 
+    # 併用払いの内訳テキスト(2種類以上のときだけ)。売掛明細に「同時の支払」として出す
+    _parts = [(p.get("method") or "現金", int(p.get("amount") or 0)) for p in payments]
+    _parts = [(m, a) for m, a in _parts if a > 0]
+    pay_text = " / ".join(f"{m} ¥{a:,}" for m, a in _parts) if len(_parts) > 1 else None
+
     receivables_out = []
     for p in payments:
         method = p.get("method") or "現金"
@@ -2213,13 +2269,16 @@ def checkout(con, payload):
             continue
         cur.execute("INSERT INTO sale_payments(slip_id,method,amount) VALUES (?,?,?)", (slip_id, method, amt))
         if method == "掛売":
-            cur.execute("""INSERT INTO receivables(customer_id,product_name,bought_at,down_payment,balance,last_paid_at)
-                           VALUES (?,?,?,?,?,?)""", (cid, summary_name, sold_at, 0, amt, None))
+            # slip_id を持たせて、売掛明細から「同じ会計で現金/クレジットをいくら受け取ったか」を
+            # 後から辿れるようにする(併用払いの内訳表示用)。
+            cur.execute("""INSERT INTO receivables(customer_id,product_name,bought_at,down_payment,balance,last_paid_at,slip_id)
+                           VALUES (?,?,?,?,?,?,?)""", (cid, summary_name, sold_at, 0, amt, None, slip_id))
             rid = cur.lastrowid  # 画面側でD.urikakeを即時更新できるよう新しい売掛行を返す
             cur.execute("""INSERT INTO receivable_entries(customer_id,entry_type,entry_date,product_name,amount,paid)
                            VALUES (?,?,?,?,?,?)""", (cid, "掛売", sold_at, summary_name, amt, None))
             receivables_out.append({"id": rid, "product_name": summary_name, "bought_at": sold_at,
-                                    "down_payment": 0, "balance": amt, "last_paid_at": None})
+                                    "down_payment": 0, "balance": amt, "last_paid_at": None,
+                                    "pay_text": pay_text})
 
     if earned:
         row = con.execute("SELECT balance FROM point_balances WHERE customer_id=?", (cid,)).fetchone()

@@ -358,7 +358,9 @@ class Handler(BaseHTTPRequestHandler):
                     elif path == "/api/master":
                         result = db_query.list_master_items(con, q1("type"))
                     elif path == "/api/daily_sales":
-                        result = {"lines": db_query.daily_sales(con, q1("date"))}
+                        # payMethods=支払方法別の内訳(現金がいくら/クレジットがいくら)
+                        result = {"lines": db_query.daily_sales(con, q1("date")),
+                                  "payMethods": db_query.payment_totals(con, q1("date"))}
                     elif path == "/api/documents":
                         result = {"documents": db_query.list_documents(con, q1("limit", "100"))}
                     else:  # /api/slip_lines

@@ -1331,7 +1331,7 @@
           <h3>入出金明細(レジ締め確認用)</h3>
           <div class="table-scroll">
             <table class="data">
-              <thead><tr><th>顧客</th><th>区分</th><th>内容</th><th class="r">金額</th><th>担当者</th></tr></thead>
+              <thead><tr><th>顧客</th><th>区分</th><th>内容</th><th class="r">金額</th><th>支払</th><th>担当者</th></tr></thead>
               <tbody id="rep-daily-tbody"></tbody>
             </table>
           </div>
@@ -3811,7 +3811,7 @@
       var ar = paySortAsc ? "▲" : "▼";
       html += '<div class="section-title">売掛明細</div><div class="table-scroll"><table class="data"><thead><tr><th>商品名</th>' +
         '<th class="sortable" onclick="togglePaySort(\'' + esc(id) + '\')" style="cursor:pointer;user-select:none" title="クリックで昇順/降順を切替">買上日 <span class="ar">' + ar + '</span></th>' +
-        '<th class="r">頭金</th><th class="r">残高</th><th></th></tr></thead><tbody>' +
+        '<th class="r">頭金</th><th class="r">残高</th><th>同時の支払</th><th></th></tr></thead><tbody>' +
         paySorted(uk).map(function (u) {
           var bal = parseInt(u[4], 10) || 0;
           var nm = esc(u[1] || "").replace(/'/g, "&#39;");
@@ -3820,8 +3820,10 @@
           var edit = '<button class="btn" onclick="editReceivable(\'' + esc(id) + '\',\'' + esc(u[0]) + '\')">修正</button>';
           var del = '<button class="btn" onclick="deleteReceivable(\'' + esc(u[0]) + '\',\'' + esc(id) + '\')">削除</button>';
           var acts = '<div style="display:flex;gap:0.3em;flex-wrap:wrap;justify-content:flex-end">' + pay + edit + del + '</div>';
+          // u[6]=同じ会計での支払内訳(例「現金 ¥30,000 / 掛売 ¥70,000」)。併用払いのときだけ入る
           return '<tr><td>' + esc(dash(u[1])) + '</td><td class="num">' + esc(dash(u[2])) + '</td><td class="r num">' +
-            (u[3] ? "¥" + num(u[3]) : "—") + '</td><td class="r num">¥' + num(bal) + '</td><td>' + acts + '</td></tr>';
+            (u[3] ? "¥" + num(u[3]) : "—") + '</td><td class="r num">¥' + num(bal) + '</td><td style="font-size:0.88em">' +
+            esc(dash(u[6])) + '</td><td>' + acts + '</td></tr>';
         }).join("") + '</tbody></table></div>';
     }
     if (hist.length) {
@@ -3897,7 +3899,7 @@
     }).then(function (r) { return r.json(); }).then(function (rv) {
       btn.disabled = false; btn.textContent = doneLabel;
       if (rv.error) throw new Error(rv.error);
-      (D.urikake[cid] = D.urikake[cid] || []).push([rv.id, rv.product_name, rv.bought_at, rv.down_payment, rv.balance, rv.last_paid_at]);
+      (D.urikake[cid] = D.urikake[cid] || []).push([rv.id, rv.product_name, rv.bought_at, rv.down_payment, rv.balance, rv.last_paid_at, rv.pay_text || null]);
       (D.urikakeHist[cid] = D.urikakeHist[cid] || []).unshift([rv.bought_at, "掛売", rv.product_name, rv.balance, null, null]);
       closeAddReceivable();
       var c = findCust(cid); if (c) renderPay(c);
@@ -5573,23 +5575,26 @@
   function renderDailyReportWith(date, lines) {
     var payments = dailyPayments(date), tenders = dailyTenders(date), cashMoves = dailyCash(date);
     document.getElementById("rep-daily-tiles").innerHTML = dailyTilesHtml(lines, payments, tenders, cashMoves);
+    // 支払(pay)も行に持たせる。現金＋クレジットの併用払いは「現金 ¥50,000 / クレジット ¥50,000」の
+    // ように内訳が入るので、どの方法でいくら受け取ったかが明細で分かる。
     var rows = lines.map(function (l) {
-      return { name: l.name, kind: "レジ売上", content: l.item, amount: l.amount, staff: l.staff };
+      return { name: l.name, kind: "レジ売上", content: l.item, amount: l.amount, pay: l.pay || "", staff: l.staff };
     }).concat(payments.map(function (p) {
-      return { name: p.name, kind: "売掛入金", content: p.note || "", amount: p.amount, staff: "" };
+      return { name: p.name, kind: "売掛入金", content: p.note || "", amount: p.amount, pay: p.method || "現金", staff: "" };
     })).concat(cashMoves.map(function (m) {
-      return { name: "(レジ入出金)", kind: m.category || "入出金", content: m.note || "", amount: m.amount, staff: m.staff_name || "" };
+      return { name: "(レジ入出金)", kind: m.category || "入出金", content: m.note || "", amount: m.amount, pay: "", staff: m.staff_name || "" };
     }));
     var tb = document.getElementById("rep-daily-tbody");
     if (rows.length) {
       var total = rows.reduce(function (t, r) { return t + r.amount; }, 0);
       tb.innerHTML = rows.map(function (r) {
         return '<tr><td>' + esc(r.name) + '</td><td>' + esc(r.kind) + '</td><td>' + esc(dash(r.content)) +
-          '</td><td class="r num">¥' + num(r.amount) + '</td><td>' + esc(shortName(r.staff) || "—") + '</td></tr>';
+          '</td><td class="r num">¥' + num(r.amount) + '</td><td>' + esc(dash(r.pay)) +
+          '</td><td>' + esc(shortName(r.staff) || "—") + '</td></tr>';
       }).join("") + '<tr><td colspan="3" style="font-weight:700">合計</td><td class="r num" style="font-weight:700">¥' +
-        num(total) + '</td><td class="num">' + rows.length + '件</td></tr>';
+        num(total) + '</td><td></td><td class="num">' + rows.length + '件</td></tr>';
     } else {
-      tb.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">この日の売上・入金はありません。</td></tr>';
+      tb.innerHTML = '<tr><td colspan="6" style="color:var(--muted)">この日の売上・入金はありません。</td></tr>';
     }
   }
   function exportDailyCsv() {
@@ -6748,7 +6753,7 @@
       // 掛売で買った分を売掛残高(D.urikake)に即時反映(顧客を選び直すと売掛残高パネルに出る)
       var kakeAdd = 0;
       (data.receivables || []).forEach(function (rv) {
-        (D.urikake[cid] = D.urikake[cid] || []).push([rv.id, rv.product_name, rv.bought_at, rv.down_payment, rv.balance, rv.last_paid_at]);
+        (D.urikake[cid] = D.urikake[cid] || []).push([rv.id, rv.product_name, rv.bought_at, rv.down_payment, rv.balance, rv.last_paid_at, rv.pay_text || null]);
         (D.urikakeHist[cid] = D.urikakeHist[cid] || []).unshift([rv.bought_at, "掛売", rv.product_name, rv.balance, null, null]);
         kakeAdd += rv.balance || 0;
       });
