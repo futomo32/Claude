@@ -2151,7 +2151,7 @@
       else if (name === "reports") renderDailyReport();
       else if (name === "repairs") renderRepairs();
       else if (name === "products") renderProducts();
-      else if (name === "stocktake") loadStocktake();
+      else if (name === "stocktake") { loadStocktake(); setTimeout(stFocusScan, 0); }  // すぐ読み取れる状態にする
       else if (name === "search") loadSearchOptions();
     } catch (e) { /* 初期化前の呼び出しは無視 */ }
     window.scrollTo(0, 0);
@@ -4198,8 +4198,47 @@
           msg.textContent = "⚠ " + (res.message || "確認できませんでした") + "（" + no + "）";
         }
         inp.value = ""; inp.focus();
-      }).catch(function (e) { msg.style.color = "var(--danger)"; msg.textContent = "エラー: " + (e.message || e); });
+      }).catch(function (e) {
+        msg.style.color = "var(--danger)"; msg.textContent = "エラー: " + (e.message || e);
+        inp.select(); inp.focus();  // 失敗しても次のスキャンをそのまま受けられるようにする
+      });
   }
+  /* ── 棚卸し中はスキャン欄からカーソルが外れないようにする ──
+     スキャナはキーボードとして数字を打つだけなので、カーソルが別の場所にあると
+     読み取っても何も入らない(空撃ち)。ボタンや表をクリックしただけで外れてしまうため、
+     ①棚卸し画面に入った時 ②画面内をクリックした時 に自動でスキャン欄へ戻す。
+     さらに③どこにも入力欄が無い状態で文字キーが来たら、その文字ごとスキャン欄に流す
+     (スキャナが撃たれ始めても1文字目から取りこぼさないための保険)。 */
+  function stIsActive() {
+    var cur = document.querySelector(".content.active");
+    return !!(cur && cur.dataset.screen === "stocktake") && !document.querySelector(".modal-back.show");
+  }
+  function stIsField(el) {
+    if (!el || !el.tagName) return false;
+    var t = el.tagName.toLowerCase();
+    return t === "input" || t === "textarea" || t === "select" || el.isContentEditable;
+  }
+  function stFocusScan() {
+    if (!stIsActive()) return;
+    var inp = document.getElementById("st-scan");
+    if (inp && document.activeElement !== inp) { try { inp.focus(); } catch (e) { /* 非表示時は無視 */ } }
+  }
+  document.addEventListener("click", function (e) {
+    if (!stIsActive()) return;
+    if (stIsField(e.target)) return;                       // 別の入力欄を触った時は邪魔しない
+    var sel = window.getSelection && window.getSelection();
+    if (sel && String(sel).length) return;                 // 文字を選択中(コピー等)は邪魔しない
+    setTimeout(stFocusScan, 0);                            // クリック処理の後で戻す
+  });
+  document.addEventListener("keydown", function (e) {
+    if (!stIsActive() || stIsField(document.activeElement)) return;
+    if (e.ctrlKey || e.altKey || e.metaKey || e.key.length !== 1) return;  // ショートカットは通す
+    var inp = document.getElementById("st-scan");
+    if (!inp) return;
+    e.preventDefault();
+    inp.focus();
+    inp.value += e.key;                                    // 1文字目を取りこぼさない
+  });
   function stocktakeReset() {
     if (!API) return;
     if (!confirm("棚卸しの確認記録をすべて消去して、最初からやり直します。よろしいですか?")) return;
@@ -4208,6 +4247,7 @@
         if (res.error) throw new Error(res.error);
         document.getElementById("st-scan-msg").textContent = "";
         loadStocktake();
+        stFocusScan();  // リセット後もすぐ読み取りを続けられるように
         showToast("棚卸しをリセットしました。");
       }).catch(function (e) { showToast("リセットに失敗: " + (e.message || e)); });
   }
