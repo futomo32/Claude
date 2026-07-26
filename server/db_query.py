@@ -14,6 +14,15 @@ def normjp(s):
     if s is None:
         return None
     return unicodedata.normalize("NFKC", str(s)).casefold()
+
+
+def norm_code(s):
+    """バーコード/商品番号の照合用に幅を正規化する。スキャナやレジの入力欄が全角(かな)
+    モードだと数字が全角(２０５…)で入るため、NFKC で全角英数・全角ハイフン等を半角へ揃える。
+    商品番号は英字(R-5000 等)の大小を区別する必要があるので casefold はしない(幅だけ揃える)。"""
+    if s is None:
+        return ""
+    return unicodedata.normalize("NFKC", str(s)).strip()
 FRAME_PAT = re.compile(r"フレーム|ﾌﾚｰﾑ|frame", re.I)
 LENS_PAT = re.compile(r"レンズ|ﾚﾝｽﾞ|lens|非球面|累進", re.I)
 
@@ -593,8 +602,9 @@ def _ean13_base(code):
     """スキャン値が EAN-13(13桁の数字・チェックデジット一致)なら、商品識別に使う
     先頭10桁を返す。宝飾ナビのタグは 管理番号の先頭4区画(XXXXX-Y-ZZ-WW=10桁)＋'00'＋
     チェックデジット の EAN-13。末尾区画(VVV)はバーコードに入らないため先頭10桁で照合する。
-    手入力の商品番号(R-5000 / 17543-1-01-20-130 等)は EAN-13 でないので None を返す。"""
-    s = str(code or "").strip()
+    手入力の商品番号(R-5000 / 17543-1-01-20-130 等)は EAN-13 でないので None を返す。
+    スキャナが全角数字(２０５…)で入力しても照合できるよう先に幅を半角へ正規化する。"""
+    s = norm_code(code)
     if len(s) != 13 or not s.isdigit():
         return None
     digs = [int(c) for c in s]
@@ -607,8 +617,8 @@ def _ean13_base(code):
 def _resolve_code_conditions(code):
     """スキャン/入力値から products.product_no 照合用の (whereSQL, args) を返す。
     EAN-13 バーコードなら先頭10桁で前方一致(ハイフン有無に依らない)、
-    そうでなければ商品番号の完全一致。"""
-    raw = str(code or "").strip()
+    そうでなければ商品番号の完全一致。全角(かな)モードで入力されても照合できるよう半角化する。"""
+    raw = norm_code(code)
     base = _ean13_base(raw)
     if base:
         return ("(product_no = ? OR REPLACE(product_no,'-','') LIKE ?)", [raw, base + "%"])
@@ -630,13 +640,15 @@ def search_products(con, q="", cat="", state="", supplier="", genre="", sort="no
     where, args = [], []
     if q:
         like = "%" + q.replace("%", "").replace("_", "") + "%"
+        qn = norm_code(q)                       # 全角(かな)入力を半角化した品番/バーコード照合用
+        liken = "%" + qn.replace("%", "").replace("_", "") + "%"
         base = _ean13_base(q)  # バーコード(EAN-13)なら先頭10桁で管理番号に前方一致
         if base:
             where.append("(product_no LIKE ? OR name LIKE ? OR REPLACE(product_no,'-','') LIKE ?)")
-            args += [like, like, base + "%"]
+            args += [liken, like, base + "%"]
         else:
-            where.append("(product_no LIKE ? OR name LIKE ?)")
-            args += [like, like]
+            where.append("(product_no LIKE ? OR product_no LIKE ? OR name LIKE ?)")
+            args += [like, liken, like]
     if cat:
         where.append("category = ?"); args.append(cat)
     if state:
