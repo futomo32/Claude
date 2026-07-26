@@ -469,6 +469,11 @@ class Handler(BaseHTTPRequestHandler):
                 result = db_query.checkout(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/sale_line_update":
+                con = connect()
+                result = db_query.update_sale_line(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/void_line":
                 con = connect()
                 result = db_query.void_sale_line(con, payload.get("line_id"))

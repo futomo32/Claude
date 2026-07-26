@@ -1932,6 +1932,35 @@ def delete_product(con, product_key):
     return {"deleted": pk, "image_file": image_file}
 
 
+def update_sale_line(con, p):
+    """購入明細(番号なし行=自由入力の売上)の品名・商品情報を直す。
+    仕入れた在庫品ではない明細(product_key が無い行)は商品台帳が無く、これまで顧客詳細から
+    何も直せなかったため。金額は売上集計・累計購入額に影響するのでここでは変更しない
+    (返品・訂正=取消してから打ち直す運用にする)。"""
+    try:
+        line_id = int(p.get("line_id"))
+    except (TypeError, ValueError):
+        raise ValueError("明細が指定されていません")
+    row = con.execute("SELECT product_key, COALESCE(voided,0) v FROM sale_lines WHERE line_id=?",
+                      (line_id,)).fetchone()
+    if not row:
+        raise ValueError("明細が見つかりません")
+    if row[1]:
+        raise ValueError("取消済みの明細は編集できません")
+    if row[0]:
+        raise ValueError("在庫品の明細です。品名は商品台帳(商品の修正)から直してください")
+    name = str(p.get("name") or "").strip()
+    if not name:
+        raise ValueError("品名を入力してください")
+    info = str(p.get("info") or "").strip() or None
+    con.execute("UPDATE sale_lines SET free_name=?, info=? WHERE line_id=?", (name, info, line_id))
+    # この明細に処方箋が紐づいている場合は、処方箋側の品名も合わせる(表示のねじれを防ぐ)
+    con.execute("UPDATE prescriptions SET lens_name=? "
+                "WHERE sale_line_id=? AND COALESCE(lens_name,'')<>'' ", (name, line_id))
+    con.commit()
+    return {"line_id": line_id, "name": name, "info": info}
+
+
 def add_prescription(con, p):
     """メガネ処方箋の新規登録/編集。id があれば更新、無ければ採番して新規。
     合計金額はレンズ金額+フレーム金額を優先(無ければ total_sell を使用)。"""

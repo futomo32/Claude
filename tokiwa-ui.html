@@ -2016,10 +2016,41 @@
       <p style="margin:0 0 0.4rem;color:var(--muted);font-size:0.85em">使いかけのシートの場合、次に使うラベルの位置をクリックしてください。</p>
       <div class="label-pos-grid" id="label-pos-grid"></div>
       <p style="margin:0.6rem 0 0;color:var(--muted);font-size:0.82em" id="label-sheet-text"></p>
+      <div class="section-title">宛名の書き方</div>
+      <div class="field">
+        <select id="label-name-style" onchange="paintLabelPosGrid()">
+          <option value="single">本人のみ（山田 花子 様）</option>
+          <option value="family">ご家族様（山田 花子 様 ご家族様）</option>
+          <option value="joint">家族を連名（山田 花子 様　山田 太郎 様）</option>
+        </select>
+        <span style="font-size:0.8em;color:var(--muted)">連名は同じ住所の家族だけを、名字が同じなら名前だけ並べます。</span>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn" onclick="closeLabelPrint()">キャンセル</button>
       <button class="btn btn-primary" onclick="doPrintLabels()">印刷する</button>
+    </div>
+  </div>
+</div>
+
+<!-- 購入明細(番号なし行)の修正。仕入れた在庫品ではない明細は商品台帳が無いので、
+     顧客詳細から品名・商品情報を直せるようにする。金額は集計に影響するため触らない。 -->
+<div class="modal-back" id="line-edit-modal">
+  <div class="modal" style="width:min(520px,100%)" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h3>購入明細の修正</h3>
+      <button class="close" aria-label="閉じる" onclick="closeLineEdit()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">在庫品ではない明細(番号なしの売上)の品名・商品情報を直せます。<b>金額は変更できません</b>（金額を直す場合は「取消」してから打ち直してください）。</p>
+      <div class="field"><label>買上日・金額</label><input id="le-meta" readonly style="background:var(--bg)"></div>
+      <div class="field"><label>品名 <span class="req">必須</span></label><input id="le-name" placeholder="例: メガネレンズ 一式"></div>
+      <div class="field"><label>商品情報</label><input id="le-info" placeholder="任意"></div>
+      <p id="le-error" style="color:var(--danger);font-size:0.85em;margin:0.6rem 0 0;display:none"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeLineEdit()">キャンセル</button>
+      <button class="btn btn-primary" onclick="saveLineEdit(this)">保存する</button>
     </div>
   </div>
 </div>
@@ -2626,6 +2657,7 @@
   bindBackdropClose("consign-modal", closeConsignModal);
   bindBackdropClose("rx-modal", closeRxModal);
   bindBackdropClose("label-modal", closeLabelPrint);
+  bindBackdropClose("line-edit-modal", closeLineEdit);
   bindBackdropClose("repair-modal", closeRepairModal);
   renderPosLines();
 
@@ -3590,7 +3622,13 @@
           var amount = (nm.indexOf("種類未定") >= 0 && !s[3]) ? "未定" : "¥" + num(s[3]);
           var pno = s[6];  // 在庫商品なら商品番号。自由入力明細はnull
           var nameCell = esc(dash(s[1])) + (s[2] && String(s[2]).indexOf("後日入力") >= 0 ? ' <span class="chip chip-warn">後日入力</span>' : "");
-          var attr = pno ? ' style="cursor:pointer" title="ダブルクリックで商品情報" ondblclick="openProductByNo(\'' + esc(String(pno)) + '\')"' : '';
+          // 在庫品はダブルクリックで商品情報。在庫品でない明細(番号なし)は品名の修正を開く
+          // (以前は何も起きず、仕入れ品以外は顧客詳細から直せなかった)
+          var attr = pno
+            ? ' style="cursor:pointer" title="ダブルクリックで商品情報" ondblclick="openProductByNo(\'' + esc(String(pno)) + '\')"'
+            : (API && s[7] != null
+                ? ' style="cursor:pointer" title="ダブルクリックで品名を修正" ondblclick="openLineEdit(' + s[7] + ',\'' + esc(id) + '\')"'
+                : '');
           // s[7]=line_id, s[8]=slip_id(サーバー経由時のみ)。取消(返品・訂正)ボタン
           var voidCell = (API && s[7] != null)
             ? '<button class="btn" style="color:var(--danger);padding:0.2em 0.6em" onclick="voidSaleLine(' + s[7] + ',' + (parseInt(s[3], 10) || 0) + ',\'' + esc(id) + '\')">取消</button>'
@@ -3620,6 +3658,51 @@
       html += '<p style="margin:0;color:var(--muted);font-size:0.9em">アプローチ履歴はありません。</p>';
     }
     document.getElementById("c-history").innerHTML = html;
+  }
+  /* ── 購入明細(番号なし行)の修正 ── */
+  var lineEditTarget = null;  // {lineId, cid}
+  function openLineEdit(lineId, cid) {
+    var arr = D.sales[String(cid)] || [];
+    var s = arr.filter(function (x) { return String(x[7]) === String(lineId); })[0];
+    if (!s) return showToast("明細が見つかりません");
+    lineEditTarget = { lineId: lineId, cid: String(cid) };
+    document.getElementById("le-meta").value = (s[0] || "") + "　¥" + num(s[3] || 0);
+    document.getElementById("le-name").value = s[1] || "";
+    document.getElementById("le-info").value = s[2] || "";
+    document.getElementById("le-error").style.display = "none";
+    document.getElementById("line-edit-modal").classList.add("show");
+    document.getElementById("le-name").focus();
+  }
+  function closeLineEdit() {
+    document.getElementById("line-edit-modal").classList.remove("show");
+    lineEditTarget = null;
+  }
+  function saveLineEdit(btn) {
+    if (!lineEditTarget || !API) return;
+    var err = document.getElementById("le-error");
+    err.style.display = "none";
+    var name = document.getElementById("le-name").value.trim();
+    if (!name) { err.textContent = "品名を入力してください。"; err.style.display = "block"; return; }
+    var info = document.getElementById("le-info").value.trim();
+    var t = lineEditTarget;
+    btn.disabled = true;
+    fetch(API + "/sale_line_update", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ line_id: t.lineId, name: name, info: info })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (res.error) throw new Error(res.error);
+      // ローカルの購入履歴キャッシュも直して、画面をすぐ更新する
+      (D.sales[t.cid] || []).forEach(function (x) {
+        if (String(x[7]) === String(t.lineId)) { x[1] = name; x[2] = info || null; }
+      });
+      btn.disabled = false;
+      closeLineEdit();
+      var c = findCust(t.cid); if (c) renderHistory(c);
+      showToast("購入明細を修正しました。");
+    }).catch(function (e) {
+      btn.disabled = false;
+      err.textContent = "保存に失敗しました: " + (e.message || e); err.style.display = "block";
+    });
   }
   // 購入明細の取消(返品・訂正。B-1)。取消すると集計・履歴から除外し、在庫品は在庫に戻す
   function voidSaleLine(lineId, amount, cid) {
@@ -6316,10 +6399,35 @@
       b.classList.toggle("sel", Number(b.dataset.pos) === labelStartPos);
     });
     var sheets = Math.ceil((labelStartPos - 1 + labelCustomers.length) / LABEL_PER_SHEET);
+    var sample = labelCustomers.length ? "　例: " + labelNameText(labelCustomers[0]) : "";
     document.getElementById("label-sheet-text").textContent =
-      "用紙 " + sheets + "枚を使用します(" + labelStartPos + "番目のラベルから印字開始)。";
+      "用紙 " + sheets + "枚を使用します(" + labelStartPos + "番目のラベルから印字開始)。" + sample;
   }
   function closeLabelPrint() { document.getElementById("label-modal").classList.remove("show"); }
+  // 宛名の作り方(単独 / ご家族様 / 家族を連名)。
+  // 連名は「同じ住所に住んでいる家族」だけを対象にする(別居の子など宛先が違う相手を
+  // 同じ封筒に載せてしまわないため)。名字が同じなら2人目以降は名前だけ並べる。
+  function labelNameText(c) {
+    var style = (document.getElementById("label-name-style") || {}).value || "single";
+    var self = String(c[1] || "");
+    if (style === "single") return self + " 様";
+    if (style === "family") return self + " 様 ご家族様";
+    var fam = (D.families && D.families[String(c[0])]) || [];
+    var myLast = self.split(/[\s　]+/)[0];
+    var names = [];
+    fam.forEach(function (f) {
+      var nm = String(f[0] || "").trim();
+      if (!nm || nm === self) return;
+      // 顧客として登録されている家族(B方式)は住所が分かるので、同居のみ連名にする
+      var linked = f[4] ? findCust(f[4]) : null;
+      if (linked && String(linked[5] || "") !== String(c[5] || "")) return;
+      var parts = nm.split(/[\s　]+/);
+      names.push(parts[0] === myLast && parts.length > 1 ? parts.slice(1).join(" ") : nm);
+    });
+    if (!names.length) return self + " 様";
+    return self + " 様　" + names.map(function (n) { return n + " 様"; }).join("　");
+  }
+  function labelNameHtml(c) { return esc(labelNameText(c)); }
   function labelCellHtml(c) {
     if (!c) return '<div class="label-cell"></div>';
     var zip = c[14] ? "〒" + esc(c[14]) : "";
@@ -6329,7 +6437,7 @@
       (zip ? '<div class="lc-zip">' + zip + '</div>' : "") +
       '<div>' + addr + '</div>' +
       (addr2 ? '<div>' + addr2 + '</div>' : "") +
-      '<div class="lc-name">' + esc(c[1] || "") + ' 様</div>' +
+      '<div class="lc-name">' + labelNameHtml(c) + '</div>' +
       '</div>';
   }
   function doPrintLabels() {
