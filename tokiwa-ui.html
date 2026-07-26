@@ -856,7 +856,7 @@
           <button class="btn" style="margin-bottom:0.6rem" onclick="addPayRow()">+ 支払方法を追加(分割払い)</button>
           <div class="pos-total-row"><span>内訳合計</span><span class="v num" id="pay-sum">¥0</span></div>
           <div id="pos-cash-wrap">
-            <div class="field"><label>お預かり(現金)</label><input id="deposit" class="num" inputmode="numeric" value="0" style="text-align:right;font-size:1.2em;font-weight:700"></div>
+            <div class="field"><label>お預かり(現金)</label><input id="deposit" class="num han-num" inputmode="numeric" value="0" style="text-align:right;font-size:1.2em;font-weight:700"></div>
             <div class="pos-total-row"><span>釣銭</span><span class="v num" id="change">¥0</span></div>
           </div>
           <div id="pos-error" class="pos-error" style="display:none" role="alert"><span id="pos-error-msg"></span></div>
@@ -876,7 +876,7 @@
       <div class="card">
         <div class="search-row">
           <div class="field"><label>顧客名・カナ</label><input id="q-name" placeholder="ヤマダ(カタカナ・あいまい可)"></div>
-          <div class="field"><label>電話番号</label><input id="q-tel" inputmode="tel" placeholder="一部でも可"></div>
+          <div class="field"><label>電話番号</label><input class="han-num" id="q-tel" inputmode="tel" placeholder="一部でも可"></div>
           <div class="field"><label>担当者</label><div style="display:flex;gap:0.3em"><input type="number" id="q-staff-code" class="num" placeholder="番号" style="width:4.5em;flex:none" title="担当者番号で選択"><select id="q-staff"><option value="">すべて</option></select></div></div>
           <div class="field"><label>ランク</label><select id="q-cust-rank"><option value="">すべて</option></select></div>
           <div class="field"><label>誕生月</label><select id="q-cust-birth"><option value="">すべて</option><option value="1">1月</option><option value="2">2月</option><option value="3">3月</option><option value="4">4月</option><option value="5">5月</option><option value="6">6月</option><option value="7">7月</option><option value="8">8月</option><option value="9">9月</option><option value="10">10月</option><option value="11">11月</option><option value="12">12月</option></select></div>
@@ -1153,7 +1153,7 @@
             </div>
           </div>
           <div class="kv">
-            <div class="field"><label>商品番号(空欄で自動)</label><input class="num" id="np-no" placeholder="自動採番"></div>
+            <div class="field"><label>商品番号(空欄で自動)</label><input class="num han-num" id="np-no" placeholder="自動採番"></div>
             <div class="field"><label>仕入先</label><select id="np-supplier"><option value="">選択…</option></select></div>
             <div class="field"><label>伝票日付</label><input type="date" id="np-date"></div>
             <div class="field"><label>仕入担当</label><div style="display:flex;gap:0.3em"><input type="number" id="np-staff-code" class="num" placeholder="番号" style="width:4.5em;flex:none" title="担当者番号で選択"><select id="np-staff"><option>田中 一槻</option><option>三輪 祐加</option></select></div></div>
@@ -1168,12 +1168,12 @@
             <div class="section-title">宝飾情報</div>
             <div class="kv">
               <div class="field"><label>中石(石種)</label><input id="np-stone" placeholder="例: サファイア"></div>
-              <div class="field"><label>中石重量(ct)</label><input class="num" id="np-carat" inputmode="decimal" placeholder="0.00"></div>
+              <div class="field"><label>中石重量(ct)</label><input class="num han-num" id="np-carat" inputmode="decimal" placeholder="0.00"></div>
               <div class="field"><label>脇石</label><input id="np-side" placeholder="例: ダイヤ 0.12ct"></div>
               <div class="field"><label>カラー</label><select id="np-color"><option value="">—</option><option>D</option><option>E</option><option>F</option><option>G</option><option>H</option></select></div>
               <div class="field"><label>クラリティ</label><select id="np-clarity"><option value="">—</option><option>FL</option><option>VVS1</option><option>VVS2</option><option>VS1</option><option>VS2</option><option>SI1</option></select></div>
               <div class="field"><label>カット</label><select id="np-cut"><option value="">—</option><option>3EX</option><option>EX</option><option>VG</option><option>G</option></select></div>
-              <div class="field"><label>鑑定書No</label><input class="num" id="np-cert"></div>
+              <div class="field"><label>鑑定書No</label><input class="num han-num" id="np-cert"></div>
               <div class="field"><label>リングサイズ</label><input id="np-ring-size" placeholder="例: #10.5 / 12号"></div>
             </div>
             <div class="field" style="margin-top:0.4rem"><label>はめる指(複数選択可)</label>
@@ -1181,8 +1181,8 @@
           </div>
           <div class="section-title">価格・店舗</div>
           <div class="kv">
-            <div class="field"><label>仕入単価(税別)</label><input class="num" id="np-cost" inputmode="numeric" placeholder="0"></div>
-            <div class="field"><label>上代・定価(税込)</label><input class="num" id="np-list" inputmode="numeric" placeholder="0"></div>
+            <div class="field"><label>仕入単価(税別)</label><input class="num han-num" id="np-cost" inputmode="numeric" placeholder="0"></div>
+            <div class="field"><label>上代・定価(税込)</label><input class="num han-num" id="np-list" inputmode="numeric" placeholder="0"></div>
             <div class="field"><label>掛率</label><input class="num" id="np-rate" placeholder="自動計算" readonly></div>
             <div class="field"><label>折数</label><input class="num" id="np-ori" readonly></div>
             <div class="field"><label>店舗</label><select id="np-loc"><option>本店</option></select></div>
@@ -1284,7 +1284,7 @@
         <div class="section-title">品目を追加</div>
         <div class="search-row" style="align-items:flex-end">
           <div class="field" style="flex:2"><label>品名</label><input id="est-name-in" placeholder="品名(自由入力)"></div>
-          <div class="field"><label>金額(税込)</label><input id="est-amt-in" class="num" inputmode="numeric" placeholder="0"></div>
+          <div class="field"><label>金額(税込)</label><input id="est-amt-in" class="num han-num" inputmode="numeric" placeholder="0"></div>
           <button class="btn" onclick="estAddLine()">明細に追加</button>
           <button class="btn" onclick="openProductPicker('est')">在庫商品から選ぶ</button>
         </div>
@@ -1400,7 +1400,7 @@
       <input type="hidden" id="cm-id">
       <div class="kv">
         <div class="field"><label>顧客名<span class="req">必須</span></label><input id="cm-name" placeholder="山田 花子"></div>
-        <div class="field"><label>フリガナ</label><input id="cm-kana" placeholder="ヤマダ ハナコ(全角カナ)"></div>
+        <div class="field"><label>フリガナ</label><input id="cm-kana" class="kana" placeholder="ヤマダ ハナコ(ひらがなで打ってもカタカナになります)"></div>
         <div class="field"><label>電話<span class="req">必須</span></label><input id="cm-tel" class="han-num" inputmode="tel" placeholder="090-1234-5678"></div>
         <div class="field"><label>携帯電話</label><input id="cm-tel2" class="han-num" inputmode="tel" placeholder="090-1234-5678"></div>
         <div class="field"><label>担当者<span class="req">必須</span></label><div style="display:flex;gap:0.3em"><input type="number" id="cm-staff-code" class="num" placeholder="番号" style="width:4.5em;flex:none" title="担当者番号で選択"><select id="cm-staff"><option value="">選択…</option></select></div></div>
@@ -1515,16 +1515,16 @@
           <div class="field"><label>ブランド</label><input id="pe-brand" list="brand-datalist"></div>
           <div class="field"><label>地金</label><input id="pe-metal" list="metal-datalist"></div>
           <div class="field"><label>仕入先</label><select id="pe-supplier"><option value="">選択…</option></select></div>
-          <div class="field"><label>仕入単価(下代)</label><input class="num" id="pe-cost" inputmode="numeric"></div>
+          <div class="field"><label>仕入単価(下代)</label><input class="num han-num" id="pe-cost" inputmode="numeric"></div>
           <div class="field"><label>符丁(下代・自動)</label><input id="pe-fucho" title="仕入先の頭文字＋下代(上3桁)の符牒。仕入単価と仕入先を変えると自動更新。手直しも可。"></div>
-          <div class="field"><label>上代(定価)</label><input class="num" id="pe-list" inputmode="numeric"></div>
+          <div class="field"><label>上代(定価)</label><input class="num han-num" id="pe-list" inputmode="numeric"></div>
           <div class="field"><label>店舗</label><select id="pe-loc"><option value="">—</option><option>本店</option></select></div>
           <div class="field"><label>中石(石種)</label><input id="pe-stone"></div>
-          <div class="field"><label>中石重量(ct)</label><input class="num" id="pe-carat" inputmode="decimal"></div>
+          <div class="field"><label>中石重量(ct)</label><input class="num han-num" id="pe-carat" inputmode="decimal"></div>
           <div class="field"><label>カラー</label><select id="pe-color"><option value="">—</option><option>D</option><option>E</option><option>F</option><option>G</option><option>H</option></select></div>
           <div class="field"><label>クラリティ</label><select id="pe-clarity"><option value="">—</option><option>FL</option><option>VVS1</option><option>VVS2</option><option>VS1</option><option>VS2</option><option>SI1</option></select></div>
           <div class="field"><label>カット</label><select id="pe-cut"><option value="">—</option><option>3EX</option><option>EX</option><option>VG</option><option>G</option></select></div>
-          <div class="field"><label>鑑定書No</label><input class="num" id="pe-cert"></div>
+          <div class="field"><label>鑑定書No</label><input class="num han-num" id="pe-cert"></div>
           <div class="field"><label>リングサイズ</label><input id="pe-ring-size" placeholder="例: #10.5 / 12号"></div>
           <div class="field"><label>備考</label><input id="pe-info"></div>
         </div>
@@ -1754,7 +1754,7 @@
       <p style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">メーカーの受託品をその場でレジに通します。<b>メーカーと金額だけ</b>でOK。原価・正式品番は後日、納品書が届いてから受託管理で入れます。</p>
       <div class="field"><label>メーカー(仕入先)</label><select id="cs-supplier"><option value="">選択…</option></select></div>
       <div class="field"><label>品名(任意)</label><input id="cs-name" placeholder="未入力なら「受託品」"></div>
-      <div class="field"><label>金額(税込)</label><input id="cs-amount" class="num" inputmode="numeric" placeholder="0"></div>
+      <div class="field"><label>金額(税込)</label><input id="cs-amount" class="num han-num" inputmode="numeric" placeholder="0"></div>
       <label style="display:flex;align-items:center;gap:0.4em;margin:0.5rem 0 0;font-size:0.9em;cursor:pointer">
         <input type="checkbox" id="cs-fix"> このメーカーで固定(催事モード：金額だけで連続追加)</label>
       <p id="cs-error" style="color:var(--danger);font-size:0.85em;margin:0.5rem 0 0;display:none"></p>
@@ -1776,7 +1776,7 @@
     <div class="modal-body">
       <div class="field"><label>対象</label><p id="pay-target-name" style="margin:0.2em 0 0"></p></div>
       <div class="field"><label>残高</label><p id="pay-target-balance" class="num" style="margin:0.2em 0 0"></p></div>
-      <div class="field"><label>入金額</label><input class="num" id="pay-amount" inputmode="numeric" placeholder="0"></div>
+      <div class="field"><label>入金額</label><input class="num han-num" id="pay-amount" inputmode="numeric" placeholder="0"></div>
       <div class="field"><label>支払方法</label><select id="pay-method"><option>現金</option><option>銀行振込</option><option>カード</option><option>その他</option></select>
         <p style="margin:0.3em 0 0;font-size:0.78em;color:var(--muted)">現金以外(振込・カード等)はレジの現金締め(入出金合計)には含めず、残高だけ減らします。</p></div>
       <div class="field"><label>入金日</label><input type="date" id="pay-date"></div>
@@ -1800,7 +1800,7 @@
     <div class="modal-body">
       <p style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">代引手数料・収入印紙・両替・経費など、買い物と無関係な現金の出入りを記録します。<b>出金はマイナス</b>で入力してください。</p>
       <div class="field"><label>区分</label><select id="cash-category"><option>経費</option><option>両替</option><option>代引手数料</option><option>収入印紙</option><option>その他</option></select></div>
-      <div class="field"><label>金額(出金はマイナス)</label><input class="num" id="cash-amount" inputmode="numeric" placeholder="例: -110"></div>
+      <div class="field"><label>金額(出金はマイナス)</label><input class="num han-num" id="cash-amount" inputmode="numeric" placeholder="例: -110"></div>
       <div class="field"><label>日付</label><input type="date" id="cash-date"></div>
       <div class="field"><label>メモ</label><input id="cash-note" placeholder="任意(例: 代引き ○○様)"></div>
       <p id="cash-error" style="display:none;color:var(--danger);font-size:0.85em;margin:0.4em 0 0"></p>
@@ -1853,7 +1853,7 @@
     <div class="modal-body">
       <p id="ar-desc" style="margin:0 0 0.6rem;color:var(--muted);font-size:0.85em">レジ会計を経由しない売掛(過去分の未回収など)をこの顧客に登録します。あとで「入金する」で回収できます。</p>
       <div class="field"><label>商品名・内容(任意)</label><input id="ar-name" placeholder="例: 修理代 / K18ネックレス"></div>
-      <div class="field"><label id="ar-amount-label">売掛金額</label><input class="num" id="ar-amount" inputmode="numeric" placeholder="0"></div>
+      <div class="field"><label id="ar-amount-label">売掛金額</label><input class="num han-num" id="ar-amount" inputmode="numeric" placeholder="0"></div>
       <div class="field"><label>発生日(買上日)</label><input type="date" id="ar-date"></div>
       <p id="ar-error" style="display:none;color:var(--danger);font-size:0.85em;margin:0.4em 0 0"></p>
     </div>
@@ -2077,11 +2077,28 @@
       .replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
       .replace(/[－―‐]/g, "-").replace(/．/g, ".").replace(/＋/g, "+");
   }
-  // class="han-num" の入力欄は打った瞬間に全角→半角へ変換
+  // ひらがな→全角カタカナ。フリガナ欄で「かな」のまま打ってもカタカナで入るようにする
+  // (ブラウザからIME(かな/英数)を切り替えることはできないため、入力後に整える方式)
+  function hira2kata(s) {
+    return String(s == null ? "" : s).replace(/[ぁ-ゖ]/g, function (c) {
+      return String.fromCharCode(c.charCodeAt(0) + 0x60);
+    });
+  }
+  // 入力欄の種類に応じて、打った瞬間に文字種を整える。
+  //   class="han-num" … 全角数字→半角(かな入力のままでも数字が正しく入る)
+  //   class="kana"    … ひらがな→カタカナ(カタカナに切り替えなくてよい)
+  // これで「入力者がかな/英数/数字を意識して切り替える」必要をなくす。
   document.addEventListener("input", function (e) {
-    if (e.target.classList && e.target.classList.contains("han-num")) {
-      var v = zen2han(e.target.value);
-      if (v !== e.target.value) e.target.value = v;
+    var el = e.target;
+    if (!el.classList) return;
+    var v = null;
+    if (el.classList.contains("han-num")) v = zen2han(el.value);
+    else if (el.classList.contains("kana")) v = hira2kata(el.value);
+    if (v != null && v !== el.value) {
+      // カーソル位置を保つ(変換で文字数は変わらないため、選択位置をそのまま戻す)
+      var pos = el.selectionStart;
+      el.value = v;
+      try { el.setSelectionRange(pos, pos); } catch (err) { /* type次第で不可 */ }
     }
   });
 
@@ -2275,7 +2292,7 @@
       var infoCell = ln.kind === "stock" ? esc(dash(ln.info)) : "—";
       return '<tr><td class="num">' + esc(dash(ln.no)) + '</td><td>' + nameCell +
         '</td><td>' + infoCell + '</td><td class="r num">' + (ln.list ? ln.list.toLocaleString() : "—") +
-        '</td><td class="r"><input class="amount-input num" id="amt-' + i + '" value="' + (ln.amount || 0).toLocaleString() +
+        '</td><td class="r"><input class="amount-input num han-num" id="amt-' + i + '" value="' + (ln.amount || 0).toLocaleString() +
         '" inputmode="numeric" oninput="posAmt(' + i + ',this)" aria-label="買上金額"></td>' +
         '<td class="r num" id="disc-' + i + '">—</td>' +
         '<td><button class="link-btn" onclick="removePosLine(' + i + ')">行削除</button></td></tr>';
@@ -2371,7 +2388,7 @@
       var chip = r.settled ? '<span class="chip chip-green">精算済</span>' : '<span class="chip chip-warn">未精算</span>';
       return '<tr><td>' + esc(dash(r.supplier)) + '</td><td>' + esc(dash(r.name)) + '</td>' +
         '<td>' + esc(dash(r.sold_at)) + '</td><td class="r num">' + (r.list_price != null ? "¥" + num(r.list_price) : "—") + '</td>' +
-        '<td class="r"><input class="num" inputmode="numeric" id="cn-cost-' + i + '" value="' + costVal + '" placeholder="下代" style="width:6.5em;text-align:right"></td>' +
+        '<td class="r"><input class="num han-num" inputmode="numeric" id="cn-cost-' + i + '" value="' + costVal + '" placeholder="下代" style="width:6.5em;text-align:right"></td>' +
         '<td>' + chip + '</td>' +
         '<td><button class="btn btn-primary" onclick="settleConsignment(' + i + ')">' + (r.settled ? "更新" : "精算") + '</button></td></tr>';
     }).join("") : '<tr><td colspan="7" style="color:var(--muted)">受託品はありません。</td></tr>';
@@ -2445,7 +2462,7 @@
         PAY_METHODS.map(function (m) {
           return '<option value="' + m + '"' + (m === r.method ? " selected" : "") + '>' + m + '</option>';
         }).join("") + '</select>' +
-        '<input class="num" inputmode="numeric" value="' + (r.amount || 0).toLocaleString() + '" oninput="setPayAmount(' + i + ',this.value)">' +
+        '<input class="num han-num" inputmode="numeric" value="' + (r.amount || 0).toLocaleString() + '" oninput="setPayAmount(' + i + ',this.value)">' +
         (payRows.length > 1 ? '<button class="btn" onclick="removePayRow(' + i + ')" title="削除">×</button>' : '') +
         '</div>';
     }).join("");
@@ -6069,10 +6086,25 @@
     ["nk-r", "nk-l", "nk-b", "cr-r", "cr-l", "cr-b"].forEach(function (k) { selCell("c-" + k, "rx-" + k, acuOpts); });
     document.getElementById("c-sph-r").dataset.built = "1";
     function wireManual(selId) {
-      document.getElementById(selId + (document.getElementById(selId + "-mag") ? "-mag" : "")).addEventListener("change", function () {
-        if (this.value === "__manual__") {
-          document.getElementById(selId + "-wrap").style.display = "none";
-          var mi = document.getElementById(selId + "-m"); mi.style.display = ""; mi.focus();
+      var el = document.getElementById(selId + (document.getElementById(selId + "-mag") ? "-mag" : ""));
+      var toManual = function (seed) {
+        document.getElementById(selId + "-wrap").style.display = "none";
+        var mi = document.getElementById(selId + "-m");
+        mi.style.display = "";
+        if (seed != null) mi.value = seed;
+        mi.focus();
+      };
+      el.addEventListener("change", function () {
+        if (this.value === "__manual__") toManual(null);
+      });
+      // 選択肢を開かずに、カーソルを合わせてそのまま数字を打てば手入力に切り替わる。
+      // (規定値に無い度数を入れる時、いちいち「手入力」を選ばなくて済む。選択制はそのまま維持)
+      el.title = "選択のほか、数字を打つとそのまま手入力できます";
+      el.addEventListener("keydown", function (e) {
+        if (e.ctrlKey || e.altKey || e.metaKey) return;
+        if (e.key.length === 1 && /[0-9.\-+]/.test(e.key)) {  // 度数・軸・PDに使う文字
+          e.preventDefault();
+          toManual(e.key);
         }
       });
     }
