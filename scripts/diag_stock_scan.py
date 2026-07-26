@@ -168,6 +168,38 @@ def main():
     except sqlite3.Error as e:
         print("   取得不可:", e)
 
+    print("\n[★ドライラン] 不明品(空レコード)を整理したら重複は何組残るか")
+    print("  ※計算だけで、DBは何も消しません。移行の直前にもう一度実行すれば、その時点の残件が出ます。")
+    defs = [
+        ("A: 上代0円/空 かつ 下代0円/空",
+         "(list_price IS NULL OR list_price=0) AND (cost_price IS NULL OR cost_price=0)"),
+        ("B: 品名が空",
+         "(name IS NULL OR TRIM(name)='')"),
+        ("C: A または B",
+         "((list_price IS NULL OR list_price=0) AND (cost_price IS NULL OR cost_price=0)) "
+         "OR (name IS NULL OR TRIM(name)='')"),
+    ]
+    for label, cond in defs:
+        gone = one(con, f"SELECT COUNT(*) FROM products WHERE {STOCK} AND {NUM5} AND ({cond})")
+        # その分を除いたうえで、まだ複数残る品番を数え直す
+        kinds = one(con, f"SELECT COUNT(*) FROM (SELECT product_no FROM products "
+                         f"WHERE {STOCK} AND {NUM5} AND NOT ({cond}) "
+                         f"GROUP BY product_no HAVING COUNT(*)>1)")
+        items = one(con, f"SELECT COALESCE(SUM(c),0) FROM (SELECT COUNT(*) c FROM products "
+                         f"WHERE {STOCK} AND {NUM5} AND NOT ({cond}) "
+                         f"GROUP BY product_no HAVING c>1)")
+        left = (n5 - gone) if isinstance(n5, int) and isinstance(gone, int) else None
+        print(f"\n  【定義{label}】")
+        print(f"    消える見込みの在庫    : {gone} 件")
+        if left is not None:
+            print(f"    残る在庫              : {left} 件")
+        print(f"    残る重複品番          : {kinds} 種類 / {items} 件  ← 番号の振り直しが必要な分")
+        if left and isinstance(items, int):
+            print(f"    1件に確定できる割合    : {pct(left - items, left)}")
+
+    print("\n  → 残った重複は「番号の振り直し」で対応します(削除より安全)。")
+    print("    内部キー(product_key)で売上・在庫・売掛が紐づいているので、表示番号を変えても壊れません。")
+
     con.close()
     print("\n※ 読み取りのみ。DBは変更しません。")
     print("※ 判定の目安: 「1件に確定できる割合」が95%以上なら、スキャン→即確認で運用できる")

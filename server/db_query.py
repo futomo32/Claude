@@ -190,14 +190,17 @@ def stock_stats(con):
 def stocktake_scan(con, product_no):
     """棚卸しのスキャン: 商品番号で在庫品を1点、現物確認済みにする(棚卸台帳に記録)。
     ・在庫状態の同番号のうち、まだ未確認の1点を確認済みにする(同番号が複数あれば繰り返しスキャンで順に)。
-    ・在庫状態でない番号(売却済み等)は警告を返す。存在しない番号はエラー。"""
+    ・在庫状態でない番号(売却済み等)は警告を返す。存在しない番号はエラー。
+    ・同じ品番の在庫が複数ある場合(移行データに少数あり)は same_no / remaining を返し、
+      「同番号がもう何点あるか」を画面に出せるようにする(現物を1点ずつスキャンすれば全部消える)。"""
     con.row_factory = sqlite3.Row
     no = str(product_no or "").strip()
     if not no:
         raise ValueError("商品番号を入力してください")
-    where, wargs = _resolve_code_conditions(no)  # バーコード(EAN-13)は先頭10桁で照合
+    where, wargs = _resolve_code_conditions(no)  # バーコードは品番(先頭5桁)等で照合
     rows = con.execute(
-        f"SELECT product_key, name, state, location FROM products WHERE {where}", wargs).fetchall()
+        f"SELECT product_key, product_no, name, state, location, list_price "
+        f"FROM products WHERE {where}", wargs).fetchall()
     if not rows:
         return {"result": "not_found", "product_no": no, "message": "その商品番号は台帳にありません"}
     instock = [r for r in rows if r["state"] == "在庫"]
@@ -217,8 +220,12 @@ def stocktake_scan(con, product_no):
     if not _stocktake_started(con):
         _set_setting(con, "stocktake_started_at", datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
     con.commit()
-    return {"result": "ok", "product_no": no, "name": target["name"],
-            "location": target["location"], "product_key": target["product_key"]}
+    # 同じ品番の在庫が他にもある場合、残りの未確認点数を返す(現物を1点ずつスキャンすれば消える)
+    remaining = sum(1 for r in instock
+                    if r["product_key"] != target["product_key"] and r["product_key"] not in checked_keys)
+    return {"result": "ok", "product_no": target["product_no"] or no, "name": target["name"],
+            "location": target["location"], "product_key": target["product_key"],
+            "list_price": target["list_price"], "same_no": len(instock), "remaining": remaining}
 
 
 def _set_setting(con, key, value):
@@ -616,12 +623,17 @@ def _ean13_base(code):
 
 def _resolve_code_conditions(code):
     """スキャン/入力値から products.product_no 照合用の (whereSQL, args) を返す。
-    EAN-13 バーコードなら先頭10桁で前方一致(ハイフン有無に依らない)、
-    そうでなければ商品番号の完全一致。全角(かな)モードで入力されても照合できるよう半角化する。"""
+    EAN-13 バーコードなら次の3通りに当てる(全角モードで入力されても半角化して照合)。
+      ① 先頭5桁 = 品番。実データの商品番号は5桁の品番(例 20556)なので、これが本線。
+      ② 先頭10桁で前方一致。商品番号にフル管理番号(20556-1-02-23-130)が入っている場合の保険。
+      ③ 13桁そのまま。バーコードの数字を商品番号にしている場合の保険。
+    ※バーコードには管理番号の末尾区画(VVV)が入らないため、同じ品番の在庫が複数あると
+      バーコードだけでは個体を特定できない(呼び出し側で候補から選ぶ)。"""
     raw = norm_code(code)
     base = _ean13_base(raw)
     if base:
-        return ("(product_no = ? OR REPLACE(product_no,'-','') LIKE ?)", [raw, base + "%"])
+        return ("(product_no = ? OR product_no = ? OR REPLACE(product_no,'-','') LIKE ?)",
+                [raw, base[:5], base + "%"])
     return ("product_no = ?", [raw])
 
 
@@ -642,10 +654,11 @@ def search_products(con, q="", cat="", state="", supplier="", genre="", sort="no
         like = "%" + q.replace("%", "").replace("_", "") + "%"
         qn = norm_code(q)                       # 全角(かな)入力を半角化した品番/バーコード照合用
         liken = "%" + qn.replace("%", "").replace("_", "") + "%"
-        base = _ean13_base(q)  # バーコード(EAN-13)なら先頭10桁で管理番号に前方一致
+        base = _ean13_base(q)  # バーコード(EAN-13)なら品番(先頭5桁)と管理番号(先頭10桁)で照合
         if base:
-            where.append("(product_no LIKE ? OR name LIKE ? OR REPLACE(product_no,'-','') LIKE ?)")
-            args += [liken, like, base + "%"]
+            where.append("(product_no LIKE ? OR name LIKE ? OR product_no = ? "
+                         "OR REPLACE(product_no,'-','') LIKE ?)")
+            args += [liken, like, base[:5], base + "%"]
         else:
             where.append("(product_no LIKE ? OR product_no LIKE ? OR name LIKE ?)")
             args += [like, liken, like]

@@ -2478,12 +2478,14 @@
   function paintPmResults(hits) {
     pmResults = hits || [];
     document.getElementById("pm-results").innerHTML = pmResults.length
-      ? pmResults.map(function (p) {
+      ? pmResults.map(function (p, i) {
           var url = prodImgUrl(p[8]);
           var thumb = url ? '<img class="pm-thumb" loading="lazy" src="' + esc(url) + '" onerror="this.style.display=\'none\'">' : '';
+          // data-pm は行番号。商品番号だと移行データの重複品番(同番号が2点)で別商品を
+          // 追加してしまうため、必ず選んだ行そのものを渡す。
           return '<tr><td>' + thumb + '</td><td class="num">' + esc(dash(p[0])) + '</td><td>' + esc(dash(p[1])) + '</td><td>' + esc(dash(p[2])) +
             '</td><td class="r num">' + (p[3] ? "¥" + num(p[3]) : "—") + '</td><td><span class="chip chip-green">在庫</span></td>' +
-            '<td><button class="btn" data-pm="' + esc(p[0]) + '">追加</button></td></tr>';
+            '<td><button class="btn" data-pm="' + i + '">追加</button></td></tr>';
         }).join("")
       : '<tr><td colspan="7" style="color:var(--muted)">該当する在庫商品がありません</td></tr>';
   }
@@ -2547,7 +2549,7 @@
   document.getElementById("pm-results").addEventListener("click", function (e) {
     var b = e.target.closest("[data-pm]");
     if (!b) return;
-    var p = pmResults.filter(function (x) { return String(x[0]) === b.getAttribute("data-pm"); })[0];
+    var p = pmResults[parseInt(b.getAttribute("data-pm"), 10)];
     if (p) { addStockLine(p); closeProductPicker(); }
   });
   // 背景クリックで閉じる際、「押した位置も背景」の時だけ閉じる。
@@ -4180,7 +4182,13 @@
         if (res.error) throw new Error(res.error);
         if (res.result === "ok") {
           msg.style.color = "var(--ok,#2a8)";
-          msg.textContent = "✓ 確認: " + dash(res.name) + "（" + no + (res.location ? " / " + res.location : "") + "）";
+          // 上代も出して「読んだ現物と合っているか」を目で確かめられるようにする。
+          // 同じ品番の在庫が複数ある移行データでは、残りの未確認点数も知らせる
+          // (現物を1点ずつスキャンすれば全部消える)。
+          var t = "✓ 確認: " + dash(res.name) + "（" + dash(res.product_no || no) +
+            (res.list_price ? " / ¥" + num(res.list_price) : "") + (res.location ? " / " + res.location : "") + "）";
+          if (res.remaining > 0) t += "　※同じ品番の在庫が残り" + res.remaining + "点あります(現物を1点ずつ読み取ってください)";
+          msg.textContent = t;
           loadStocktake();  // 進捗・差異を更新
         } else if (res.result === "already") {
           msg.style.color = "var(--muted)";  // 正常な重複(もう確認済み)はお知らせ色。驚かせない
