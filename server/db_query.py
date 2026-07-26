@@ -148,6 +148,9 @@ def ensure_schema(con):
         ("supplier_master", "fucho_head", "TEXT"),  # 仕入先ごとの符丁頭カナ(漢字名対策)
         ("products", "is_consignment", "INTEGER DEFAULT 0"),  # 受託品フラグ(売上になっても残す。後日精算の識別用)
         ("products", "consign_settled", "INTEGER DEFAULT 0"),  # 受託の後日精算(原価入力)が済んだか
+        ("prescriptions", "frame_type", "TEXT"),  # フレームの種類(セル/メタル/ツーポ/ナイロール)
+        ("products", "ring_fingers", "TEXT"),  # はめる指(複数可。カンマ区切り)
+        ("products", "ring_size", "TEXT"),     # リングサイズ(フリー入力。#10.5 や 12号 等)
     ]
     changed = False
     for table, col, decl in adds:
@@ -515,11 +518,21 @@ def build_blob_light(con):
                 lite=True)  # lite=True で「明細は遅延取得」とUIに知らせる
 
 
+def _col(r, key, default=None):
+    """sqlite3.Row から列を安全に取り出す(古いDBに新しい列が無い場合は default)。
+    ensure_schema で列を足す前のDBや、SELECT に含めていない場合でも落ちないようにする。"""
+    try:
+        return r[key]
+    except (IndexError, KeyError):
+        return default
+
+
 def _rx_row(r):
     """prescriptions の1行を画面用dictに変換(build_blob と customer_detail で共用)。"""
     return {
         "id": r["id"], "rx_no": r["rx_no"], "purpose": r["purpose"],
         "lens_name": r["lens_name"], "frame_name": r["frame_name"],
+        "frame_type": _col(r, "frame_type"),  # セル/メタル/ツーポ/ナイロール
         "lens_price": r["lens_price"], "frame_price": r["frame_price"], "total": r["total_sell"],
         "misassign": _rx_misassign(r["jewelry_misassign"], r["lens_name"], r["frame_name"]),
         "sale_line_id": r["sale_line_id"],
@@ -1615,7 +1628,8 @@ def delete_family(con, family_id):
 
 PRODUCT_FIELDS = ("product_no", "name", "category", "brand", "metal", "supplier", "cost_price",
                   "list_price", "location", "center_stone", "center_carat",
-                  "color", "clarity", "cut", "cert_no", "info", "fucho")
+                  "color", "clarity", "cut", "cert_no", "info", "fucho",
+                  "ring_fingers", "ring_size")
 
 # 符丁(下代を隠す店内符牒)。数字→カナ「エビスアキナイカミ」対応表。
 _FUCHO_DIGITS = {"1": "ｴ", "2": "ﾋ", "3": "ｽ", "4": "ｱ", "5": "ｷ",
@@ -1762,7 +1776,8 @@ def get_product(con, product_key):
     con.row_factory = sqlite3.Row
     r = con.execute(
         "SELECT product_key,product_no,name,category,brand,metal,supplier,cost_price,list_price,location,"
-        "center_stone,center_carat,color,clarity,cut,cert_no,info,fucho,state,image_file "
+        "center_stone,center_carat,color,clarity,cut,cert_no,info,fucho,state,image_file,"
+        "ring_fingers,ring_size "
         "FROM products WHERE product_key=?", (pk,)).fetchone()
     if not r:
         raise ValueError("商品が見つかりません")
@@ -1838,7 +1853,7 @@ def add_prescription(con, p):
     if not total:
         total = n_int("total_sell")
 
-    cols = ("purpose", "lens_name", "frame_name",
+    cols = ("purpose", "lens_name", "frame_name", "frame_type",
             "sph_r", "sph_l", "cyl_r", "cyl_l", "ax_r", "ax_l", "pri_r", "pri_l", "base_r", "base_l",
             "pri2_r", "pri2_l", "base2_r", "base2_l", "add_r", "add_l",
             "pd_far_both", "pd_far_r", "pd_far_l", "pd_near_both", "pd_near_r", "pd_near_l",

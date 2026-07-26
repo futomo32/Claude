@@ -506,6 +506,13 @@
   .search-empty { padding: 0.7em 0.8em; color: var(--muted); font-size: 0.88em; }
 
   /* ── モーダル ── */
+  /* はめる指などの複数選択チェック。狭い画面でも折り返して並ぶ */
+  .chk-row { display: flex; flex-wrap: wrap; gap: 0.35em 0.9em; padding: 0.15rem 0; }
+  .chk-row .chk {
+    display: inline-flex; align-items: center; gap: 0.3em; font-size: 0.92em;
+    white-space: nowrap; cursor: pointer;
+  }
+  .chk-row .chk input { width: 1.05em; height: 1.05em; }
   .modal-back {
     position: fixed; inset: 0; background: rgba(20,25,20,0.45);
     display: none; align-items: flex-start; justify-content: center;
@@ -1162,7 +1169,10 @@
               <div class="field"><label>クラリティ</label><select id="np-clarity"><option value="">—</option><option>FL</option><option>VVS1</option><option>VVS2</option><option>VS1</option><option>VS2</option><option>SI1</option></select></div>
               <div class="field"><label>カット</label><select id="np-cut"><option value="">—</option><option>3EX</option><option>EX</option><option>VG</option><option>G</option></select></div>
               <div class="field"><label>鑑定書No</label><input class="num" id="np-cert"></div>
+              <div class="field"><label>リングサイズ</label><input id="np-ring-size" placeholder="例: #10.5 / 12号"></div>
             </div>
+            <div class="field" style="margin-top:0.4rem"><label>はめる指(複数選択可)</label>
+              <div id="np-fingers" class="chk-row"></div></div>
           </div>
           <div class="section-title">価格・店舗</div>
           <div class="kv">
@@ -1510,8 +1520,11 @@
           <div class="field"><label>クラリティ</label><select id="pe-clarity"><option value="">—</option><option>FL</option><option>VVS1</option><option>VVS2</option><option>VS1</option><option>VS2</option><option>SI1</option></select></div>
           <div class="field"><label>カット</label><select id="pe-cut"><option value="">—</option><option>3EX</option><option>EX</option><option>VG</option><option>G</option></select></div>
           <div class="field"><label>鑑定書No</label><input class="num" id="pe-cert"></div>
+          <div class="field"><label>リングサイズ</label><input id="pe-ring-size" placeholder="例: #10.5 / 12号"></div>
           <div class="field"><label>備考</label><input id="pe-info"></div>
         </div>
+        <div class="field" style="margin-top:0.4rem"><label>はめる指(複数選択可)</label>
+          <div id="pe-fingers" class="chk-row"></div></div>
         <p id="pe-error" style="color:var(--danger);font-size:0.85em;margin:0.6rem 0 0;display:none"></p>
         <div class="form-actions" style="margin-top:0.8rem">
           <button class="btn" onclick="cancelEditProduct()">キャンセル</button>
@@ -1913,6 +1926,8 @@
         <div class="field lf-price"><label>レンズ金額</label><input id="rx-lens-price" class="han-num" readonly style="background:var(--bg)"></div>
         <div class="field lf-name"><label>フレーム名</label><input id="rx-frame" placeholder="ラインアート XL1483"></div>
         <div class="field lf-price"><label>フレーム金額</label><input id="rx-frame-price" class="han-num" readonly style="background:var(--bg)"></div>
+        <div class="field lf-price"><label>フレーム種類</label>
+          <select id="rx-frame-type"><option value="">—</option><option>セル</option><option>メタル</option><option>ツーポ</option><option>ナイロール</option></select></div>
       </div>
       <div class="field lf-price" style="margin-top:0.5rem"><label>合計金額(自動)</label><input id="rx-total" class="han-num" readonly style="background:var(--bg)"></div>
 
@@ -4062,6 +4077,7 @@
     list.forEach(function (r) {
       html += '<tr class="rx-row"><td class="num">' + esc(dash(r.rx_date)) + '</td><td>' + esc(dash(r.purpose)) +
         '</td><td>' + nm(r.lens_name, r.misassign) + '</td><td>' + nm(r.frame_name, r.misassign) +
+        (r.frame_type ? ' <span class="chip">' + esc(r.frame_type) + '</span>' : "") +
         '</td><td class="r num">' + (r.total ? "¥" + num(r.total) : "—") + '</td><td class="rx-arrow">▸</td></tr>';
       html += '<tr class="rx-detail-row"><td colspan="6"><div class="rx-detail">' +
         '<div class="table-scroll"><table class="data rx-power"><thead><tr><th></th><th class="r">SPH</th><th class="r">CYL</th><th class="r">AX</th><th class="r" colspan="2">PRI / BAS</th><th class="r">ADD</th></tr></thead><tbody>' +
@@ -4364,9 +4380,25 @@
     if (canCost()) rows.push(["下代", p[9] ? "¥" + num(p[9]) : "—"]);  // 原価はパートに見せない
     rows.push(["上代", p[3] ? "¥" + num(p[3]) : "—"],
       ["仕入先", dash(p[10])], ["状態", dash(p[4])]);
-    document.getElementById("pd-info").innerHTML = rows.map(function (r) {
-      return '<div class="kv-row"><span class="k">' + esc(r[0]) + '</span><span class="v">' + esc(r[1]) + '</span></div>';
-    }).join("");
+    var kvHtml = function (list) {
+      return list.map(function (r) {
+        return '<div class="kv-row"><span class="k">' + esc(r[0]) + '</span><span class="v">' + esc(r[1]) + '</span></div>';
+      }).join("");
+    };
+    document.getElementById("pd-info").innerHTML = kvHtml(rows);
+    // リングサイズ・はめる指は一覧行(p)に含まれないので、値がある時だけ追加で取得して見せる
+    // (一覧のSELECTに足すと21万件の検索が重くなるため、詳細を開いた時だけ問い合わせる)
+    if (API && p[7]) {
+      fetch(API + "/product?key=" + encodeURIComponent(p[7]))
+        .then(function (r) { return r.json(); })
+        .then(function (pr) {
+          if (!pr || pdProduct !== p) return;  // 別の商品を開き直していたら反映しない
+          var extra = [];
+          if (pr.ring_size) extra.push(["リングサイズ", pr.ring_size]);
+          if (pr.ring_fingers) extra.push(["はめる指", String(pr.ring_fingers).split(",").join(" / ")]);
+          if (extra.length) document.getElementById("pd-info").innerHTML = kvHtml(rows.concat(extra));
+        }).catch(function () { /* 取れなくても基本情報は表示済み */ });
+    }
     // 写真の登録/変更・修正/削除ボタンは、サーバー稼働時かつ商品キーがあり権限がある場合のみ
     var canEdit = API && p[7] && canProducts();
     var up = document.getElementById("pd-upload");
@@ -4379,6 +4411,27 @@
     document.getElementById("prod-detail-modal").classList.add("show");
   }
   function closeProductDetail() { document.getElementById("prod-detail-modal").classList.remove("show"); }
+  /* ── はめる指(複数選択)。リングを試着・サイズ直しする際の手掛かりとして保存する ──
+     値はカンマ区切りの文字列で1列に持つ(指の組み合わせは検索条件にしないため、
+     別テーブルにせず商品1行で完結させる)。 */
+  var RING_FINGERS = ["右親指", "右人差し指", "右中指", "右薬指", "右小指",
+                      "左親指", "左人差し指", "左中指", "左薬指", "左小指"];
+  function buildFingerChecks(boxId, value) {
+    var box = document.getElementById(boxId);
+    if (!box) return;
+    var on = String(value || "").split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+    box.innerHTML = RING_FINGERS.map(function (f) {
+      return '<label class="chk"><input type="checkbox" value="' + esc(f) + '"' +
+        (on.indexOf(f) >= 0 ? " checked" : "") + '>' + esc(f) + '</label>';
+    }).join("");
+  }
+  function fingerVals(boxId) {
+    var box = document.getElementById(boxId);
+    if (!box) return "";
+    return Array.prototype.slice.call(box.querySelectorAll("input:checked"))
+      .map(function (c) { return c.value; }).join(",");
+  }
+
   /* ── 商品の修正・削除(B-7) ── */
   // 選択式(select)の項目に、既存データが選択肢に無い値を持っている場合でも
   // 消してしまわないよう、その値を一時的な選択肢として追加してから選択する。
@@ -4416,6 +4469,8 @@
       _setSelectPreserving("pe-clarity", pr.clarity);
       _setSelectPreserving("pe-cut", pr.cut);
       document.getElementById("pe-cert").value = pr.cert_no || "";
+      document.getElementById("pe-ring-size").value = pr.ring_size || "";
+      buildFingerChecks("pe-fingers", pr.ring_fingers);
       document.getElementById("pe-info").value = pr.info || "";
       document.getElementById("pe-error").style.display = "none";
       document.getElementById("pd-info").style.display = "none";
@@ -4455,6 +4510,8 @@
       clarity: document.getElementById("pe-clarity").value.trim(),
       cut: document.getElementById("pe-cut").value.trim(),
       cert_no: zen2han(document.getElementById("pe-cert").value).trim(),
+      ring_fingers: fingerVals("pe-fingers"),
+      ring_size: document.getElementById("pe-ring-size").value.trim(),
       info: document.getElementById("pe-info").value.trim()
     };
     btn.disabled = true;
@@ -5244,9 +5301,10 @@
     });
   })();
   function resetProductForm() {
-    ["np-no", "np-name", "np-brand", "np-metal", "np-stone", "np-carat", "np-side", "np-cert", "np-cost", "np-list", "np-rate", "np-ori", "np-fucho"].forEach(function (id) {
+    ["np-no", "np-name", "np-brand", "np-metal", "np-stone", "np-carat", "np-side", "np-cert", "np-cost", "np-list", "np-rate", "np-ori", "np-fucho", "np-ring-size"].forEach(function (id) {
       document.getElementById(id).value = "";
     });
+    buildFingerChecks("np-fingers", "");  // はめる指のチェックも初期化(前の登録を引きずらない)
     ["np-supplier", "np-color", "np-clarity", "np-cut", "np-loc"].forEach(function (id) { document.getElementById(id).selectedIndex = 0; });
     document.getElementById("np-date").value = new Date().toISOString().slice(0, 10);
     document.getElementById("np-error").style.display = "none";
@@ -5294,6 +5352,8 @@
       clarity: gem ? document.getElementById("np-clarity").value : "",
       cut: gem ? document.getElementById("np-cut").value : "",
       cert_no: gem ? zen2han(document.getElementById("np-cert").value).trim() : "",
+      ring_fingers: gem ? fingerVals("np-fingers") : "",
+      ring_size: gem ? document.getElementById("np-ring-size").value.trim() : "",
       info: (side ? "脇石:" + side + " " : "") + (staff ? "仕入担当:" + staff : ""),
       registered_at: document.getElementById("np-date").value
     };
@@ -6117,6 +6177,7 @@
       var s = function (k, v) { document.getElementById(k).value = v == null ? "" : v; };
       s("rx-lens", editRx.lens_name); s("rx-frame", editRx.frame_name);
       s("rx-lens-price", editRx.lens_price || ""); s("rx-frame-price", editRx.frame_price || "");
+      _setSelectPreserving("rx-frame-type", editRx.frame_type || "");  // 移行データに無い値でも消さない
       document.getElementById("rx-purpose").value = editRx.purpose || "遠近両用";
       s("rx-date", editRx.rx_date); document.getElementById("rx-handler").value = editRx.handler || "";
       if (editRx.pd_far_r || editRx.pd_far_l || editRx.pd_near_r || editRx.pd_near_l) {
@@ -6422,7 +6483,7 @@
       id: rxEditId, customer_id: cid, purpose: g("rx-purpose"), rx_date: g("rx-date"), handler: g("rx-handler"),
       lens_price: parseAmt(g("rx-lens-price")) || null, frame_price: parseAmt(g("rx-frame-price")) || null,
       total_sell: parseAmt(g("rx-total")) || null, lens_name: g("rx-lens"), frame_name: g("rx-frame"),
-      sale_line_id: g("rx-link") || null,
+      frame_type: g("rx-frame-type"), sale_line_id: g("rx-link") || null,
       sph_r: rxSignVal("rx-sph-r"), sph_l: rxSignVal("rx-sph-l"),
       cyl_r: rxSignVal("rx-cyl-r"), cyl_l: rxSignVal("rx-cyl-l"),
       ax_r: rxVal("rx-ax-r"), ax_l: rxVal("rx-ax-l"),
@@ -6442,6 +6503,7 @@
     }
     function done(rxNo, rxId, total) {
       var e = { id: rxId, rx_no: rxNo, purpose: payload.purpose, lens_name: payload.lens_name, frame_name: payload.frame_name,
+        frame_type: payload.frame_type,
         lens_price: payload.lens_price, frame_price: payload.frame_price, total: total,
         misassign: false, sale_line_id: payload.sale_line_id,
         sph_r: payload.sph_r, sph_l: payload.sph_l, cyl_r: payload.cyl_r, cyl_l: payload.cyl_l,
