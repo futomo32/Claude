@@ -72,6 +72,7 @@ def _decode_image_b64(data):
 
 sys.path.insert(0, os.path.dirname(__file__))
 import db_query  # noqa: E402
+import devices  # noqa: E402  機器制御層(フェーズ2)。機器OFFモードでは何も送信しない
 
 
 def connect():
@@ -477,6 +478,37 @@ class Handler(BaseHTTPRequestHandler):
                 result = db_query.checkout(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            # ── 機器(フェーズ2)。機器OFFモードでは devices 側が何も送信せず skipped を返す ──
+            if path == "/api/receipt_print":
+                con = connect()
+                try:
+                    receipt = db_query.receipt_data(con, payload.get("slip_id"), payload.get("deposit"))
+                finally:
+                    con.close()
+                result = devices.print_receipt(receipt, drawer=payload.get("drawer", True))
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/drawer_open":
+                result = devices.open_drawer()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/card_read":
+                result = devices.card_read()
+                # トキワ形式なら顧客名も返す(画面がそのまま選択できるように)
+                if result.get("customer_id"):
+                    con = connect()
+                    row = con.execute("SELECT name FROM customers WHERE customer_id=?",
+                                      (result["customer_id"],)).fetchone()
+                    con.close()
+                    if row:
+                        result["name"] = row[0]
+                    else:
+                        result = {"error": f"カードの顧客ID({result['customer_id']})が台帳にありません"}
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/card_link":
+                result = devices.card_link(payload.get("customer_id"))
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/card_read_cancel":
+                result = devices.card_eject()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/point_settings":
                 con = connect()
                 result = db_query.save_point_settings(con, payload)
@@ -770,6 +802,7 @@ def main():
             lan = True
         elif a.lower() in ("kiki", "hw", "hardware"):
             HW_ENABLED = True
+    devices.ENABLED = HW_ENABLED  # 機器制御層に伝える(OFFなら一切送信しない)
     host = "0.0.0.0" if lan else "127.0.0.1"
     srv = ThreadingHTTPServer((host, port), Handler)
     print(f"トキワ起動: http://localhost:{port}/")

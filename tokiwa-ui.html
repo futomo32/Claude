@@ -816,6 +816,12 @@
               <div class="search-drop" id="pos-cust-drop"></div>
             </div>
             <button class="btn btn-newcust" onclick="openCustModalForPos()">＋ 新規顧客</button>
+            <button class="btn" id="card-read-btn" style="display:none" onclick="cardReadCustomer(this)">💳 カード呼出</button>
+          </div>
+          <div id="card-link-bar" style="display:none;margin:0.3rem 0;padding:0.5em 0.8em;background:#fff8e6;border:1px solid #e6c96b;border-radius:8px;font-size:0.88em">
+            💳 <b>宝飾ナビ形式のカード</b>が入っています。顧客を検索・選択してから
+            <button class="btn btn-primary" style="margin-left:0.5em" onclick="cardLinkCustomer(this)">このカードを選択中の顧客に紐付けて書換</button>
+            <button class="btn" onclick="cardLinkCancel()">やめる(排出)</button>
           </div>
           <div class="pos-cust-card" id="pos-cust-card" style="display:none"></div>
           <div class="search-row" style="margin-top:0.2rem;align-items:center">
@@ -2267,6 +2273,9 @@
         hw.style.display = "";
         if (D.hardwareMode) { hw.style.background = "var(--accent)"; hw.style.color = "#fff"; }
       }
+      // カード呼出ボタンは機器ONの時だけ出す(OFF時は押せても何も起きないため隠す)
+      var crb = document.getElementById("card-read-btn");
+      if (crb && D.hardwareMode) crb.style.display = "";
     }
     if (!canProducts()) {
       // パート: 商品・在庫・棚卸し画面と設定(マスタ・ランク更新)への導線ごと隠す
@@ -4144,6 +4153,59 @@
     searchBox.style.display = "none";
     card.style.display = "flex";
     updatePointPreview();  // 顧客が決まったら保有ポイントも表示
+  }
+  /* ── ポイントカードで顧客呼出(方式B) ──
+     トキワ形式("TKW"+顧客ID)のカードは読むだけで顧客が決まる。
+     宝飾ナビ形式(60文字)のカードは初回だけ店員が顧客を選んで紐付け→トキワ形式に磁気書換。
+     以後は挿入だけで自動呼出。券面(見た目)は変えない(券面リライトは次フェーズ)。 */
+  function cardReadCustomer(btn) {
+    if (!API || !D.hardwareMode) return;
+    btn.disabled = true; btn.textContent = "💳 カードを入れてください…";
+    fetch(API + "/card_read", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then(function (r) { return r.json(); }).then(function (res) {
+        btn.disabled = false; btn.textContent = "💳 カード呼出";
+        if (res.skipped) return showToast(res.message);
+        if (res.error) return showToast("⚠ " + res.error);
+        if (res.customer_id) {
+          var c = findCust(res.customer_id);
+          if (!c) return showToast("⚠ カードの顧客(" + res.customer_id + ")が見つかりません");
+          posCustomer = c;
+          document.getElementById("pos-cust-input").value = c[1];
+          renderPosCustomer();
+          renderPosReceivable();
+          showToast("💳 " + c[1] + " 様をカードで呼び出しました。");
+          return;
+        }
+        if (res.unknown) {  // 宝飾ナビ形式: カードは装置内に残っている → 紐付けバーを出す
+          document.getElementById("card-link-bar").style.display = "";
+          showToast("宝飾ナビ形式のカードです。顧客を選んで「紐付けて書換」を押してください。");
+        }
+      }).catch(function (e) {
+        btn.disabled = false; btn.textContent = "💳 カード呼出";
+        showToast("カード読取の通信に失敗: " + fetchErrMsg(e));
+      });
+  }
+  function cardLinkCustomer(btn) {
+    if (!posCustomer) return showToast("先に顧客を検索して選択してください。");
+    var cid = String(posCustomer[0]), nm = posCustomer[1];
+    btn.disabled = true;
+    fetch(API + "/card_link", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ customer_id: cid })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      btn.disabled = false;
+      if (res.skipped) return showToast(res.message);
+      if (res.error) return showToast("⚠ " + res.error);
+      document.getElementById("card-link-bar").style.display = "none";
+      showToast("💳 カードを " + nm + " 様に紐付けました(トキワ形式に書換済み)。次回からカードだけで呼び出せます。");
+    }).catch(function (e) { btn.disabled = false; showToast("カード書込の通信に失敗: " + fetchErrMsg(e)); });
+  }
+  function cardLinkCancel() {
+    document.getElementById("card-link-bar").style.display = "none";
+    // 排出はドロワー用APIではなくカード読取のリセット系に任せる(次の読取時に自動整理される)
+    fetch(API + "/card_read_cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .catch(function () { /* 排出失敗は実害なし(次の操作でリセットされる) */ });
+    showToast("紐付けを中止しました。カードを取り出してください。");
   }
   function changePosCustomer() {
     posCustomer = null;
@@ -7082,6 +7144,16 @@
         " / 加算 " + data.earned + "pt)。" + (kakeAdd ? "うち掛売 ¥" + kakeAdd.toLocaleString() + " を売掛に計上。" : "") + "在庫引き落とし・購入履歴へ反映済み。");
       renderPosReceivable();  // 掛売直後でも(顧客が選択中なら)売掛残高パネルを更新
       refreshStockStats();    // 在庫が引き落とされたので在庫数タイルを最新化(リロード不要)
+      // 機器ONモード: レシート印字＋ドロワーオープン(失敗しても会計は成立済み。エラーだけ知らせる)
+      if (D.hardwareMode) {
+        var dep = parseAmt(document.getElementById("deposit").value);
+        fetch(window.TOKIWA_API + "/receipt_print", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slip_id: data.slip_id, deposit: dep || null, drawer: true })
+        }).then(function (r) { return r.json(); }).then(function (res) {
+          if (res.error) showToast("⚠ " + res.error + "（会計は保存済み。再印字は後で可能）");
+        }).catch(function () { showToast("⚠ レシート印字の通信に失敗（会計は保存済み）"); });
+      }
       resetPosAfterSale();
     }).catch(function (e) {
       checkedOut = false; btn.disabled = false; btn.textContent = "会計を確定";

@@ -2433,6 +2433,44 @@ def checkout(con, payload):
             "points_used": points_used, "point_balance": newbal}
 
 
+def receipt_data(con, slip_id, deposit=None):
+    """レシート印字用のデータを伝票から組み立てる(会計直後の印字・後からの再印字の両対応)。
+    devices.build_receipt_bytes() に渡す dict を返す。"""
+    con.row_factory = sqlite3.Row
+    s = con.execute("""SELECT s.slip_id, s.sold_at, s.staff_name, s.customer_id,
+                              s.earned_points, s.used_points, c.name cname
+                       FROM sales_slips s LEFT JOIN customers c ON c.customer_id = s.customer_id
+                       WHERE s.slip_id=?""", (int(slip_id),)).fetchone()
+    if not s:
+        raise ValueError("伝票が見つかりません")
+    lines = [(r["nm"], int(r["amount"] or 0)) for r in con.execute(
+        """SELECT COALESCE(l.free_name, p.name) nm, l.amount FROM sale_lines l
+           LEFT JOIN products p ON p.product_key = l.product_key
+           WHERE l.slip_id=? AND COALESCE(l.voided,0)=0 ORDER BY l.line_id""", (s["slip_id"],))]
+    payments = [(r["method"] or "現金", int(r["amount"] or 0)) for r in con.execute(
+        "SELECT method, amount FROM sale_payments WHERE slip_id=? ORDER BY id", (s["slip_id"],))]
+    total = sum(a for _, a in lines)
+    bal_row = con.execute("SELECT balance FROM point_balances WHERE customer_id=?",
+                          (str(s["customer_id"]),)).fetchone()
+    cash_due = sum(a for m, a in payments if m == "現金")
+    try:
+        deposit = int(deposit) if deposit else None
+    except (ValueError, TypeError):
+        deposit = None
+    if deposit is not None and deposit < cash_due:
+        deposit = None  # 不正な預り額は印字しない
+    return {"slip_id": s["slip_id"], "sold_at": s["sold_at"], "staff": shorten_staff(s["staff_name"]),
+            "customer": s["cname"], "lines": lines, "payments": payments, "total": total,
+            "earned": int(s["earned_points"] or 0), "points_used": int(s["used_points"] or 0),
+            "point_balance": int(bal_row[0] or 0) if bal_row else 0,
+            "deposit": deposit, "cash_due": cash_due}
+
+
+def shorten_staff(name):
+    """担当者名を姓だけに(レシートの幅節約)。"""
+    return str(name or "").split()[0] if name else ""
+
+
 def _restock_line(con, line_id):
     """取消する明細に在庫品が紐づいていれば在庫に戻す(売上→在庫)。返品の在庫戻し。"""
     row = con.execute("SELECT product_key, slip_id FROM sale_lines WHERE line_id=?", (line_id,)).fetchone()
