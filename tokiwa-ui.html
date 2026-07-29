@@ -2569,9 +2569,12 @@
   }
 
   /* ── ポイントの表示(使用pt・加算予定pt)。ルールは設定マスタ(D.pointSettings) ──
-     計算はサーバーが正(checkout時に再計算)。ここは同じ式のプレビュー表示。 */
+     計算はサーバーが正(checkout時に再計算)。ここは同じ式のプレビュー表示。
+     ※起動時の初期描画は D の定義より先に走るため、D未定義でも既定値で動くこと
+     (ここで落ちると起動処理全体が止まり、画面がモック状態のままになる。2026-07-29実障害)。 */
   function pointRules() {
-    return D.pointSettings || { point_rate_yen: 100, point_use_no_grant: 1, card_expiry_years: 5 };
+    var d = (typeof D !== "undefined" && D) ? D : {};
+    return d.pointSettings || { point_rate_yen: 100, point_use_no_grant: 1, card_expiry_years: 5 };
   }
   function currentPointMult() {
     var el = document.getElementById("pos-point-mult");
@@ -2586,7 +2589,8 @@
     var used = currentPointsUsed();
     var earn = Math.floor(BILL * currentPointMult() / Math.max(1, ps.point_rate_yen));
     if (used > 0 && ps.point_use_no_grant) earn = 0;  // ポイントを使った会計は付与なし
-    var bal = posCustomer ? (D.points[String(posCustomer[0])] || 0) : null;
+    var bal = (posCustomer && typeof D !== "undefined" && D && D.points)
+      ? (D.points[String(posCustomer[0])] || 0) : null;
     var usedEl = document.getElementById("sum-used");
     if (usedEl) usedEl.textContent = num(used) + " pt" + (bal != null ? "（保有 " + num(bal) + " pt）" : "");
     var earnEl = document.getElementById("sum-earn");
