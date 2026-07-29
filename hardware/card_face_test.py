@@ -37,11 +37,22 @@ def main():
           f" 先頭Y={devices.FACE_TOP_Y} 行送り={devices.FACE_LINE_H}")
     print()
 
+    print("モードを選んでください:")
+    print("  1: 見本レイアウト印字(お名前/発行日/有効期限/ポイント)")
+    print("  2: 座標グリッド印字(白枠の範囲を測る較正用。X/Yの目盛りを印字)")
+    mode = input("モード [1]: ").strip() or "1"
+
     port = find_port() or "COM3"
     ans = input(f"カードR/W(TCP300II)のCOMポート [{port}]: ").strip() or port
     if input("実行しますか? (y/N): ").strip().lower() != "y":
         print("中止しました。")
         return
+
+    if mode == "2":
+        cmds = devices.build_card_grid_cmds()
+    else:
+        cmds = devices.build_card_face_cmds(SAMPLE["name"], SAMPLE["issued"],
+                                            SAMPLE["expiry"], SAMPLE["points"])
 
     try:
         with TCP300II(ans) as dev:
@@ -52,8 +63,7 @@ def main():
                 return
 
             print("→ 印字データ設定(41h)...")
-            for c in devices.build_card_face_cmds(SAMPLE["name"], SAMPLE["issued"],
-                                                  SAMPLE["expiry"], SAMPLE["points"]):
+            for c in cmds:
                 st = dev.set_print_text(c)
                 print(f"    {c.decode('shift_jis', 'replace')!r} → {status_text(st)}")
                 if st != 0x20:

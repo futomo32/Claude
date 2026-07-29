@@ -288,17 +288,20 @@ def card_link(customer_id, timeout=30.0):
 
 
 # ── 券面リライト印字(カード表面の文字の書き換え) ──
-# レイアウト座標(横置き・左下端基準・X:0〜479 Y:0〜319)。実機の印字結果を見て調整する。
-# 見本カード: お名前/発行日/有効期限/ポイント の4行がカード白地部に並ぶ。
-FACE_DIR = "1"        # '1'=横置き+上書き
-FACE_LABEL_X = 40     # 項目名のX
-FACE_VALUE_X = 170    # 値のX
-FACE_TOP_Y = 250      # 1行目(お名前)のY(左下端基準。上の行ほど大きい値)
-FACE_LINE_H = 42      # 行送り(ドット)
+# レイアウト座標。2026-07-29の実機印字で判明した座標系:
+#   ・Yは「小さいほど上・大きいほど下」(左下端基準だが軸は下向きに増える見え方)
+#   ・X=170だと値が白枠の右へはみ出す
+# 白枠の正確な範囲は座標グリッド印字(card_face_test.py のグリッドモード)で確定させる。
+FACE_DIR = "1"        # 配置方向パラメータ(実機でこの向きに水平に印字された)
+FACE_LABEL_X = 30     # 項目名のX
+FACE_VALUE_X = 140    # 値のX
+FACE_TOP_Y = 110      # 1行目(お名前)のY。Y小=上
+FACE_LINE_H = 45      # 行送り(ドット)。下の行ほどYを増やす
 
 
 def build_card_face_cmds(name, issued, expiry, points):
     """券面レイアウトを41hコマンドのデータ列(複数)にして返す。
+    上から お名前/発行日/有効期限/ポイント の順(Y小=上なので下の行ほどYを増やす)。
     各行にヘッダー(方向,X,Y,)を付ける(ポイントの「1,355」のようにカンマを含む値があるため、
     仕様書の注意に従いヘッダーは省略しない)。"""
     rows = [
@@ -312,7 +315,18 @@ def build_card_face_cmds(name, issued, expiry, points):
     for label, value in rows:
         cmds.append(f"{FACE_DIR},{FACE_LABEL_X},{y},{label}".encode("shift_jis", "replace"))
         cmds.append(f"{FACE_DIR},{FACE_VALUE_X},{y},{value}".encode("shift_jis", "replace"))
-        y -= FACE_LINE_H
+        y += FACE_LINE_H
+    return cmds
+
+
+def build_card_grid_cmds():
+    """座標グリッド(較正用)の41hデータ列。カードに座標の目盛りを印字し、写真から
+    白枠の正確な範囲(X/Yの上限下限)を割り出すために使う。"""
+    cmds = []
+    for y in (40, 100, 160, 220, 280):
+        cmds.append(f"{FACE_DIR},0,{y},Y{y}".encode("ascii"))
+    for x in (80, 160, 240, 320, 400):
+        cmds.append(f"{FACE_DIR},{x},40,X{x}".encode("ascii"))
     return cmds
 
 
