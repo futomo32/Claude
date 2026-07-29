@@ -288,31 +288,43 @@ def card_link(customer_id, timeout=30.0):
 
 
 # ── 券面リライト印字(カード表面の文字の書き換え) ──
-# レイアウト座標。2026-07-29の実機印字で判明した座標系:
-#   ・Yは「小さいほど上・大きいほど下」(左下端基準だが軸は下向きに増える見え方)
-#   ・X=170だと値が白枠の右へはみ出す
-# 白枠の正確な範囲は座標グリッド印字(card_face_test.py のグリッドモード)で確定させる。
-FACE_DIR = "1"        # 配置方向パラメータ(実機でこの向きに水平に印字された)
-FACE_LABEL_X = 30     # 項目名のX
-FACE_VALUE_X = 140    # 値のX
-FACE_TOP_Y = 110      # 1行目(お名前)のY。Y小=上
-FACE_LINE_H = 45      # 行送り(ドット)。下の行ほどYを増やす
+# 座標系(2026-07-29 実機グリッド印字で確定):
+#   ・Yは小さいほど上(Y23〜319が使える。白枠上端≈Y0)
+#   ・白枠内で印字できるのは X0〜約255(X240の目盛りが右端ぎりぎりだった)
+#   ・文字は全角≈24ドット幅・半角≈12ドット幅
+FACE_DIR = "1"        # 配置方向パラメータ(実機でこの向きに水平印字を確認)
+FACE_LABEL_X = 10     # 項目名のX
+FACE_VALUE_X = 115    # 値のX(有効期限=全角4文字96ドットの右に余白8)
+FACE_MAX_X = 250      # 白枠の右端(これを超えると枠外にはみ出す)
+FACE_TOP_Y = 50       # 1行目のY(Y小=上)
+FACE_LINE_H = 55      # 行送り(ドット)
+
+
+def _dots(s):
+    """印字幅(ドット)。全角24・半角12。"""
+    return sum(24 if ord(c) > 0xFF else 12 for c in str(s))
 
 
 def build_card_face_cmds(name, issued, expiry, points):
     """券面レイアウトを41hコマンドのデータ列(複数)にして返す。
-    上から お名前/発行日/有効期限/ポイント の順(Y小=上なので下の行ほどYを増やす)。
+    上から お名前/発行日/有効期限/ポイント。値の幅は最大140ドット(全角約6文字)なので、
+    長い名前は「お名前」の次の行に全幅で印字する(自動切替)。
     各行にヘッダー(方向,X,Y,)を付ける(ポイントの「1,355」のようにカンマを含む値があるため、
     仕様書の注意に従いヘッダーは省略しない)。"""
-    rows = [
-        ("お名前", f"{name} 様"),
-        ("発行日", str(issued or "")),
-        ("有効期限", str(expiry or "")),
-        ("ポイント", f"{int(points or 0):,}"),
-    ]
+    name_v = f"{name} 様"
     cmds = []
     y = FACE_TOP_Y
-    for label, value in rows:
+    if FACE_VALUE_X + _dots(name_v) <= FACE_MAX_X:
+        cmds.append(f"{FACE_DIR},{FACE_LABEL_X},{y},お名前".encode("shift_jis", "replace"))
+        cmds.append(f"{FACE_DIR},{FACE_VALUE_X},{y},{name_v}".encode("shift_jis", "replace"))
+    else:  # 長い名前: ラベル行の下に全幅で
+        cmds.append(f"{FACE_DIR},{FACE_LABEL_X},{y},お名前".encode("shift_jis", "replace"))
+        y += FACE_LINE_H
+        cmds.append(f"{FACE_DIR},30,{y},{name_v}".encode("shift_jis", "replace"))
+    y += FACE_LINE_H
+    for label, value in (("発行日", str(issued or "")),
+                         ("有効期限", str(expiry or "")),
+                         ("ポイント", f"{int(points or 0):,}")):
         cmds.append(f"{FACE_DIR},{FACE_LABEL_X},{y},{label}".encode("shift_jis", "replace"))
         cmds.append(f"{FACE_DIR},{FACE_VALUE_X},{y},{value}".encode("shift_jis", "replace"))
         y += FACE_LINE_H
