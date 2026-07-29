@@ -2118,6 +2118,10 @@
         <textarea id="pst-cardmsg" rows="2" maxlength="100" style="width:100%;resize:vertical"
           placeholder="例: 新春セール開催中！&#10;1/10までポイント2倍"></textarea>
         <span style="font-size:0.8em;color:var(--muted)">空欄なら印字しません。カードを書き換えた時に反映されます(催事の案内などに)。</span></div>
+      <div class="field"><label>レシート下部メッセージ(一番下に印字・最大4行)</label>
+        <textarea id="pst-rcptmsg" rows="3" maxlength="200" style="width:100%;resize:vertical"
+          placeholder="例: 下取り・修理もお気軽に&#10;ご相談ください"></textarea>
+        <span style="font-size:0.8em;color:var(--muted)">空欄なら印字しません。「お買上げありがとうございます」の下に中央寄せで印字されます。</span></div>
       <div class="section-title">機器モード(起動方法で決まります)</div>
       <div class="field">
         <p id="pst-hardware-state" style="margin:0;font-weight:700"></p>
@@ -4369,6 +4373,7 @@
     document.getElementById("pst-nograant").checked = !!ps.point_use_no_grant;
     document.getElementById("pst-expiry").value = ps.card_expiry_years;
     document.getElementById("pst-cardmsg").value = ps.card_message || "";
+    document.getElementById("pst-rcptmsg").value = ps.receipt_message || "";
     document.getElementById("pst-hardware-state").textContent = D.hardwareMode
       ? "🖨 現在: 機器ONモード(レシート・カード機器を使います)"
       : "🔌 現在: 機器OFFモード(レシート・カードには送信しません)";
@@ -4385,7 +4390,8 @@
       point_rate_yen: parseInt(zen2han(document.getElementById("pst-rate").value).replace(/[^0-9]/g, ""), 10) || 0,
       point_use_no_grant: document.getElementById("pst-nograant").checked ? 1 : 0,
       card_expiry_years: parseInt(zen2han(document.getElementById("pst-expiry").value).replace(/[^0-9]/g, ""), 10) || 0,
-      card_message: document.getElementById("pst-cardmsg").value
+      card_message: document.getElementById("pst-cardmsg").value,
+      receipt_message: document.getElementById("pst-rcptmsg").value
     };
     if (payload.point_rate_yen < 1) { err.textContent = "付与レートは1円以上で入力してください。"; err.style.display = "block"; return; }
     if (payload.card_expiry_years < 1) { err.textContent = "有効期限は1年以上で入力してください。"; err.style.display = "block"; return; }

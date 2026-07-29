@@ -33,8 +33,12 @@ CARD_PORT = "COM3"                 # TCP300II
 RECEIPT_WIDTH = 28                 # 印字桁数。実機で30桁だと右端がはみ出たため28に(2026-07-29実測)
 STORE_TEL = "0565-32-0688"         # レシートに印字する電話番号
 LOGO_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "logo.png")
-LOGO_DOTS = 360                    # ロゴ印字幅の上限(ドット)。58mm紙の印字幅384dotに収める
+PAPER_DOTS = 336                   # 実効印字幅(ドット)。28桁×12dot の実測に合わせる。中央寄せの基準
+LOGO_DOTS = 336                    # ロゴ印字幅の上限(ドット)。PAPER_DOTS を超えると右が欠ける
 LOGO_MAX_H = 150                   # ロゴ高さの上限(ドット≒19mm)。正方形ロゴが紙面を占領しないように
+LOGO_DITHER = False                # 二値化方式: False=しきい値(ベタ塗り・線画ロゴ向き。エッジがパリッと出る)
+                                   #             True=Floyd-Steinbergディザ(濃淡・グラデのあるロゴ向き)
+LOGO_THRESHOLD = 160               # しきい値方式のときの白黒境界(0-255。上げると太く・黒く印字される)
 
 ESC = b"\x1b"
 GS = b"\x1d"
@@ -59,6 +63,12 @@ def _pad_line(left, right):
     return left + " " * max(1, space) + right
 
 
+def _center(s):
+    """中央寄せの1行(手動スペース詰め)。ESC a の中央寄せはラスタ画像に効かない・
+    機種や漢字モードで挙動が揺れるため、印字桁数から自前で計算する(確実)。"""
+    return " " * max(0, (RECEIPT_WIDTH - _w(s)) // 2) + s
+
+
 def _wrap(text, width=None):
     """幅に収まるよう折り返して行のリストを返す(長い品名のはみ出し防止)。"""
     width = width or RECEIPT_WIDTH
@@ -78,6 +88,8 @@ def _wrap(text, width=None):
 
 def _logo_raster():
     """assets/logo.png をESC/POSのラスタ画像(GS v 0)に変換して返す。
+    高解像度PNG → LANCZOS縮小 → 二値化(LOGO_DITHERで しきい値/ディザ を切替)。
+    ラスタにはESC aの中央寄せが効かないため、左に白ドットを足して紙幅の中央に寄せる。
     Pillowが無い・ロゴが無い・変換失敗のときは None(呼び出し側が文字の店名にフォールバック)。"""
     try:
         from PIL import Image
@@ -93,11 +105,18 @@ def _logo_raster():
         scale = min(LOGO_DOTS / img.width, LOGO_MAX_H / img.height)
         w = max(8, int(img.width * scale) // 8 * 8)
         h = max(1, round(img.height * w / img.width))
-        img = img.resize((w, h)).point(lambda p: 0 if p < 160 else 255, mode="1")
+        img = img.resize((w, h), Image.LANCZOS)  # 高解像度ロゴからの縮小でも輪郭を滑らかに
+        if LOGO_DITHER:
+            img = img.convert("1")  # Floyd-Steinbergディザ(濃淡をドット密度で再現)
+        else:
+            img = img.point(lambda p: 0 if p < LOGO_THRESHOLD else 255, mode="1")
         row_bytes = (w + 7) // 8
+        pad_bytes = max(0, (PAPER_DOTS - w) // 2 // 8)  # 中央寄せ用の左余白(白)
+        total_bytes = pad_bytes + row_bytes
         data = bytearray()
         px = img.load()
         for y in range(h):
+            data += b"\x00" * pad_bytes
             for bx in range(row_bytes):
                 b = 0
                 for bit in range(8):
@@ -105,7 +124,7 @@ def _logo_raster():
                     if x < w and px[x, y] == 0:  # 黒=1
                         b |= 0x80 >> bit
                 data.append(b)
-        head = GS + b"v0" + b"\x00" + bytes([row_bytes & 0xFF, row_bytes >> 8, h & 0xFF, h >> 8])
+        head = GS + b"v0" + b"\x00" + bytes([total_bytes & 0xFF, total_bytes >> 8, h & 0xFF, h >> 8])
         return bytes(head) + bytes(data)
     except Exception:  # noqa: BLE001 ロゴが読めなくてもレシートは出す
         return None
@@ -121,18 +140,17 @@ def build_receipt_bytes(r):
     buf += ESC + b"@"            # 初期化
     buf += FS + b"C" + b"\x01"   # 漢字コード = Shift-JIS
     buf += FS + b"&"             # 漢字モードON
-    buf += ESC + b"a" + b"\x01"  # 中央寄せ
+    # 中央寄せは _center()(スペース詰め)で行う。ESC a はラスタに効かず機種差もあるため使わない
     logo = _logo_raster()
     if logo:
-        buf += logo              # ロゴ画像(あれば店名の代わりに)
+        buf += logo              # ロゴ画像(あれば店名の代わりに。中央寄せ済みラスタ)
         buf += b"\n"
     else:
         buf += GS + b"!" + b"\x01"   # 縦2倍
-        buf += sj("宝石・メガネ・時計 ヤナセ\n")
+        buf += sj(_center("宝石・メガネ・時計 ヤナセ") + "\n")
         buf += GS + b"!" + b"\x00"
-    buf += sj("御計算書\n")
-    buf += sj(f"TEL {STORE_TEL}\n")
-    buf += ESC + b"a" + b"\x00"  # 左寄せ
+    buf += sj(_center("御計算書") + "\n")
+    buf += sj(_center(f"TEL {STORE_TEL}") + "\n")
     buf += sj("-" * RECEIPT_WIDTH + "\n")
     buf += sj(f"日付: {r['sold_at']} 伝票#{r['slip_id']}\n")
     if r.get("customer"):
@@ -175,10 +193,18 @@ def build_receipt_bytes(r):
     buf += sj(_pad_line("加算ポイント", f"{r.get('earned', 0):,}pt") + "\n")
     buf += sj(_pad_line("ポイント残高", f"{r.get('point_balance', 0):,}pt") + "\n")
     buf += sj("-" * RECEIPT_WIDTH + "\n")
-    buf += ESC + b"a" + b"\x01"
-    buf += sj("お買上げありがとうございます\n")  # 28桁ちょうどに収まる表記(「お買い上げ〜」だと30桁ではみ出す)
+    buf += sj(_center("お買上げありがとうございます") + "\n")  # 28桁に収まる表記(「お買い上げ〜」だと30桁ではみ出す)
+    # レシート下部メッセージ(設定画面で編集。空なら印字しない)
+    msg = str(r.get("message") or "").strip()
+    if msg:
+        buf += b"\n"
+        for ln in msg.splitlines():
+            for seg in _wrap(ln):
+                buf += sj(_center(seg) + "\n")
     buf += FS + b"."             # 漢字モードOFF
-    buf += b"\n\n\n"
+    # カッターは印字ヘッドより上にあるため、送りが少ないと最終行が切断位置にかかる
+    # (実機で最下行が切れた 2026-07-29)。6行送ってからカットする
+    buf += b"\n\n\n\n\n\n"
     buf += GS + b"V" + b"\x00"   # フルカット
     return bytes(buf)
 

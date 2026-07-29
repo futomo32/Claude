@@ -1180,6 +1180,7 @@ POINT_SETTING_DEFAULTS = {
     "point_use_no_grant": 1,
     "card_expiry_years": 5,
     "card_message": "",   # 券面のフリーメッセージ(最大2行・全角22文字。空=印字なし)
+    "receipt_message": "",  # レシート下部メッセージ(最大4行。空=印字なし)
 }
 
 
@@ -1213,11 +1214,15 @@ def save_point_settings(con, p):
     # 券面メッセージ: 改行は2行まで・制御文字除去・全体100文字まで
     msg = str(p.get("card_message", cur["card_message"]) or "")
     msg = "\n".join(ln.strip() for ln in msg.splitlines()[:2] if ln.strip())[:100]
+    # レシート下部メッセージ: 改行は4行まで・全体200文字まで
+    rmsg = str(p.get("receipt_message", cur["receipt_message"]) or "")
+    rmsg = "\n".join(ln.strip() for ln in rmsg.splitlines()[:4] if ln.strip())[:200]
     vals = {
         "point_rate_yen": norm("point_rate_yen", 1, 100000),
         "point_use_no_grant": 1 if str(p.get("point_use_no_grant", cur["point_use_no_grant"])) in ("1", "True", "true") else 0,
         "card_expiry_years": norm("card_expiry_years", 1, 99),
         "card_message": msg,
+        "receipt_message": rmsg,
     }
     for k, v in vals.items():
         _set_setting(con, k, str(v))
@@ -2474,7 +2479,8 @@ def receipt_data(con, slip_id, deposit=None):
             "customer": s["cname"], "lines": lines, "payments": payments, "total": total,
             "earned": int(s["earned_points"] or 0), "points_used": int(s["used_points"] or 0),
             "point_balance": int(bal_row[0] or 0) if bal_row else 0,
-            "deposit": deposit, "cash_due": cash_due}
+            "deposit": deposit, "cash_due": cash_due,
+            "message": point_settings(con).get("receipt_message", "")}
 
 
 def shorten_staff(name):
