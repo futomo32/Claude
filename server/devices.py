@@ -287,6 +287,59 @@ def card_link(customer_id, timeout=30.0):
         return {"error": f"カード書込に失敗: {e}"}
 
 
+# ── 券面リライト印字(カード表面の文字の書き換え) ──
+# レイアウト座標(横置き・左下端基準・X:0〜479 Y:0〜319)。実機の印字結果を見て調整する。
+# 見本カード: お名前/発行日/有効期限/ポイント の4行がカード白地部に並ぶ。
+FACE_DIR = "1"        # '1'=横置き+上書き
+FACE_LABEL_X = 40     # 項目名のX
+FACE_VALUE_X = 170    # 値のX
+FACE_TOP_Y = 250      # 1行目(お名前)のY(左下端基準。上の行ほど大きい値)
+FACE_LINE_H = 42      # 行送り(ドット)
+
+
+def build_card_face_cmds(name, issued, expiry, points):
+    """券面レイアウトを41hコマンドのデータ列(複数)にして返す。
+    各行にヘッダー(方向,X,Y,)を付ける(ポイントの「1,355」のようにカンマを含む値があるため、
+    仕様書の注意に従いヘッダーは省略しない)。"""
+    rows = [
+        ("お名前", f"{name} 様"),
+        ("発行日", str(issued or "")),
+        ("有効期限", str(expiry or "")),
+        ("ポイント", f"{int(points or 0):,}"),
+    ]
+    cmds = []
+    y = FACE_TOP_Y
+    for label, value in rows:
+        cmds.append(f"{FACE_DIR},{FACE_LABEL_X},{y},{label}".encode("shift_jis", "replace"))
+        cmds.append(f"{FACE_DIR},{FACE_VALUE_X},{y},{value}".encode("shift_jis", "replace"))
+        y -= FACE_LINE_H
+    return cmds
+
+
+def card_face_print(face):
+    """カード券面を消去→印字→排出する(46h)。face={name, issued, expiry, points}。
+    カードが装置内に無ければ挿入を待つ。磁気は触らない(磁気書換は card_link)。"""
+    if not ENABLED:
+        return _skip()
+    try:
+        from tcp300ii import TCP300II, status_text
+        with TCP300II(CARD_PORT) as dev:
+            st = dev.print_buffer_clear()
+            if st != 0x20:
+                return {"error": "印字バッファクリアに失敗: " + status_text(st)}
+            for c in build_card_face_cmds(face.get("name") or "", face.get("issued"),
+                                          face.get("expiry"), face.get("points")):
+                st = dev.set_print_text(c)
+                if st != 0x20:
+                    return {"error": "印字データ設定に失敗: " + status_text(st)}
+            st = dev.erase_print_eject()
+            if st != 0x20:
+                return {"error": "券面の消去+印字に失敗: " + status_text(st)}
+            return {"ok": True}
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"券面印字に失敗: {e}"}
+
+
 def card_eject():
     """装置内のカードを排出する(紐付け中止など)。"""
     if not ENABLED:
@@ -316,8 +369,5 @@ def hw_status():
     return {"enabled": ENABLED, "printer": PRINTER_NAME, "printerCom": PRINTER_COM,
             "cardPort": CARD_PORT}
 
-# ── 未実装(次フェーズ) ──
-# 券面リライト印字(46h 消去+印字→排出): 印字データ設定(41h)のデータ形式
-# (位置指定・フォント指定のエスケープ)がコマンド仕様書の書き起こしにまだ無い。
-# 本番機の仕様書から 41h のデータ形式を docs/tcp300ii-protocol.md に追記してから実装する。
-# レイアウト: 名前・発行日・有効期限(最終購入日+card_expiry_years年)・ポイント・案内文。
+# メモ: 券面レイアウトの座標(FACE_*)は実機の印字結果を見て調整する。
+# テストは 券面印字テスト.bat (hardware/card_face_test.py) で行う。

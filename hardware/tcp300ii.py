@@ -240,6 +240,34 @@ class TCP300II:
         return status
 
 
+    # ---- 券面リライト印字(仕様書4-2。2026-07-29追加) ----
+    def print_buffer_clear(self):
+        """印字展開バッファクリア(40h)。前回の券面データを消してから新しい印字を組む。"""
+        _, status, _ = self.command(0x40, resp_timeout=10.0)
+        return status
+
+    def buffer_clear_all(self):
+        """バッファクリア(49h)。印字展開+イメージ登録の両方をクリア。"""
+        _, status, _ = self.command(0x49, resp_timeout=10.0)
+        return status
+
+    def set_print_text(self, data: bytes):
+        """印字文字データ設定(41h)。data = ヘッダー列+テキスト(Shift-JIS・ESCシーケンス可)。
+        1024バイト以内。複数回呼ぶと展開バッファに追記される。"""
+        if len(data) > 1000:
+            raise TCP300IIError("印字データが長すぎます(1コマンド1024バイト以内)")
+        _, status, _ = self.command(0x41, data, resp_timeout=10.0)
+        return status
+
+    def erase_print_eject(self, eject="1", erase="1", do_print="1", resp_timeout=60.0):
+        """消去+印字→排出(46h)。既定=消去して印字して排出。
+        カードが装置内に無ければ挿入を待つ(キャンセルは cancel_insert_wait)。
+        リライトは熱で消して書くため時間がかかる(タイムアウト長め)。"""
+        params = f"{eject},{erase},{do_print}".encode("ascii")
+        _, status, _ = self.command(0x46, params, resp_timeout=resp_timeout)
+        return status
+
+
 def status_text(code):
     if code is None:
         return "(なし)"
