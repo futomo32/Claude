@@ -343,10 +343,10 @@ def build_card_face_cmds(name, issued, expiry, points, message=""):
     y += 28
     cmds.append(_cmd(FACE_LABEL_X, y, ESC_B + b"E11" + sj("有効期限")))
     cmds.append(_cmd(FACE_VALUE_X, y, ESC_B + b"E11" + sj(str(expiry or ""))))
-    # ポイント(数値は縦横倍48ドット)。ラベルと下端揃え
+    # ポイント(数値は名前と同じ縦倍48ドット)。ラベルと下端揃え
     y += 52
     cmds.append(_cmd(FACE_LABEL_X, y, ESC_B + b"E11" + sj("ポイント")))
-    cmds.append(_cmd(FACE_VALUE_X, y, ESC_B + b"E22" + sj(f"{int(points or 0):,}")))
+    cmds.append(_cmd(FACE_VALUE_X, y, ESC_B + b"E21" + sj(f"{int(points or 0):,}")))
     # フリーメッセージ(通常・ラベルなし)。長い名前の時は行が1本増えているため1行まで
     for seg in _face_message_lines(message, max_lines=1 if long_name else 2):
         y += 28
