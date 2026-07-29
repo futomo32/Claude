@@ -30,7 +30,11 @@ ENABLED = False
 PRINTER_NAME = "CITIZEN CT-S601"   # Windowsスプーラーのプリンター名(RAW印字)
 PRINTER_COM = "COM7"               # 直接COMフォールバック用
 CARD_PORT = "COM3"                 # TCP300II
-RECEIPT_WIDTH = 30                 # 58mm紙の実測桁数(右端欠け対策)
+RECEIPT_WIDTH = 28                 # 印字桁数。実機で30桁だと右端がはみ出たため28に(2026-07-29実測)
+STORE_TEL = "0565-32-0688"         # レシートに印字する電話番号
+LOGO_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "logo.png")
+LOGO_DOTS = 360                    # ロゴ印字幅の上限(ドット)。58mm紙の印字幅384dotに収める
+LOGO_MAX_H = 150                   # ロゴ高さの上限(ドット≒19mm)。正方形ロゴが紙面を占領しないように
 
 ESC = b"\x1b"
 GS = b"\x1d"
@@ -44,12 +48,67 @@ def _skip():
 
 # ── レシート印字 ──────────────────────────────────────
 
+def _w(s):
+    """印字幅(全角=2桁・半角=1桁)。"""
+    return sum(2 if ord(c) > 0xFF else 1 for c in s)
+
+
 def _pad_line(left, right):
-    """左右寄せの1行(全角=2桁で幅を数える)。"""
-    def w(s):
-        return sum(2 if ord(c) > 0xFF else 1 for c in s)
-    space = RECEIPT_WIDTH - w(left) - w(right)
+    """左右寄せの1行。"""
+    space = RECEIPT_WIDTH - _w(left) - _w(right)
     return left + " " * max(1, space) + right
+
+
+def _wrap(text, width=None):
+    """幅に収まるよう折り返して行のリストを返す(長い品名のはみ出し防止)。"""
+    width = width or RECEIPT_WIDTH
+    lines, cur, cw = [], "", 0
+    for c in str(text):
+        w = 2 if ord(c) > 0xFF else 1
+        if cw + w > width:
+            lines.append(cur)
+            cur, cw = c, w
+        else:
+            cur += c
+            cw += w
+    if cur:
+        lines.append(cur)
+    return lines or [""]
+
+
+def _logo_raster():
+    """assets/logo.png をESC/POSのラスタ画像(GS v 0)に変換して返す。
+    Pillowが無い・ロゴが無い・変換失敗のときは None(呼び出し側が文字の店名にフォールバック)。"""
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    try:
+        img = Image.open(LOGO_PATH).convert("LA")
+        # 透過PNG対策: 透明部分は白として扱う
+        bg = Image.new("L", img.size, 255)
+        bg.paste(img.getchannel("L"), mask=img.getchannel("A"))
+        img = bg
+        # 幅・高さ両方の上限に収める(縦横比は維持)。幅は8の倍数に丸める
+        scale = min(LOGO_DOTS / img.width, LOGO_MAX_H / img.height)
+        w = max(8, int(img.width * scale) // 8 * 8)
+        h = max(1, round(img.height * w / img.width))
+        img = img.resize((w, h)).point(lambda p: 0 if p < 160 else 255, mode="1")
+        row_bytes = (w + 7) // 8
+        data = bytearray()
+        px = img.load()
+        for y in range(h):
+            for bx in range(row_bytes):
+                b = 0
+                for bit in range(8):
+                    x = bx * 8 + bit
+                    if x < w and px[x, y] == 0:  # 黒=1
+                        b |= 0x80 >> bit
+                data.append(b)
+        head = GS + b"v0" + b"\x00" + bytes([row_bytes & 0xFF, row_bytes >> 8, h & 0xFF, h >> 8])
+        return bytes(head) + bytes(data)
+    except Exception:  # noqa: BLE001 ロゴが読めなくてもレシートは出す
+        return None
 
 
 def build_receipt_bytes(r):
@@ -63,23 +122,39 @@ def build_receipt_bytes(r):
     buf += FS + b"C" + b"\x01"   # 漢字コード = Shift-JIS
     buf += FS + b"&"             # 漢字モードON
     buf += ESC + b"a" + b"\x01"  # 中央寄せ
-    buf += GS + b"!" + b"\x01"   # 縦2倍
-    buf += sj("宝石・メガネ・時計 ヤナセ\n")
-    buf += GS + b"!" + b"\x00"
+    logo = _logo_raster()
+    if logo:
+        buf += logo              # ロゴ画像(あれば店名の代わりに)
+        buf += b"\n"
+    else:
+        buf += GS + b"!" + b"\x01"   # 縦2倍
+        buf += sj("宝石・メガネ・時計 ヤナセ\n")
+        buf += GS + b"!" + b"\x00"
     buf += sj("御計算書\n")
+    buf += sj(f"TEL {STORE_TEL}\n")
     buf += ESC + b"a" + b"\x00"  # 左寄せ
     buf += sj("-" * RECEIPT_WIDTH + "\n")
-    buf += sj(f"日付: {r['sold_at']}  伝票 #{r['slip_id']}\n")
+    buf += sj(f"日付: {r['sold_at']} 伝票#{r['slip_id']}\n")
     if r.get("customer"):
         buf += sj(_pad_line(f"{r['customer']} 様", "") + "\n")
     if r.get("staff"):
         buf += sj(f"担当: {r['staff']}\n")
     buf += sj("-" * RECEIPT_WIDTH + "\n")
-    for name, amount in r["lines"]:
+    for line in r["lines"]:
+        name, amount = line[0], line[1]
+        lp = line[2] if len(line) > 2 else None
         nm = str(name or "お品物")
         amt = f"\\{amount:,}"
-        if sum(2 if ord(c) > 0xFF else 1 for c in nm) + len(amt) + 1 > RECEIPT_WIDTH:
-            buf += sj(nm + "\n")
+        wide = _w(nm) + len(amt) + 1 > RECEIPT_WIDTH
+        if lp and amount < lp:
+            # 定価より安く売った明細: 品名 → 「 定価\79,200 33%引   \53,000」(宝飾ナビと同じ見せ方)
+            rate = round((lp - amount) / lp * 100)
+            for seg in _wrap(nm):
+                buf += sj(seg + "\n")
+            buf += sj(_pad_line(f" 定価\\{lp:,} {rate}%引", amt) + "\n")
+        elif wide:
+            for seg in _wrap(nm):
+                buf += sj(seg + "\n")
             buf += sj(_pad_line("", amt) + "\n")
         else:
             buf += sj(_pad_line(nm, amt) + "\n")
@@ -101,7 +176,7 @@ def build_receipt_bytes(r):
     buf += sj(_pad_line("ポイント残高", f"{r.get('point_balance', 0):,}pt") + "\n")
     buf += sj("-" * RECEIPT_WIDTH + "\n")
     buf += ESC + b"a" + b"\x01"
-    buf += sj("お買い上げありがとうございます\n")
+    buf += sj("お買上げありがとうございます\n")  # 28桁ちょうどに収まる表記(「お買い上げ〜」だと30桁ではみ出す)
     buf += FS + b"."             # 漢字モードOFF
     buf += b"\n\n\n"
     buf += GS + b"V" + b"\x00"   # フルカット

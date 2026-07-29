@@ -2443,13 +2443,16 @@ def receipt_data(con, slip_id, deposit=None):
                        WHERE s.slip_id=?""", (int(slip_id),)).fetchone()
     if not s:
         raise ValueError("伝票が見つかりません")
-    lines = [(r["nm"], int(r["amount"] or 0)) for r in con.execute(
-        """SELECT COALESCE(l.free_name, p.name) nm, l.amount FROM sale_lines l
+    # (品名, 売価, 定価)。定価があり売価が下回る明細は、レシートに定価と割引率を印字する
+    lines = [(r["nm"], int(r["amount"] or 0), int(r["lp"]) if r["lp"] else None)
+             for r in con.execute(
+        """SELECT COALESCE(l.free_name, p.name) nm, l.amount, p.list_price lp
+           FROM sale_lines l
            LEFT JOIN products p ON p.product_key = l.product_key
            WHERE l.slip_id=? AND COALESCE(l.voided,0)=0 ORDER BY l.line_id""", (s["slip_id"],))]
     payments = [(r["method"] or "現金", int(r["amount"] or 0)) for r in con.execute(
         "SELECT method, amount FROM sale_payments WHERE slip_id=? ORDER BY id", (s["slip_id"],))]
-    total = sum(a for _, a in lines)
+    total = sum(a for _, a, _lp in lines)
     bal_row = con.execute("SELECT balance FROM point_balances WHERE customer_id=?",
                           (str(s["customer_id"]),)).fetchone()
     cash_due = sum(a for m, a in payments if m == "現金")
