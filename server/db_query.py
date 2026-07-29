@@ -419,7 +419,8 @@ def build_blob(con):
     return dict(customers=customers, sales=sales, families=families, points=points,
                 pointTx=point_tx, urikake=urikake, urikakeHist=urikake_hist,
                 approach=approach, rx=rx, rxCandidates=rx_candidates, products=products,
-                repairs=repairs, tenders=tenders, stockStats=stock_summary)
+                repairs=repairs, tenders=tenders, stockStats=stock_summary,
+                pointSettings=point_settings(con))
 
 
 def build_blob_light(con):
@@ -530,6 +531,7 @@ def build_blob_light(con):
                 repairs=repairs, tenders=tenders, stockStats=stock_summary, staff=staff,
                 registerStaff=register_staff, staffCodes=staff_codes,
                 cashMovements=list_cash_movements(con),
+                pointSettings=point_settings(con),
                 lite=True)  # lite=True で「明細は遅延取得」とUIに知らせる
 
 
@@ -1164,6 +1166,89 @@ def detailed_customer_search(con, p):
     if truncated:
         rows = rows[:LIMIT]
     return {"rows": rows, "count": len(rows), "truncated": truncated}
+
+
+# ── ポイント設定(ルールマスタ) ──
+# 店の運用に合わせて設定画面から変更できる。app_settings に保存し、無ければ既定値。
+#   point_rate_yen    … 何円の買上で1pt(既定100=100円で1pt。旧デモの200円は撤廃)
+#   point_use_no_grant… 1=ポイントを使った会計はポイントを付与しない(宝飾ナビと同じ運用)
+#   card_expiry_years … カード有効期限 = 最終購入日 + N年(既定5年。券面リライト印字で使用)
+# ※機器モード(レシート・カード機器を使うか)は設定ではなく「起動方法」で決まる
+#   (server/app.py の HW_ENABLED。トキワ起動.bat=OFF / 機器ありで起動.bat=ON)。
+POINT_SETTING_DEFAULTS = {
+    "point_rate_yen": 100,
+    "point_use_no_grant": 1,
+    "card_expiry_years": 5,
+}
+
+
+def point_settings(con):
+    """ポイント運用ルールを返す(未設定の項目は既定値)。"""
+    out = dict(POINT_SETTING_DEFAULTS)
+    for k in out:
+        row = con.execute("SELECT value FROM app_settings WHERE key=?", (k,)).fetchone()
+        if row is not None and str(row[0]).strip() != "":
+            try:
+                out[k] = int(row[0])
+            except (ValueError, TypeError):
+                pass
+    return out
+
+
+def save_point_settings(con, p):
+    """ポイント運用ルールを保存する。不正値は現行値のまま(黙って壊さない)。"""
+    cur = point_settings(con)
+
+    def norm(key, lo, hi):
+        try:
+            v = int(str(p.get(key)).replace(",", ""))
+        except (ValueError, TypeError):
+            return cur[key]
+        return min(hi, max(lo, v))
+
+    vals = {
+        "point_rate_yen": norm("point_rate_yen", 1, 100000),
+        "point_use_no_grant": 1 if str(p.get("point_use_no_grant", cur["point_use_no_grant"])) in ("1", "True", "true") else 0,
+        "card_expiry_years": norm("card_expiry_years", 1, 99),
+    }
+    for k, v in vals.items():
+        _set_setting(con, k, str(v))
+    con.commit()
+    return vals
+
+
+def adjust_points(con, p):
+    """ポイントの手動修正(±)。宝飾ナビの「カードを入れてポイント修正」に相当する画面操作。
+    理由を必須にして履歴(point_transactions)に「手動修正」として残す(監査できるように)。"""
+    cid = str(p.get("customer_id") or "").strip()
+    if not cid:
+        raise ValueError("顧客が指定されていません")
+    try:
+        delta = int(str(p.get("delta")).replace(",", "").replace("+", ""))
+    except (ValueError, TypeError):
+        raise ValueError("修正ポイントを整数で入力してください(例: 500 / -300)")
+    if delta == 0:
+        raise ValueError("0ポイントの修正はできません")
+    reason = str(p.get("reason") or "").strip()
+    if not reason:
+        raise ValueError("修正理由を入力してください(履歴に残ります)")
+    row = con.execute("SELECT balance FROM point_balances WHERE customer_id=?", (cid,)).fetchone()
+    bal = int(row[0] or 0) if row else 0
+    newbal = bal + delta
+    if newbal < 0:
+        raise ValueError(f"残高が0未満になります(現在 {bal:,} pt)")
+    today = datetime.date.today().isoformat()
+    con.execute("""INSERT INTO point_transactions
+        (customer_id,tx_type,points,add_points,use_points,balance,product_name,occurred_at)
+        VALUES (?,?,?,?,?,?,?,?)""",
+        (cid, "手動修正", abs(delta), delta if delta > 0 else None,
+         -delta if delta < 0 else None, newbal, f"手動修正: {reason}", today))
+    con.execute("""INSERT INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)
+                   ON CONFLICT(customer_id) DO UPDATE SET balance=excluded.balance, updated_at=excluded.updated_at""",
+                (cid, newbal, today))
+    con.commit()
+    return {"customer_id": cid, "balance": newbal, "delta": delta,
+            "occurred_at": today, "reason": reason}
 
 
 # 顧客ランクの既定基準(B-5)。宝飾ナビの合計金額ランク(1が最上位)に準拠。
@@ -2244,7 +2329,6 @@ def checkout(con, payload):
         if prow and prow[0] == "売上":
             raise ValueError(f"「{prow[1] or pk}」はすでに販売済みです(在庫にありません)。返品してから再販売してください")
     total = sum(int(l.get("amount") or 0) for l in lines)
-    earned = total // 200  # デモ: 200円=1pt
 
     payments = payload.get("payments") or [{"method": payload.get("pay_method", "現金"), "amount": total}]
     pay_total = sum(int(p.get("amount") or 0) for p in payments)
@@ -2253,9 +2337,28 @@ def checkout(con, payload):
     methods = [p.get("method") for p in payments if p.get("method") and int(p.get("amount") or 0) > 0]
     pay_label = "+".join(dict.fromkeys(methods)) if methods else "現金"
 
-    cur.execute("""INSERT INTO sales_slips(customer_id,staff_name,store_code,sold_at,pay_method,earned_points)
-                   VALUES (?,?,?,?,?,?)""",
-                (cid, payload.get("staff_name"), "01", sold_at, pay_label, earned))
+    # ── ポイント計算(ルールは設定マスタ。既定 100円=1pt) ──
+    ps = point_settings(con)
+    rate = max(1, int(ps["point_rate_yen"]))
+    try:  # レジで会計ごとに倍率を変えられる(2倍デー等)。0=付与なし
+        mult = float(payload.get("point_mult", 1))
+    except (ValueError, TypeError):
+        mult = 1.0
+    mult = max(0.0, min(mult, 100.0))
+    earned = int(total * mult / rate)
+    # ポイント支払い(1pt=1円)。残高を確認し、使用した会計は付与なし(設定で変更可)
+    points_used = sum(int(p.get("amount") or 0) for p in payments
+                      if p.get("method") == "ポイント")
+    bal_row = con.execute("SELECT balance FROM point_balances WHERE customer_id=?", (cid,)).fetchone()
+    point_bal = int(bal_row[0] or 0) if bal_row else 0
+    if points_used > point_bal:
+        raise ValueError(f"ポイント残高が不足しています(残高 {point_bal:,} pt / 使用 {points_used:,} pt)")
+    if points_used and ps["point_use_no_grant"]:
+        earned = 0
+
+    cur.execute("""INSERT INTO sales_slips(customer_id,staff_name,store_code,sold_at,pay_method,earned_points,used_points)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (cid, payload.get("staff_name"), "01", sold_at, pay_label, earned, points_used or None))
     slip_id = cur.lastrowid
 
     lines_out = []
@@ -2309,18 +2412,25 @@ def checkout(con, payload):
                                     "down_payment": 0, "balance": amt, "last_paid_at": None,
                                     "pay_text": pay_text})
 
+    # ポイントの使用→加算の順に記録し、残高は最後に1回で更新する
+    newbal = point_bal
+    if points_used:
+        newbal -= points_used
+        cur.execute("""INSERT INTO point_transactions(customer_id,tx_type,points,use_points,balance,ref_slip_id,occurred_at)
+                       VALUES (?,?,?,?,?,?,?)""", (cid, "使用", points_used, points_used, newbal, slip_id, sold_at))
     if earned:
-        row = con.execute("SELECT balance FROM point_balances WHERE customer_id=?", (cid,)).fetchone()
-        newbal = (row[0] if row else 0) + earned
+        newbal += earned
         cur.execute("""INSERT INTO point_transactions(customer_id,tx_type,points,add_points,balance,ref_slip_id,occurred_at)
                        VALUES (?,?,?,?,?,?,?)""", (cid, "加算", earned, earned, newbal, slip_id, sold_at))
+    if points_used or earned:
         cur.execute("""INSERT INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)
                        ON CONFLICT(customer_id) DO UPDATE SET balance=excluded.balance, updated_at=excluded.updated_at""",
                     (cid, newbal, sold_at))
 
     con.commit()
     return {"slip_id": slip_id, "earned": earned, "total": total, "lines": lines_out,
-            "sold_at": sold_at, "pay_method": pay_label, "receivables": receivables_out}
+            "sold_at": sold_at, "pay_method": pay_label, "receivables": receivables_out,
+            "points_used": points_used, "point_balance": newbal}
 
 
 def _restock_line(con, line_id):

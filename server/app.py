@@ -20,6 +20,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 BASE = os.path.join(os.path.dirname(__file__), "..")
 DB = os.path.join(BASE, "db", "tokiwa.db")
 UI = os.path.join(BASE, "tokiwa-ui.html")
+
+# 機器モード(起動引数 "kiki" でON)。OFFの間はレシート印字・ドロワー・カード書込などの
+# 機器制御を一切行わない。宝飾ナビがCOMポートを使っている間も、OFFなら全機能を安全にテスト
+# できる。切替は起動バッチ(トキワ起動.bat=OFF / 機器ありで起動.bat=ON)で行い、画面にも表示する。
+HW_ENABLED = False
 ASSETS = os.path.join(BASE, "assets")
 IMAGES = os.path.join(BASE, "data", "real", "images")   # 商品写真(B-7)
 
@@ -115,6 +120,7 @@ def render_index(user):
     """UIのHTMLに、DBから組み立てたデータとログインユーザー情報を埋め込んで返す。"""
     con = connect()
     blob = apply_role_filter(db_query.build_blob_light(con), user.get("role"))  # 起動時は軽量データのみ
+    blob["hardwareMode"] = HW_ENABLED  # 機器モード(起動方法で決まる。画面のモード表示用)
     sample = db_query.sample_in_stock_key(con)
     con.close()
     html = open(UI, encoding="utf-8").read()
@@ -279,6 +285,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/data":
                 con = connect()
                 blob = apply_role_filter(db_query.build_blob(con), role)
+                blob["hardwareMode"] = HW_ENABLED
                 con.close()
                 return self._send(200, json.dumps(blob, ensure_ascii=False).encode("utf-8"))
             if path in ("/api/customer_detail", "/api/products", "/api/product_categories",
@@ -405,6 +412,7 @@ class Handler(BaseHTTPRequestHandler):
         "/api/photo_pool", "/api/photo_pool_assign", "/api/photo_pool_delete",
         "/api/supplier_genre", "/api/supplier_fucho", "/api/master_item", "/api/rank_apply", "/api/rank_rules",
         "/api/stocktake_scan", "/api/stocktake_reset", "/api/settle_consignment",
+        "/api/point_settings", "/api/point_adjust",
     }
     # 管理者のみの操作(担当者マスタ・ログインユーザー管理)
     ADMIN_ONLY_POSTS = {"/api/staff", "/api/app_user", "/api/app_user_logout"}
@@ -467,6 +475,16 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/checkout":
                 con = connect()
                 result = db_query.checkout(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/point_settings":
+                con = connect()
+                result = db_query.save_point_settings(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/point_adjust":
+                con = connect()
+                result = db_query.adjust_points(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/sale_line_update":
@@ -741,7 +759,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    # 引数: 数字=ポート / "lan"=店内共有モード(他PCからアクセス可)。順不同
+    # 引数: 数字=ポート / "lan"=店内共有モード(他PCからアクセス可) / "kiki"=機器モード。順不同
+    global HW_ENABLED
     port = 8760
     lan = False
     for a in sys.argv[1:]:
@@ -749,9 +768,17 @@ def main():
             port = int(a)
         elif a.lower() in ("lan", "share", "kyoyu"):
             lan = True
+        elif a.lower() in ("kiki", "hw", "hardware"):
+            HW_ENABLED = True
     host = "0.0.0.0" if lan else "127.0.0.1"
     srv = ThreadingHTTPServer((host, port), Handler)
     print(f"トキワ起動: http://localhost:{port}/")
+    if HW_ENABLED:
+        print("【機器モード ON】レシート印字・ドロワー・カード書込を行います(COMポート使用)。")
+        print("  ※宝飾ナビが機器を使用中だと通信できません。宝飾ナビを終了してから使ってください。")
+    else:
+        print("【機器モード OFF】レシート・ドロワー・カードには一切送信しません(安全なテストモード)。")
+        print("  → 機器を使う時は「機器ありで起動.bat」から起動してください。")
     if lan:
         ip = lan_ip()
         print("【店内共有モード】他のPC・スマホ・iPadから下のURLで開けます(同じLAN内):")

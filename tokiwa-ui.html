@@ -753,6 +753,7 @@
       <span class="store-chip num" id="topbar-date"></span>
       <span class="store-chip" id="user-chip" style="display:none"></span>
       <button class="link-btn" id="logout-btn" style="display:none" onclick="doLogout()">ログアウト</button>
+      <span class="store-chip" id="hw-pill" style="display:none" title="機器モードの切替は起動ファイルで行います(トキワ起動.bat=OFF / 機器ありで起動.bat=ON)"></span>
       <span class="conn-pill" id="conn-pill"><span class="dot"></span><span id="conn-label">オンライン</span></span>
       <button class="link-btn" onclick="toggleOffline()">オフライン動作を試す</button>
     </div>
@@ -848,9 +849,15 @@
         <div class="card">
           <h3>お会計</h3>
           <div class="pos-total-row"><span>買上合計</span><span class="v num" id="sum-total">¥0</span></div>
-          <div class="pos-total-row"><span>使用ポイント</span><span class="v num" id="sum-used">0</span></div>
+          <div class="pos-total-row"><span>使用ポイント</span><span class="v num" id="sum-used">0 pt</span></div>
           <div class="pos-total-row"><span>(内消費税)</span><span class="v num" id="sum-tax">¥0</span></div>
           <div class="pos-total-row grand"><span>請求金額</span><span class="v num" id="sum-bill">¥0</span></div>
+          <div class="pos-total-row" style="align-items:center"><span>ポイント付与</span>
+            <select id="pos-point-mult" onchange="updatePointPreview()" style="margin-left:auto;max-width:11em">
+              <option value="1">通常</option><option value="2">2倍</option><option value="3">3倍</option>
+              <option value="5">5倍</option><option value="0">付与なし</option>
+            </select></div>
+          <div class="pos-total-row"><span>加算予定ポイント</span><span class="v num" id="sum-earn">0 pt</span></div>
           <div class="section-title">支払方法</div>
           <div id="pay-rows"></div>
           <button class="btn" style="margin-bottom:0.6rem" onclick="addPayRow()">+ 支払方法を追加(分割払い)</button>
@@ -1380,7 +1387,7 @@
         <div class="card" style="cursor:pointer" onclick="openMasterHub()"><h3>マスタ管理</h3><p>マスタは全てここから。担当者・仕入先・商品分類・ブランド・石種・地金・購入動機・保管場所・支払方法・顧客ランク・地区を1画面で管理できます。</p></div>
         <div class="card" style="cursor:pointer" onclick="openRankUpdate()"><h3>顧客ランク更新</h3><p>合計購入額の基準で顧客ランクを再計算(全/宝飾/メガネ別にプレビュー→一括更新)。ランク基準(金額の区切り)もこの画面で設定できます。</p></div>
         <div class="card" id="card-user-admin" style="cursor:pointer" onclick="openUserAdmin()"><h3>ログインユーザーと権限</h3><p>ログインユーザーの追加・役割(管理者/社員/パート)の設定・パスワードのリセット。パートには仕入額(下代)や商品登録を見せない制御はここの役割で決まります。(管理者のみ)</p></div>
-        <div class="card"><h3>ポイント設定</h3><p>還元率、有効期限、ランク別優待の設定。</p></div>
+        <div class="card" style="cursor:pointer" onclick="openPointSettings()"><h3>ポイント設定</h3><p>付与レート(100円=1pt)・ポイント使用時の付与ルール・カード有効期限(最終購入日+N年)・機器モードの設定。</p></div>
         <div class="card"><h3>オフライン同期</h3><p>通信障害時の一時保存と自動再送の設定。未送信キューの確認・手動送信もこちら。</p></div>
         <div class="card"><h3>帳票・プリンター</h3><p>保証書・タグ・レシートの印刷設定とプリンター割り当て。</p></div>
         <div class="card"><h3>データ入出力</h3><p>宝飾ナビからの移行データ取り込み、CSVエクスポート、バックアップ。</p></div>
@@ -2055,6 +2062,67 @@
   </div>
 </div>
 
+<!-- ポイントの手動修正 -->
+<div class="modal-back" id="point-adjust-modal">
+  <div class="modal" style="width:min(480px,100%)" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h3>ポイントを修正</h3>
+      <button class="close" aria-label="閉じる" onclick="closePointAdjust()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="field"><label>現在の残高</label><span id="pa-balance" style="font-size:1.3em;font-weight:700">0 pt</span></div>
+      <div class="field"><label>修正ポイント(±) <span class="req">必須</span></label>
+        <input id="pa-delta" class="num han-num" placeholder="例: 500 (加算) / -300 (減算)"></div>
+      <div class="field"><label>修正理由 <span class="req">必須</span></label>
+        <input id="pa-reason" placeholder="例: 宝飾ナビからの移行差分 / カード再発行"></div>
+      <p style="margin:0.4rem 0 0;color:var(--muted);font-size:0.8em">修正は履歴に「手動修正」として残ります(理由つき)。</p>
+      <p id="pa-error" style="color:var(--danger);font-size:0.85em;margin:0.6rem 0 0;display:none"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closePointAdjust()">キャンセル</button>
+      <button class="btn btn-primary" onclick="savePointAdjust(this)">修正する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ポイント設定(ルールマスタ) -->
+<div class="modal-back" id="point-settings-modal">
+  <div class="modal" style="width:min(560px,100%)" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h3>ポイント設定</h3>
+      <button class="close" aria-label="閉じる" onclick="closePointSettings()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="field"><label>付与レート(何円の買上で1ポイント)</label>
+        <div style="display:flex;align-items:center;gap:0.4em">
+          <input id="pst-rate" class="num han-num" inputmode="numeric" style="width:7em;text-align:right">
+          <span>円で 1pt</span>
+        </div>
+        <span style="font-size:0.8em;color:var(--muted)">レジでは会計ごとに倍率(2倍・5倍・付与なし)を変えられます。</span></div>
+      <div class="field"><label style="display:flex;align-items:center;gap:0.4em;cursor:pointer">
+        <input type="checkbox" id="pst-nograant" style="width:1.1em;height:1.1em">
+        ポイントを使った会計にはポイントを付与しない</label></div>
+      <div class="field"><label>カード有効期限(最終購入日から)</label>
+        <div style="display:flex;align-items:center;gap:0.4em">
+          <input id="pst-expiry" class="num han-num" inputmode="numeric" style="width:5em;text-align:right">
+          <span>年</span>
+        </div>
+        <span style="font-size:0.8em;color:var(--muted)">カード券面の有効期限印字に使います(機器連携フェーズで使用)。</span></div>
+      <div class="section-title">機器モード(起動方法で決まります)</div>
+      <div class="field">
+        <p id="pst-hardware-state" style="margin:0;font-weight:700"></p>
+        <span style="font-size:0.8em;color:var(--muted)">
+          「トキワ起動.bat」「店内共有で起動.bat」= 機器OFF(レシート・ドロワー・カードに一切送信しない安全なテストモード)。
+          「機器ありで起動.bat」= 機器ON。宝飾ナビが機器を使っている間は必ずOFFのまま使ってください。</span></div>
+      <p id="pst-error" style="color:var(--danger);font-size:0.85em;margin:0.6rem 0 0;display:none"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closePointSettings()">キャンセル</button>
+      <button class="btn btn-primary" onclick="savePointSettings(this)">保存する</button>
+    </div>
+  </div>
+</div>
+
 <!-- 修理の新規預かり -->
 <div class="modal-back" id="repair-modal">
   <div class="modal" style="width:min(600px,100%)" role="dialog" aria-modal="true">
@@ -2190,6 +2258,15 @@
       chip.textContent = "👤 " + (CUR_USER.name || CUR_USER.id) + "（" + (ROLE_LABELS[userRole()] || userRole()) + "）";
       chip.style.display = "";
       document.getElementById("logout-btn").style.display = "";
+    }
+    // 機器モードを常時表示(サーバー起動時のみ)。切替は起動バッチで行う
+    if (window.TOKIWA_API) {
+      var hw = document.getElementById("hw-pill");
+      if (hw) {
+        hw.textContent = D.hardwareMode ? "🖨 機器ONモード" : "🔌 機器OFFモード(レシート・カード停止中)";
+        hw.style.display = "";
+        if (D.hardwareMode) { hw.style.background = "var(--accent)"; hw.style.color = "#fff"; }
+      }
     }
     if (!canProducts()) {
       // パート: 商品・在庫・棚卸し画面と設定(マスタ・ランク更新)への導線ごと隠す
@@ -2473,7 +2550,7 @@
       var disc = document.getElementById("disc-" + i);
       if (disc) disc.textContent = (ln.list && v < ln.list) ? (Math.round((ln.list - v) / ln.list * 1000) / 10) + "%" : "—";
     });
-    BILL = sum;  // 使用ポイントは当面0(検証をシンプルに)
+    BILL = sum;
     var st = document.getElementById("sum-total"); if (!st) return;
     st.textContent = yen(sum);
     document.getElementById("sum-bill").textContent = yen(BILL);
@@ -2482,8 +2559,33 @@
     renderPayRows();
   }
 
+  /* ── ポイントの表示(使用pt・加算予定pt)。ルールは設定マスタ(D.pointSettings) ──
+     計算はサーバーが正(checkout時に再計算)。ここは同じ式のプレビュー表示。 */
+  function pointRules() {
+    return D.pointSettings || { point_rate_yen: 100, point_use_no_grant: 1, card_expiry_years: 5 };
+  }
+  function currentPointMult() {
+    var el = document.getElementById("pos-point-mult");
+    var v = parseFloat(el ? el.value : "1");
+    return isNaN(v) ? 1 : v;
+  }
+  function currentPointsUsed() {
+    return payRows.reduce(function (t, r) { return t + (r.method === "ポイント" ? (r.amount || 0) : 0); }, 0);
+  }
+  function updatePointPreview() {
+    var ps = pointRules();
+    var used = currentPointsUsed();
+    var earn = Math.floor(BILL * currentPointMult() / Math.max(1, ps.point_rate_yen));
+    if (used > 0 && ps.point_use_no_grant) earn = 0;  // ポイントを使った会計は付与なし
+    var bal = posCustomer ? (D.points[String(posCustomer[0])] || 0) : null;
+    var usedEl = document.getElementById("sum-used");
+    if (usedEl) usedEl.textContent = num(used) + " pt" + (bal != null ? "（保有 " + num(bal) + " pt）" : "");
+    var earnEl = document.getElementById("sum-earn");
+    if (earnEl) earnEl.textContent = num(earn) + " pt" + (used > 0 && ps.point_use_no_grant ? "（使用時は付与なし）" : "");
+  }
+
   /* 支払方法の内訳(1会計を複数方法に分けられる。例: 現金5万+クレジット5万) */
-  var PAY_METHODS = ["現金", "クレジット", "PayPay", "掛売", "分割"];
+  var PAY_METHODS = ["現金", "クレジット", "PayPay", "掛売", "分割", "ポイント"];
   function renderPayRows() {
     var wrap = document.getElementById("pay-rows");
     if (!wrap) return;
@@ -2506,6 +2608,7 @@
     var hasCash = payRows.some(function (r) { return r.method === "現金" && r.amount > 0; });
     var cashWrap = document.getElementById("pos-cash-wrap");
     if (cashWrap) cashWrap.style.display = hasCash ? "" : "none";
+    updatePointPreview();  // ポイント支払いの増減で使用pt・加算予定ptを追従
     refreshChange();
   }
   function setPayMethod(i, v) { if (payRows[i]) { payRows[i].method = v; renderPayRows(); } }
@@ -2658,6 +2761,8 @@
   bindBackdropClose("rx-modal", closeRxModal);
   bindBackdropClose("label-modal", closeLabelPrint);
   bindBackdropClose("line-edit-modal", closeLineEdit);
+  bindBackdropClose("point-adjust-modal", closePointAdjust);
+  bindBackdropClose("point-settings-modal", closePointSettings);
   bindBackdropClose("repair-modal", closeRepairModal);
   renderPosLines();
 
@@ -4038,6 +4143,7 @@
       (sub.length ? '<div class="pc-sub">' + sub.map(function (s) { return '<span>' + s + '</span>'; }).join("") + '</div>' : "");
     searchBox.style.display = "none";
     card.style.display = "flex";
+    updatePointPreview();  // 顧客が決まったら保有ポイントも表示
   }
   function changePosCustomer() {
     posCustomer = null;
@@ -4172,15 +4278,102 @@
     // 台帳の残高が無い顧客は履歴の最新残高を表示(履歴は日付降順)
     if (bal == null && tx.length) bal = tx[0][4];
     var html = '<div class="tiles report-tiles"><div class="tile"><div class="t-label">ポイント残高</div><div class="t-value num">' + num(bal || 0) + '<small>pt</small></div></div></div>';
+    // 手動修正(±・理由必須で履歴に残る)。宝飾ナビの「カードを入れてポイント修正」に相当。パートには出さない
+    if (API && canProducts()) {
+      html += '<div style="margin:0.6rem 0"><button class="btn" onclick="openPointAdjust(\'' + esc(id) + '\')">± ポイントを修正</button></div>';
+    }
     if (tx.length) {
-      html += '<div class="table-scroll"><table class="data"><thead><tr><th>日付</th><th class="r">加算</th><th class="r">使用</th><th class="r">残高</th></tr></thead><tbody>' +
+      html += '<div class="table-scroll"><table class="data"><thead><tr><th>日付</th><th>区分</th><th class="r">加算</th><th class="r">使用</th><th class="r">残高</th></tr></thead><tbody>' +
         tx.map(function (t) {
-          return '<tr><td class="num">' + esc(dash(t[0])) + '</td><td class="r num">' + (t[2] ? "+" + num(t[2]) : "—") + '</td><td class="r num">' + (t[3] ? "−" + num(t[3]) : "—") + '</td><td class="r num">' + num(t[4]) + '</td></tr>';
+          return '<tr><td class="num">' + esc(dash(t[0])) + '</td><td>' + esc(dash(t[1])) + '</td><td class="r num">' + (t[2] ? "+" + num(t[2]) : "—") + '</td><td class="r num">' + (t[3] ? "−" + num(t[3]) : "—") + '</td><td class="r num">' + num(t[4]) + '</td></tr>';
         }).join("") + '</tbody></table></div>';
     } else {
       html += '<p style="margin:0;color:var(--muted);font-size:0.9em">ポイント履歴はありません。</p>';
     }
     document.getElementById("c-point").innerHTML = html;
+  }
+  /* ── ポイント設定(ルールマスタ) ── */
+  function openPointSettings() {
+    var ps = pointRules();
+    document.getElementById("pst-rate").value = ps.point_rate_yen;
+    document.getElementById("pst-nograant").checked = !!ps.point_use_no_grant;
+    document.getElementById("pst-expiry").value = ps.card_expiry_years;
+    document.getElementById("pst-hardware-state").textContent = D.hardwareMode
+      ? "🖨 現在: 機器ONモード(レシート・カード機器を使います)"
+      : "🔌 現在: 機器OFFモード(レシート・カードには送信しません)";
+    document.getElementById("pst-hardware-state").style.color = D.hardwareMode ? "var(--accent)" : "var(--muted)";
+    document.getElementById("pst-error").style.display = "none";
+    document.getElementById("point-settings-modal").classList.add("show");
+  }
+  function closePointSettings() { document.getElementById("point-settings-modal").classList.remove("show"); }
+  function savePointSettings(btn) {
+    if (!API) return showToast("ポイント設定はサーバー起動時に変更できます。");
+    var err = document.getElementById("pst-error");
+    err.style.display = "none";
+    var payload = {
+      point_rate_yen: parseInt(zen2han(document.getElementById("pst-rate").value).replace(/[^0-9]/g, ""), 10) || 0,
+      point_use_no_grant: document.getElementById("pst-nograant").checked ? 1 : 0,
+      card_expiry_years: parseInt(zen2han(document.getElementById("pst-expiry").value).replace(/[^0-9]/g, ""), 10) || 0
+    };
+    if (payload.point_rate_yen < 1) { err.textContent = "付与レートは1円以上で入力してください。"; err.style.display = "block"; return; }
+    if (payload.card_expiry_years < 1) { err.textContent = "有効期限は1年以上で入力してください。"; err.style.display = "block"; return; }
+    btn.disabled = true;
+    fetch(API + "/point_settings", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (res.error) throw new Error(res.error);
+      D.pointSettings = res;      // 以後のレジ計算プレビューに即反映
+      btn.disabled = false;
+      closePointSettings();
+      updatePointPreview();
+      showToast("ポイント設定を保存しました(" + res.point_rate_yen + "円=1pt / 有効期限 最終購入日+" + res.card_expiry_years + "年)。");
+    }).catch(function (e) {
+      btn.disabled = false;
+      err.textContent = "保存に失敗しました: " + fetchErrMsg(e); err.style.display = "block";
+    });
+  }
+  /* ── ポイントの手動修正 ── */
+  var pointAdjustCid = null;
+  function openPointAdjust(cid) {
+    pointAdjustCid = String(cid);
+    var bal = D.points[pointAdjustCid] || 0;
+    document.getElementById("pa-balance").textContent = num(bal) + " pt";
+    document.getElementById("pa-delta").value = "";
+    document.getElementById("pa-reason").value = "";
+    document.getElementById("pa-error").style.display = "none";
+    document.getElementById("point-adjust-modal").classList.add("show");
+    document.getElementById("pa-delta").focus();
+  }
+  function closePointAdjust() {
+    document.getElementById("point-adjust-modal").classList.remove("show");
+    pointAdjustCid = null;
+  }
+  function savePointAdjust(btn) {
+    if (!pointAdjustCid || !API) return;
+    var err = document.getElementById("pa-error");
+    err.style.display = "none";
+    var delta = parseInt(zen2han(document.getElementById("pa-delta").value).replace(/[^0-9\-]/g, ""), 10);
+    var reason = document.getElementById("pa-reason").value.trim();
+    if (!delta) { err.textContent = "修正ポイントを入力してください(例: 500 / -300)。"; err.style.display = "block"; return; }
+    if (!reason) { err.textContent = "修正理由を入力してください(履歴に残ります)。"; err.style.display = "block"; return; }
+    var cid = pointAdjustCid;
+    btn.disabled = true;
+    fetch(API + "/point_adjust", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ customer_id: cid, delta: delta, reason: reason })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (res.error) throw new Error(res.error);
+      D.points[cid] = res.balance;
+      (D.pointTx[cid] = D.pointTx[cid] || []).unshift(
+        [res.occurred_at, "手動修正", delta > 0 ? delta : null, delta < 0 ? -delta : null, res.balance]);
+      btn.disabled = false;
+      closePointAdjust();
+      var c = findCust(cid); if (c) renderPoint(c);
+      showToast("ポイントを修正しました(" + (delta > 0 ? "+" : "") + delta.toLocaleString() + " pt → 残高 " + res.balance.toLocaleString() + " pt)。");
+    }).catch(function (e) {
+      btn.disabled = false;
+      err.textContent = "保存に失敗しました: " + fetchErrMsg(e); err.style.display = "block";
+    });
   }
   function renderGlasses(c) {
     var id = String(c[0]);
@@ -5600,9 +5793,11 @@
   function dailyTilesHtml(lines, payments, tenders, cashMoves) {
     cashMoves = cashMoves || [];
     var salesTotal = lines.reduce(function (t, l) { return t + l.amount; }, 0);
-    // 「掛売」の内訳は本日はまだ未回収(お金は入っていない)ため、レジの入出金合計からは除外する
-    var settled = tenders.filter(function (t) { return t.method !== "掛売"; });
+    // 「掛売」(未回収)と「ポイント」(お金ではない)は、レジの入出金合計(現金締め)から除外する
+    var settled = tenders.filter(function (t) { return t.method !== "掛売" && t.method !== "ポイント"; });
     var newReceivable = tenders.filter(function (t) { return t.method === "掛売"; })
+      .reduce(function (t, x) { return t + x.amount; }, 0);
+    var pointPaid = tenders.filter(function (t) { return t.method === "ポイント"; })
       .reduce(function (t, x) { return t + x.amount; }, 0);
     var byPay = {};
     settled.forEach(function (t) { byPay[t.method] = (byPay[t.method] || 0) + t.amount; });
@@ -5624,6 +5819,9 @@
     });
     if (newReceivable) {
       tiles += '<div class="tile"><div class="t-label">本日発生の掛売(未回収)</div><div class="t-value num">¥' + num(newReceivable) + '</div></div>';
+    }
+    if (pointPaid) {
+      tiles += '<div class="tile"><div class="t-label">ポイント利用</div><div class="t-value num">' + num(pointPaid) + '<small>pt</small></div><div class="t-sub">現金締め対象外</div></div>';
     }
     tiles += '<div class="tile"><div class="t-label">売掛入金(現金)</div><div class="t-value num">¥' + num(payCashTotal) +
       '</div><div class="t-sub num">' + payCash.length + '件</div></div>';
@@ -6783,6 +6981,13 @@
     if (paySum !== BILL) {
       posError("支払方法の内訳合計(¥" + paySum.toLocaleString() + ")が請求金額(¥" + BILL.toLocaleString() + ")と一致しません。"); return false;
     }
+    var ptUsed = currentPointsUsed();
+    if (ptUsed > 0) {
+      var ptBal = D.points[String(posCustomer[0])] || 0;
+      if (ptUsed > ptBal) {
+        posError("ポイント残高が不足しています(残高 " + ptBal.toLocaleString() + " pt / 使用 " + ptUsed.toLocaleString() + " pt)。"); return false;
+      }
+    }
     var cashRow = payRows.filter(function (r) { return r.method === "現金"; })[0];
     if (cashRow && cashRow.amount > 0) {
       var deposit = parseAmt(document.getElementById("deposit").value);
@@ -6809,6 +7014,9 @@
     payRows = [{ method: "現金", amount: 0 }];
     renderPayRows();
     document.getElementById("deposit").value = "0";
+    var pm = document.getElementById("pos-point-mult");
+    if (pm) pm.value = "1";  // ポイント倍率は会計ごとにリセット(倍デーを引きずらない)
+    updatePointPreview();
     refreshChange();
     // 「過去の日付で登録する」は解除しない: 店外イベント精算など同じ日付で連続入力する運用のため
   }
@@ -6834,7 +7042,8 @@
     var cid = String(posCustomer[0]), nm = posCustomer[1];
     var payload = {
       customer_id: cid, staff_name: posOperator || "", lines: currentSaleLines(),
-      payments: currentPayments(), sold_at: currentSoldAt()
+      payments: currentPayments(), sold_at: currentSoldAt(),
+      point_mult: currentPointMult()  // ポイント付与の倍率(0=付与なし。計算はサーバーが正)
     };
     btn.textContent = "登録中…"; btn.disabled = true;
     fetch(window.TOKIWA_API + "/checkout", {
@@ -6866,7 +7075,10 @@
         (D.urikakeHist[cid] = D.urikakeHist[cid] || []).unshift([rv.bought_at, "掛売", rv.product_name, rv.balance, null, null]);
         kakeAdd += rv.balance || 0;
       });
+      // ポイント残高をローカルにも反映(次の会計や顧客詳細で最新残高が見える)
+      if (data.point_balance != null) D.points[cid] = data.point_balance;
       showToast(nm + "様 — 伝票 #" + data.slip_id + " を保存しました(合計 ¥" + data.total.toLocaleString() +
+        (data.points_used ? " / 使用 " + data.points_used.toLocaleString() + "pt" : "") +
         " / 加算 " + data.earned + "pt)。" + (kakeAdd ? "うち掛売 ¥" + kakeAdd.toLocaleString() + " を売掛に計上。" : "") + "在庫引き落とし・購入履歴へ反映済み。");
       renderPosReceivable();  // 掛売直後でも(顧客が選択中なら)売掛残高パネルを更新
       refreshStockStats();    // 在庫が引き落とされたので在庫数タイルを最新化(リロード不要)
