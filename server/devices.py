@@ -347,9 +347,12 @@ def build_card_face_cmds(name, issued, expiry, points, message=""):
     y += 52
     cmds.append(_cmd(FACE_LABEL_X, y, ESC_B + b"E11" + sj("ポイント")))
     cmds.append(_cmd(FACE_VALUE_X, y, ESC_B + b"E21" + sj(f"{int(points or 0):,}")))
-    # フリーメッセージ(通常・ラベルなし)。長い名前の時は行が1本増えているため1行まで
+    # フリーメッセージ(通常・ラベルなし)。ポイントとの間に半行(16ドット)の余白を入れる。
+    # 長い名前の時は行が1本増えているため1行まで
+    gap = 16
     for seg in _face_message_lines(message, max_lines=1 if long_name else 2):
-        y += 28
+        y += 28 + gap
+        gap = 0  # 余白はメッセージ1行目の前だけ
         cmds.append(_cmd(FACE_LABEL_X, y, ESC_B + b"E11" + sj(seg)))
     return cmds
 
