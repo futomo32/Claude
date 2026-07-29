@@ -194,11 +194,14 @@ def build_receipt_bytes(r):
     buf += sj(_pad_line("ポイント残高", f"{r.get('point_balance', 0):,}pt") + "\n")
     buf += sj("-" * RECEIPT_WIDTH + "\n")
     buf += sj(_center("お買上げありがとうございます") + "\n")  # 28桁に収まる表記(「お買い上げ〜」だと30桁ではみ出す)
-    # レシート下部メッセージ(設定画面で編集。空なら印字しない)
-    msg = str(r.get("message") or "").strip()
-    if msg:
+    # レシート下部メッセージ。この会計だけの一言(note)を上に、全レシート共通(message)を下に。
+    # どちらも空なら何も印字しない。
+    for text in (r.get("note"), r.get("message")):
+        text = str(text or "").strip()
+        if not text:
+            continue
         buf += b"\n"
-        for ln in msg.splitlines():
+        for ln in text.splitlines():
             for seg in _wrap(ln):
                 buf += sj(_center(seg) + "\n")
     buf += FS + b"."             # 漢字モードOFF

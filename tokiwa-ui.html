@@ -872,6 +872,12 @@
             <div class="field"><label>お預かり(現金)</label><input id="deposit" class="num han-num" inputmode="numeric" value="0" style="text-align:right;font-size:1.2em;font-weight:700"></div>
             <div class="pos-total-row"><span>釣銭</span><span class="v num" id="change">¥0</span></div>
           </div>
+          <div class="section-title">レシート下部メッセージ</div>
+          <div class="field"><label>この会計だけの一言(共通メッセージの上に印字)</label>
+            <textarea id="pos-receipt-note" rows="2" maxlength="200" style="width:100%;resize:vertical"
+              placeholder="例: 修理品は8/10頃の仕上がり予定です"></textarea>
+            <span style="font-size:0.8em;color:var(--muted)">空欄なら印字しません。会計を確定すると自動で消えます(次の会計に残りません)。</span></div>
+          <button class="btn" style="margin-bottom:0.6rem" onclick="openReceiptMsg()">全レシート共通のメッセージを編集</button>
           <div id="pos-error" class="pos-error" style="display:none" role="alert"><span id="pos-error-msg"></span></div>
           <div class="tenkey" aria-label="テンキー">
             <button onclick="key(7)">7</button><button onclick="key(8)">8</button><button onclick="key(9)">9</button>
@@ -2137,6 +2143,29 @@
   </div>
 </div>
 
+<!-- レシート共通メッセージ(レジからすぐ書き換えられるように独立モーダルにする) -->
+<div class="modal-back" id="receipt-msg-modal">
+  <div class="modal" style="width:min(480px,100%)" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h3>レシート共通メッセージ</h3>
+      <button class="close" aria-label="閉じる" onclick="closeReceiptMsg()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="field"><label>全レシートの一番下に印字(最大4行)</label>
+        <textarea id="rm-text" rows="4" maxlength="200" style="width:100%;resize:vertical"
+          placeholder="例: 下取り・修理もお気軽に&#10;ご相談ください"></textarea>
+        <span style="font-size:0.8em;color:var(--muted)">
+          空欄なら印字しません。保存すると以後のレシート全部に反映されます(催事の案内などに)。
+          ポイント設定画面と同じ内容です。</span></div>
+      <p id="rm-error" style="color:var(--danger);font-size:0.85em;margin:0.6rem 0 0;display:none"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeReceiptMsg()">キャンセル</button>
+      <button class="btn btn-primary" onclick="saveReceiptMsg(this)">保存する</button>
+    </div>
+  </div>
+</div>
+
 <!-- 修理の新規預かり -->
 <div class="modal-back" id="repair-modal">
   <div class="modal" style="width:min(600px,100%)" role="dialog" aria-modal="true">
@@ -2784,6 +2813,7 @@
   bindBackdropClose("line-edit-modal", closeLineEdit);
   bindBackdropClose("point-adjust-modal", closePointAdjust);
   bindBackdropClose("point-settings-modal", closePointSettings);
+  bindBackdropClose("receipt-msg-modal", closeReceiptMsg);
   bindBackdropClose("repair-modal", closeRepairModal);
   renderPosLines();
 
@@ -4382,6 +4412,39 @@
     document.getElementById("point-settings-modal").classList.add("show");
   }
   function closePointSettings() { document.getElementById("point-settings-modal").classList.remove("show"); }
+  /* ── レシート共通メッセージ(レジから直接編集。保存先はポイント設定と同じ app_settings) ── */
+  function openReceiptMsg() {
+    document.getElementById("rm-text").value = pointRules().receipt_message || "";
+    document.getElementById("rm-error").style.display = "none";
+    document.getElementById("receipt-msg-modal").classList.add("show");
+    document.getElementById("rm-text").focus();
+  }
+  function closeReceiptMsg() { document.getElementById("receipt-msg-modal").classList.remove("show"); }
+  function saveReceiptMsg(btn) {
+    if (!API) return showToast("レシートメッセージはサーバー起動時に変更できます。");
+    var err = document.getElementById("rm-error");
+    err.style.display = "none";
+    btn.disabled = true;
+    // receipt_message だけを送る(サーバー側は未指定の項目を現行値のまま残すため他の設定は壊れない)
+    fetch(API + "/point_settings", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ receipt_message: document.getElementById("rm-text").value })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (res.error) throw new Error(res.error);
+      D.pointSettings = res;
+      btn.disabled = false;
+      closeReceiptMsg();
+      showToast(res.receipt_message ? "レシート共通メッセージを保存しました。" : "レシート共通メッセージを空にしました(印字なし)。");
+    }).catch(function (e) {
+      btn.disabled = false;
+      err.textContent = "保存に失敗しました: " + fetchErrMsg(e); err.style.display = "block";
+    });
+  }
+  /* この会計だけの一言(レシート下部・伝票ごとに保存され再印字でも出る) */
+  function currentReceiptNote() {
+    var el = document.getElementById("pos-receipt-note");
+    return el ? el.value.trim() : "";
+  }
   function savePointSettings(btn) {
     if (!API) return showToast("ポイント設定はサーバー起動時に変更できます。");
     var err = document.getElementById("pst-error");
@@ -7094,6 +7157,8 @@
     document.getElementById("deposit").value = "0";
     var pm = document.getElementById("pos-point-mult");
     if (pm) pm.value = "1";  // ポイント倍率は会計ごとにリセット(倍デーを引きずらない)
+    var rn = document.getElementById("pos-receipt-note");
+    if (rn) rn.value = "";   // 個別の一言も会計ごとにリセット(次のお客様に残さない)
     updatePointPreview();
     refreshChange();
     // 「過去の日付で登録する」は解除しない: 店外イベント精算など同じ日付で連続入力する運用のため
@@ -7121,7 +7186,8 @@
     var payload = {
       customer_id: cid, staff_name: posOperator || "", lines: currentSaleLines(),
       payments: currentPayments(), sold_at: currentSoldAt(),
-      point_mult: currentPointMult()  // ポイント付与の倍率(0=付与なし。計算はサーバーが正)
+      point_mult: currentPointMult(),  // ポイント付与の倍率(0=付与なし。計算はサーバーが正)
+      receipt_note: currentReceiptNote()  // この会計だけのレシート一言(伝票に保存・再印字でも出る)
     };
     btn.textContent = "登録中…"; btn.disabled = true;
     fetch(window.TOKIWA_API + "/checkout", {

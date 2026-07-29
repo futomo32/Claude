@@ -152,6 +152,7 @@ def ensure_schema(con):
         ("receivables", "slip_id", "INTEGER"),    # 起票元の売上伝票(併用払いの内訳を辿るため)
         ("products", "ring_fingers", "TEXT"),  # はめる指(複数可。カンマ区切り)
         ("products", "ring_size", "TEXT"),     # リングサイズ(フリー入力。#10.5 や 12号 等)
+        ("sales_slips", "receipt_note", "TEXT"),  # その会計だけのレシート一言(再印字でも同じ内容が出る)
     ]
     changed = False
     for table, col, decl in adds:
@@ -2369,9 +2370,14 @@ def checkout(con, payload):
     if points_used and ps["point_use_no_grant"]:
         earned = 0
 
-    cur.execute("""INSERT INTO sales_slips(customer_id,staff_name,store_code,sold_at,pay_method,earned_points,used_points)
-                   VALUES (?,?,?,?,?,?,?)""",
-                (cid, payload.get("staff_name"), "01", sold_at, pay_label, earned, points_used or None))
+    # レシートの一言(この会計だけ)。4行200文字まで・空行は捨てる(全体設定と同じ整形)
+    note = "\n".join(ln.strip() for ln in str(payload.get("receipt_note") or "").splitlines()[:4]
+                     if ln.strip())[:200]
+    cur.execute("""INSERT INTO sales_slips(customer_id,staff_name,store_code,sold_at,pay_method,
+                                           earned_points,used_points,receipt_note)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (cid, payload.get("staff_name"), "01", sold_at, pay_label, earned,
+                 points_used or None, note or None))
     slip_id = cur.lastrowid
 
     lines_out = []
@@ -2451,7 +2457,7 @@ def receipt_data(con, slip_id, deposit=None):
     devices.build_receipt_bytes() に渡す dict を返す。"""
     con.row_factory = sqlite3.Row
     s = con.execute("""SELECT s.slip_id, s.sold_at, s.staff_name, s.customer_id,
-                              s.earned_points, s.used_points, c.name cname
+                              s.earned_points, s.used_points, s.receipt_note, c.name cname
                        FROM sales_slips s LEFT JOIN customers c ON c.customer_id = s.customer_id
                        WHERE s.slip_id=?""", (int(slip_id),)).fetchone()
     if not s:
@@ -2480,7 +2486,8 @@ def receipt_data(con, slip_id, deposit=None):
             "earned": int(s["earned_points"] or 0), "points_used": int(s["used_points"] or 0),
             "point_balance": int(bal_row[0] or 0) if bal_row else 0,
             "deposit": deposit, "cash_due": cash_due,
-            "message": point_settings(con).get("receipt_message", "")}
+            "note": s["receipt_note"] or "",                          # この会計だけの一言
+            "message": point_settings(con).get("receipt_message", "")}  # 全レシート共通
 
 
 def shorten_staff(name):
