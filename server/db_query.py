@@ -1179,6 +1179,7 @@ POINT_SETTING_DEFAULTS = {
     "point_rate_yen": 100,
     "point_use_no_grant": 1,
     "card_expiry_years": 5,
+    "card_message": "",   # 券面のフリーメッセージ(最大2行・全角22文字。空=印字なし)
 }
 
 
@@ -1188,10 +1189,13 @@ def point_settings(con):
     for k in out:
         row = con.execute("SELECT value FROM app_settings WHERE key=?", (k,)).fetchone()
         if row is not None and str(row[0]).strip() != "":
-            try:
-                out[k] = int(row[0])
-            except (ValueError, TypeError):
-                pass
+            if isinstance(POINT_SETTING_DEFAULTS[k], int):
+                try:
+                    out[k] = int(row[0])
+                except (ValueError, TypeError):
+                    pass
+            else:
+                out[k] = str(row[0])
     return out
 
 
@@ -1206,10 +1210,14 @@ def save_point_settings(con, p):
             return cur[key]
         return min(hi, max(lo, v))
 
+    # 券面メッセージ: 改行は2行まで・制御文字除去・全体100文字まで
+    msg = str(p.get("card_message", cur["card_message"]) or "")
+    msg = "\n".join(ln.strip() for ln in msg.splitlines()[:2] if ln.strip())[:100]
     vals = {
         "point_rate_yen": norm("point_rate_yen", 1, 100000),
         "point_use_no_grant": 1 if str(p.get("point_use_no_grant", cur["point_use_no_grant"])) in ("1", "True", "true") else 0,
         "card_expiry_years": norm("card_expiry_years", 1, 99),
+        "card_message": msg,
     }
     for k, v in vals.items():
         _set_setting(con, k, str(v))

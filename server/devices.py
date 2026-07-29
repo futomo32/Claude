@@ -308,30 +308,70 @@ def _dots(s):
     return sum(24 if ord(c) > 0xFF else 12 for c in str(s))
 
 
-def build_card_face_cmds(name, issued, expiry, points):
-    """券面レイアウトを41hコマンドのデータ列(複数)にして返す。
-    上から お名前/発行日/有効期限/ポイント。値の幅は最大140ドット(全角約6文字)なので、
-    長い名前は「お名前」の次の行に全幅で印字する(自動切替)。
-    各行にヘッダー(方向,X,Y,)を付ける(ポイントの「1,355」のようにカンマを含む値があるため、
-    仕様書の注意に従いヘッダーは省略しない)。"""
+ESC_B = b"\x1b"  # 41hテキスト中のESCシーケンス(文字サイズ指定等)
+
+
+def _cmd(x, y, payload: bytes):
+    """41hデータ列1件(ヘッダー+テキスト)。テキストにカンマを含み得るためヘッダーは常に付ける。"""
+    return f"{FACE_DIR},{x},{y},".encode("ascii") + payload
+
+
+def build_card_face_cmds(name, issued, expiry, points, message=""):
+    """券面レイアウトを41hコマンドのデータ列(複数)にして返す(2026-07-29 レイアウト確定版)。
+      お名前 ＋ 名前(縦倍)  … 長い名前(値幅170ドット超)は次の行に通常サイズで
+      有効期限(通常)
+      ポイント ＋ 数値(縦横倍)
+      フリーメッセージ 最大2行(ラベルなし・全角22文字まで。空なら印字しない)
+    発行日は券面から廃止(DBで見られるため)。余白は4ドットで詰める。
+    ESC E11/E21/E22 で文字サイズを行ごとに明示する(前の行のサイズを引きずらない)。"""
+    def sj(t):
+        return str(t).encode("shift_jis", "replace")
+
     name_v = f"{name} 様"
     cmds = []
-    y = FACE_TOP_Y
-    if FACE_VALUE_X + _dots(name_v) <= FACE_MAX_X:
-        cmds.append(f"{FACE_DIR},{FACE_LABEL_X},{y},お名前".encode("shift_jis", "replace"))
-        cmds.append(f"{FACE_DIR},{FACE_VALUE_X},{y},{name_v}".encode("shift_jis", "replace"))
-    else:  # 長い名前: ラベル行の下に全幅で
-        cmds.append(f"{FACE_DIR},{FACE_LABEL_X},{y},お名前".encode("shift_jis", "replace"))
-        y += FACE_LINE_H
-        cmds.append(f"{FACE_DIR},30,{y},{name_v}".encode("shift_jis", "replace"))
-    y += FACE_LINE_H
-    for label, value in (("発行日", str(issued or "")),
-                         ("有効期限", str(expiry or "")),
-                         ("ポイント", f"{int(points or 0):,}")):
-        cmds.append(f"{FACE_DIR},{FACE_LABEL_X},{y},{label}".encode("shift_jis", "replace"))
-        cmds.append(f"{FACE_DIR},{FACE_VALUE_X},{y},{value}".encode("shift_jis", "replace"))
-        y += FACE_LINE_H
+    long_name = FACE_VALUE_X + _dots(name_v) > FACE_MAX_X
+    # 1行目: お名前ラベル(通常) + 名前(縦倍48ドット)。下端揃え
+    y = FACE_TOP_Y + 28  # 縦倍の分だけ下端を下げる(上端は枠上部ぎりぎり)
+    if not long_name:
+        cmds.append(_cmd(FACE_LABEL_X, y, ESC_B + b"E11" + sj("お名前")))
+        cmds.append(_cmd(FACE_VALUE_X, y, ESC_B + b"E21" + sj(name_v)))
+    else:  # 長い名前: ラベル行の下に全幅・通常サイズで(行が1本増える)
+        cmds.append(_cmd(FACE_LABEL_X, y, ESC_B + b"E11" + sj("お名前")))
+        y += 28
+        cmds.append(_cmd(30, y, ESC_B + b"E11" + sj(name_v)))
+    # 有効期限(通常24ドット)
+    y += 28
+    cmds.append(_cmd(FACE_LABEL_X, y, ESC_B + b"E11" + sj("有効期限")))
+    cmds.append(_cmd(FACE_VALUE_X, y, ESC_B + b"E11" + sj(str(expiry or ""))))
+    # ポイント(数値は縦横倍48ドット)。ラベルと下端揃え
+    y += 52
+    cmds.append(_cmd(FACE_LABEL_X, y, ESC_B + b"E11" + sj("ポイント")))
+    cmds.append(_cmd(FACE_VALUE_X, y, ESC_B + b"E22" + sj(f"{int(points or 0):,}")))
+    # フリーメッセージ(通常・ラベルなし)。長い名前の時は行が1本増えているため1行まで
+    for seg in _face_message_lines(message, max_lines=1 if long_name else 2):
+        y += 28
+        cmds.append(_cmd(FACE_LABEL_X, y, ESC_B + b"E11" + sj(seg)))
     return cmds
+
+
+def _face_message_lines(message, max_lines=2):
+    """券面メッセージを枠幅(全角11文字=264ドット)で最大2行に整形する。改行も尊重。"""
+    out = []
+    width = FACE_MAX_X - FACE_LABEL_X
+    for raw in str(message or "").splitlines():
+        raw = raw.strip()
+        cur, cw = "", 0
+        for c in raw:
+            w = 24 if ord(c) > 0xFF else 12
+            if cw + w > width:
+                out.append(cur)
+                cur, cw = c, w
+            else:
+                cur += c
+                cw += w
+        if cur:
+            out.append(cur)
+    return [s for s in out if s][:max_lines]
 
 
 def build_card_grid_cmds():
@@ -358,7 +398,8 @@ def card_face_print(face):
             if st != 0x20:
                 return {"error": "印字バッファクリアに失敗: " + status_text(st)}
             for c in build_card_face_cmds(face.get("name") or "", face.get("issued"),
-                                          face.get("expiry"), face.get("points")):
+                                          face.get("expiry"), face.get("points"),
+                                          face.get("message") or ""):
                 st = dev.set_print_text(c)
                 if st != 0x20:
                     return {"error": "印字データ設定に失敗: " + status_text(st)}

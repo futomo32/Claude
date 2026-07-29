@@ -20,7 +20,8 @@ from tcp300ii import TCP300II, TCP300IIError, find_port, status_text  # noqa: E4
 import devices  # noqa: E402  レイアウト定数(FACE_*)を共用
 
 
-SAMPLE = {"name": "トキワ テスト", "issued": "2026.07.29", "expiry": "2031.07.28", "points": 1234}
+SAMPLE = {"name": "児玉 香", "issued": "2026.07.29", "expiry": "2031.07.28", "points": 1234,
+          "message": "新春セール開催中！\n1/10までポイント2倍"}
 
 
 def main():
@@ -52,7 +53,8 @@ def main():
         cmds = devices.build_card_grid_cmds()
     else:
         cmds = devices.build_card_face_cmds(SAMPLE["name"], SAMPLE["issued"],
-                                            SAMPLE["expiry"], SAMPLE["points"])
+                                            SAMPLE["expiry"], SAMPLE["points"],
+                                            SAMPLE.get("message", ""))
 
     try:
         with TCP300II(ans) as dev:

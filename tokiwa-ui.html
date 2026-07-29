@@ -2113,7 +2113,11 @@
           <input id="pst-expiry" class="num han-num" inputmode="numeric" style="width:5em;text-align:right">
           <span>年</span>
         </div>
-        <span style="font-size:0.8em;color:var(--muted)">カード券面の有効期限印字に使います(機器連携フェーズで使用)。</span></div>
+        <span style="font-size:0.8em;color:var(--muted)">カード券面の有効期限印字に使います(最終購入日+N年)。</span></div>
+      <div class="field"><label>券面メッセージ(カード下部に印字・最大2行×全角11文字)</label>
+        <textarea id="pst-cardmsg" rows="2" maxlength="100" style="width:100%;resize:vertical"
+          placeholder="例: 新春セール開催中！&#10;1/10までポイント2倍"></textarea>
+        <span style="font-size:0.8em;color:var(--muted)">空欄なら印字しません。カードを書き換えた時に反映されます(催事の案内などに)。</span></div>
       <div class="section-title">機器モード(起動方法で決まります)</div>
       <div class="field">
         <p id="pst-hardware-state" style="margin:0;font-weight:700"></p>
@@ -4364,6 +4368,7 @@
     document.getElementById("pst-rate").value = ps.point_rate_yen;
     document.getElementById("pst-nograant").checked = !!ps.point_use_no_grant;
     document.getElementById("pst-expiry").value = ps.card_expiry_years;
+    document.getElementById("pst-cardmsg").value = ps.card_message || "";
     document.getElementById("pst-hardware-state").textContent = D.hardwareMode
       ? "🖨 現在: 機器ONモード(レシート・カード機器を使います)"
       : "🔌 現在: 機器OFFモード(レシート・カードには送信しません)";
@@ -4379,7 +4384,8 @@
     var payload = {
       point_rate_yen: parseInt(zen2han(document.getElementById("pst-rate").value).replace(/[^0-9]/g, ""), 10) || 0,
       point_use_no_grant: document.getElementById("pst-nograant").checked ? 1 : 0,
-      card_expiry_years: parseInt(zen2han(document.getElementById("pst-expiry").value).replace(/[^0-9]/g, ""), 10) || 0
+      card_expiry_years: parseInt(zen2han(document.getElementById("pst-expiry").value).replace(/[^0-9]/g, ""), 10) || 0,
+      card_message: document.getElementById("pst-cardmsg").value
     };
     if (payload.point_rate_yen < 1) { err.textContent = "付与レートは1円以上で入力してください。"; err.style.display = "block"; return; }
     if (payload.card_expiry_years < 1) { err.textContent = "有効期限は1年以上で入力してください。"; err.style.display = "block"; return; }
