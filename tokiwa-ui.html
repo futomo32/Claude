@@ -818,6 +818,11 @@
             <button class="btn btn-newcust" onclick="openCustModalForPos()">＋ 新規顧客</button>
             <button class="btn" id="card-read-btn" style="display:none" onclick="cardReadCustomer(this)">💳 カード呼出</button>
           </div>
+          <div id="card-held-bar" style="display:none;margin:0.3rem 0;padding:0.5em 0.8em;background:var(--accent-soft);border:1px solid var(--accent);border-radius:8px;font-size:0.88em">
+            💳 <b>カード保持中</b>: <span id="card-held-name"></span> 様 —
+            会計を確定すると券面のポイントを書き換えて排出します。
+            <button class="btn" style="margin-left:0.5em" onclick="cardEjectHeld()">会計せず排出</button>
+          </div>
           <div id="card-link-bar" style="display:none;margin:0.3rem 0;padding:0.5em 0.8em;background:#fff8e6;border:1px solid #e6c96b;border-radius:8px;font-size:0.88em">
             💳 <b>宝飾ナビ形式のカード</b>が入っています。顧客を検索・選択してから
             <button class="btn btn-primary" style="margin-left:0.5em" onclick="cardLinkCustomer(this)">このカードを選択中の顧客に紐付けて書換</button>
@@ -4274,12 +4279,17 @@
         if (res.error) return showToast("⚠ " + res.error);
         if (res.customer_id) {
           var c = findCust(res.customer_id);
-          if (!c) return showToast("⚠ カードの顧客(" + res.customer_id + ")が見つかりません");
+          if (!c) {
+            // 台帳に居ない顧客のカードは保持しても仕方ないので排出する
+            fetch(API + "/card_read_cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(function () {});
+            return showToast("⚠ カードの顧客(" + res.customer_id + ")が見つかりません");
+          }
           posCustomer = c;
           document.getElementById("pos-cust-input").value = c[1];
           renderPosCustomer();
           renderPosReceivable();
-          showToast("💳 " + c[1] + " 様をカードで呼び出しました。");
+          setCardHeld(res.held ? String(c[0]) : null, c[1]);
+          showToast("💳 " + c[1] + " 様をカードで呼び出しました。カードは会計確定時に書き換えて排出します。");
           return;
         }
         if (res.unknown) {  // 宝飾ナビ形式: カードは装置内に残っている → 紐付けバーを出す
@@ -4290,6 +4300,43 @@
         btn.disabled = false; btn.textContent = "💳 カード呼出";
         showToast("カード読取の通信に失敗: " + fetchErrMsg(e));
       });
+  }
+  /* カード保持状態(案A・宝飾ナビ方式): 読取後は装置内に保持し、会計確定で券面書換→排出 */
+  var cardHeldId = null;
+  function setCardHeld(cid, name) {
+    cardHeldId = cid || null;
+    var bar = document.getElementById("card-held-bar");
+    if (bar) bar.style.display = cardHeldId ? "" : "none";
+    var nm = document.getElementById("card-held-name");
+    if (nm) nm.textContent = name || "";
+  }
+  function cardEjectHeld() {
+    fetch(API + "/card_read_cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then(function (r) { return r.json(); })
+      .then(function (res) { showToast(res.error ? "⚠ " + res.error : "💳 カードを排出しました。"); })
+      .catch(function () { showToast("⚠ カード排出の通信に失敗。機器のボタンでも取り出せます。"); });
+    setCardHeld(null);
+  }
+  // 会計確定後: 保持中カードの券面(ポイント等)を書き換えて排出する。
+  // 失敗しても会計・ポイント残高(DB)は成立済み。券面は次回来店時に書き直せる。
+  function updateHeldCardFace(cid, nm) {
+    if (!cardHeldId) return;
+    if (String(cid) !== String(cardHeldId)) return;  // カードの人と会計の人が違う時は触らない(排出もしない)
+    fetch(API + "/card_face", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ customer_id: cid })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (res.skipped) return;
+      if (res.error) {
+        showToast("⚠ カード券面の書き換えに失敗: " + res.error +
+          "（ポイントは保存済み。「会計せず排出」でカードを取り出し、次回書き直せます）");
+        return;  // 保持バーは残す(排出ボタンで取り出してもらう)
+      }
+      setCardHeld(null);
+      showToast("💳 " + nm + " 様のカード券面を更新して排出しました。");
+    }).catch(function () {
+      showToast("⚠ カード券面書き換えの通信に失敗（ポイントは保存済み）。「会計せず排出」で取り出せます。");
+    });
   }
   function cardLinkCustomer(btn) {
     if (!posCustomer) return showToast("先に顧客を検索して選択してください。");
@@ -7413,6 +7460,7 @@
         }).then(function (r) { return r.json(); }).then(function (res) {
           if (res.error) showToast("⚠ " + res.error + "（会計は保存済み。再印字は後で可能）");
         }).catch(function () { showToast("⚠ レシート印字の通信に失敗（会計は保存済み）"); });
+        updateHeldCardFace(cid, nm);  // 保持中カードの券面(ポイント等)を書き換えて排出(案A)
       }
       resetPosAfterSale();
     }).catch(function (e) {

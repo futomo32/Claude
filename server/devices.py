@@ -299,9 +299,11 @@ CARD_PREFIX = "TKW"  # トキワ形式の磁気: "TKW"+顧客ID
 
 
 def card_read(timeout=30.0):
-    """カード挿入を待って磁気(トラック2)を読む。読んだ後カードは装置内に残る
-    (未知カードなら続けて card_link で書換できるように)。トキワ形式なら排出する。
-    戻り {customer_id} | {unknown: true, raw} | {error} | {skipped}。"""
+    """カード挿入を待って磁気(トラック2)を読む。読んだ後カードは装置内に残る。
+    トキワ形式: 顧客を返し、カードは保持したまま(宝飾ナビと同じ運用。会計確定時に
+    券面を書き換えて排出する。会計しない場合は card_eject で返す)。2026-07-31 案A採用。
+    未知カード: 続けて card_link で書換できるように保持。
+    戻り {customer_id, held} | {unknown: true, raw} | {error} | {skipped}。"""
     if not ENABLED:
         return _skip()
     try:
@@ -317,8 +319,7 @@ def card_read(timeout=30.0):
             raw = payload.decode("ascii", "replace").strip()
             if raw.startswith(CARD_PREFIX):
                 cid = raw[len(CARD_PREFIX):]
-                _eject_safe(dev)
-                return {"customer_id": cid, "raw": raw}
+                return {"customer_id": cid, "raw": raw, "held": True}
             return {"unknown": True, "raw": raw,
                     "message": "宝飾ナビ形式のカードです。顧客を選んで紐付けるとトキワ形式に書き換わります(カードは入れたまま)"}
     except Exception as e:  # noqa: BLE001

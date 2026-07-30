@@ -2607,6 +2607,33 @@ def receipt_data(con, slip_id, deposit=None):
             "message": point_settings(con).get("receipt_message", "")}  # 全レシート共通
 
 
+def card_face_data(con, customer_id):
+    """カード券面リライト印字用のデータ(devices.card_face_print に渡す dict)。
+    名前・有効期限(最終購入日+N年)・ポイント残高・券面メッセージ。会計直後に呼ぶ想定
+    (checkoutがコミット済みなので、残高・最終購入日は今回の会計を含む)。"""
+    cid = str(customer_id or "").strip()
+    row = con.execute("SELECT name FROM customers WHERE customer_id=?", (cid,)).fetchone()
+    if not row:
+        raise ValueError(f"顧客({cid})が見つかりません")
+    ps = point_settings(con)
+    bal = con.execute("SELECT balance FROM point_balances WHERE customer_id=?", (cid,)).fetchone()
+    last = con.execute("""SELECT MAX(sold_at) FROM sales_slips
+                          WHERE customer_id=? AND COALESCE(voided,0)=0""", (cid,)).fetchone()
+    base = str(last[0])[:10] if last and last[0] else datetime.date.today().isoformat()
+    try:
+        d = datetime.date.fromisoformat(base)
+    except ValueError:
+        d = datetime.date.today()
+    years = max(1, int(ps.get("card_expiry_years") or 5))
+    try:
+        exp = d.replace(year=d.year + years)
+    except ValueError:      # 2/29 起点で加算先が閏年でない場合
+        exp = d.replace(year=d.year + years, day=28)
+    return {"name": row[0] or "", "issued": None, "expiry": exp.strftime("%Y.%m.%d"),
+            "points": int(bal[0] or 0) if bal else 0,
+            "message": ps.get("card_message") or ""}
+
+
 def shorten_staff(name):
     """担当者名を姓だけに(レシートの幅節約)。"""
     return str(name or "").split()[0] if name else ""

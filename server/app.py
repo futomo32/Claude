@@ -590,6 +590,18 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/card_read_cancel":
                 result = devices.card_eject()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/card_face":
+                # 会計確定後の券面リライト(保持中カードのポイント等を書き換えて排出)。
+                # 失敗しても会計・ポイント残高(DB)は成立済み。券面は次回来店時に書き直せる
+                con = connect()
+                try:
+                    face = db_query.card_face_data(con, payload.get("customer_id"))
+                except ValueError as e:
+                    return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                finally:
+                    con.close()
+                result = devices.card_face_print(face)
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/point_settings":
                 con = connect()
                 result = db_query.save_point_settings(con, payload)
