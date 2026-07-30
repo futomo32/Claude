@@ -33,9 +33,14 @@ CARD_PORT = "COM3"                 # TCP300II
 RECEIPT_WIDTH = 28                 # 印字桁数。実機で30桁だと右端がはみ出たため28に(2026-07-29実測)
 STORE_TEL = "0565-32-0688"         # レシートに印字する電話番号
 LOGO_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "logo.png")
-PAPER_DOTS = 336                   # 実効印字幅(ドット)。28桁×12dot の実測に合わせる。中央寄せの基準
+# ★PAPER_DOTS は「28桁×12ドット」からの推定値。実機の本当の印字可能幅とは違う可能性がある
+#   (ロゴを幅いっぱいで印字すると左に寄る症状が出た。2026-07-30)。
+#   hardware/logo_center_test.py の目盛り印字で実測して確定する。
+PAPER_DOTS = 336                   # 実効印字幅(ドット)。中央寄せの基準
 LOGO_DOTS = 336                    # ロゴ印字幅の上限(ドット)。PAPER_DOTS を超えると右が欠ける
-LOGO_MAX_H = 150                   # ロゴ高さの上限(ドット≒19mm)。正方形ロゴが紙面を占領しないように
+LOGO_MAX_H = 336                   # ロゴ高さの上限(ドット≒42mm)。実機の見比べでGパターンを採用(2026-07-30)
+LOGO_OFFSET_DOTS = 0               # 中央寄せの微調整。右へずらすドット数(8ドット≒1mm)。
+                                   # 中央寄せ確定テストで決める。ラスタのビットをずらすので1ドット単位で効く
 LOGO_DITHER = False                # 二値化方式: False=しきい値(ベタ塗り・線画ロゴ向き。エッジがパリッと出る)
                                    #             True=Floyd-Steinbergディザ(濃淡・グラデのあるロゴ向き)
 LOGO_THRESHOLD = 160               # しきい値方式のときの白黒境界(0-255。上げると太く・黒く印字される)
@@ -86,10 +91,33 @@ def _wrap(text, width=None):
     return lines or [""]
 
 
+def _raster_from_image(img, offset_dots=0):
+    """1bit画像(PIL)をESC/POSのラスタ画像(GS v 0)に変換する。
+
+    offset_dots: 左に入れる白ドット数。**ビット単位でずらす**ので1ドット刻みで位置調整できる
+    (ESC $ の絶対位置指定はラスタに効かない機種があるため、データ側でずらす確実な方法にする)。
+    """
+    w, h = img.size
+    px = img.load()
+    off = max(0, int(offset_dots))
+    row_bytes = (off + w + 7) // 8
+    data = bytearray()
+    for y in range(h):
+        row = bytearray(row_bytes)
+        for x in range(w):
+            if px[x, y] == 0:            # 黒
+                bit = off + x
+                row[bit >> 3] |= 0x80 >> (bit & 7)
+        data += row
+    head = GS + b"v0" + b"\x00" + bytes([row_bytes & 0xFF, row_bytes >> 8, h & 0xFF, h >> 8])
+    return bytes(head) + bytes(data)
+
+
 def _logo_raster():
     """assets/logo.png をESC/POSのラスタ画像(GS v 0)に変換して返す。
     高解像度PNG → LANCZOS縮小 → 二値化(LOGO_DITHERで しきい値/ディザ を切替)。
-    ラスタにはESC aの中央寄せが効かないため、左に白ドットを足して紙幅の中央に寄せる。
+    ラスタにはESC aの中央寄せが効かないため、左に白ドットを足して紙幅の中央に寄せる
+    (微調整は LOGO_OFFSET_DOTS)。
     Pillowが無い・ロゴが無い・変換失敗のときは None(呼び出し側が文字の店名にフォールバック)。"""
     try:
         from PIL import Image
@@ -110,22 +138,8 @@ def _logo_raster():
             img = img.convert("1")  # Floyd-Steinbergディザ(濃淡をドット密度で再現)
         else:
             img = img.point(lambda p: 0 if p < LOGO_THRESHOLD else 255, mode="1")
-        row_bytes = (w + 7) // 8
-        pad_bytes = max(0, (PAPER_DOTS - w) // 2 // 8)  # 中央寄せ用の左余白(白)
-        total_bytes = pad_bytes + row_bytes
-        data = bytearray()
-        px = img.load()
-        for y in range(h):
-            data += b"\x00" * pad_bytes
-            for bx in range(row_bytes):
-                b = 0
-                for bit in range(8):
-                    x = bx * 8 + bit
-                    if x < w and px[x, y] == 0:  # 黒=1
-                        b |= 0x80 >> bit
-                data.append(b)
-        head = GS + b"v0" + b"\x00" + bytes([total_bytes & 0xFF, total_bytes >> 8, h & 0xFF, h >> 8])
-        return bytes(head) + bytes(data)
+        offset = max(0, (PAPER_DOTS - w) // 2) + LOGO_OFFSET_DOTS   # 中央寄せ + 実機に合わせた微調整
+        return _raster_from_image(img, offset)
     except Exception:  # noqa: BLE001 ロゴが読めなくてもレシートは出す
         return None
 
