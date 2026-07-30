@@ -32,6 +32,8 @@ PRINTER_COM = "COM7"               # 直接COMフォールバック用
 CARD_PORT = "COM3"                 # TCP300II
 RECEIPT_WIDTH = 28                 # 印字桁数。実機で30桁だと右端がはみ出たため28に(2026-07-29実測)
 STORE_TEL = "0565-32-0688"         # レシートに印字する電話番号
+STORE_REG_NO = ""                  # インボイス登録番号(適格請求書発行事業者。例 "T1234567890123")。
+                                   # ★実番号をここに入れる。空の間は印字しない
 LOGO_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "logo.png")
 # PAPER_DOTS は実機で確定済み(2026-07-30 中央寄せテスト): 目盛りが400ドット過ぎまで印字され、
 # ロゴは右+24ドットの位置が中央に見えた → 実効印字幅は 384ドット(58mm紙の標準値)。
@@ -165,6 +167,8 @@ def build_receipt_bytes(r):
         buf += GS + b"!" + b"\x00"
     buf += sj(_center("御計算書") + "\n")
     buf += sj(_center(f"TEL {STORE_TEL}") + "\n")
+    if STORE_REG_NO:               # インボイス登録番号(適格簡易請求書の必須記載事項)
+        buf += sj(_center(f"登録番号 {STORE_REG_NO}") + "\n")
     buf += sj("-" * RECEIPT_WIDTH + "\n")
     buf += sj(f"日付: {r['sold_at']} 伝票#{r['slip_id']}\n")
     if r.get("customer"):
