@@ -32,8 +32,62 @@ SUFFIX = ".db"
 KEEP_DEFAULT = 14
 
 
+# 件数を記録して急減を検知する対象テーブル(誤削除・移行事故の早期発見用)。
+# システムは「誤って消した」意図を判定できないため、量の異常として気づく仕組みにする。
+COUNT_TABLES = ("customers", "products", "sales_slips", "sale_lines",
+                "point_balances", "point_transactions", "receivables", "receivable_entries",
+                "prescriptions", "repairs", "customer_families", "staff",
+                "master_items", "stock_events")
+DROP_ROWS = 20      # この件数以上減っていたら警告(通常の削除運用で誤検知しない水準)
+DROP_RATE = 0.10    # または1割以上減っていたら警告
+
+
 def _stamp(now=None):
     return (now or datetime.datetime.now()).strftime("%Y%m%d_%H%M%S")
+
+
+def table_counts(db_path):
+    """主要テーブルの件数を返す。存在しないテーブルは飛ばす(移行途中でも動くように)。"""
+    counts = {}
+    try:
+        con = sqlite3.connect(db_path)
+    except sqlite3.Error:
+        return counts
+    try:
+        have = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        for t in COUNT_TABLES:
+            if t in have:
+                try:
+                    counts[t] = int(con.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0])
+                except sqlite3.Error:
+                    pass
+    finally:
+        con.close()
+    return counts
+
+
+def count_warnings(prev, cur):
+    """前回と比べて件数が急減しているテーブルの警告文リストを返す。
+    データは通常増える一方なので、大きく減っていたら誤削除・取り込み事故を疑う。"""
+    out = []
+    if not prev:
+        return out   # 初回は比較対象が無い
+    for t, before in prev.items():
+        try:
+            before = int(before)
+        except (TypeError, ValueError):
+            continue
+        if t not in cur or before <= 0:
+            continue
+        now = cur[t]
+        drop = before - now
+        if drop <= 0:
+            continue
+        if now == 0:
+            out.append(f"★{t} が全件消えています({before:,}件→0件)")
+        elif drop >= DROP_ROWS or drop >= before * DROP_RATE:
+            out.append(f"★{t} が {drop:,}件減っています({before:,}→{now:,})")
+    return out
 
 
 def _name(stamp):
@@ -116,9 +170,20 @@ def run_backup(db_path=None, extra_dirs=(), keep=KEEP_DEFAULT):
         return result
 
     # (1) 店内へオンラインバックアップ(営業中・サーバー起動中でも安全)
-    local = os.path.join(LOCAL_DIR, _name(stamp))
     try:
         os.makedirs(LOCAL_DIR, exist_ok=True)
+    except OSError as e:
+        result["errors"].append(f"保存先を作れません({LOCAL_DIR}): {e}")
+        return result
+    # 同じ秒に2回実行した時に上書きしないよう連番を付ける(手動実行の連打対策)
+    if os.path.exists(os.path.join(LOCAL_DIR, _name(stamp))):
+        for i in range(2, 100):
+            if not os.path.exists(os.path.join(LOCAL_DIR, _name(f"{stamp}-{i}"))):
+                stamp = f"{stamp}-{i}"
+                break
+    result["name"] = _name(stamp)
+    local = os.path.join(LOCAL_DIR, _name(stamp))
+    try:
         src = sqlite3.connect(db_path)
         try:
             dst = sqlite3.connect(local)
@@ -162,6 +227,41 @@ def run_backup(db_path=None, extra_dirs=(), keep=KEEP_DEFAULT):
     for d in [LOCAL_DIR] + [str(x).strip() for x in extra_dirs if str(x).strip()]:
         for name in prune(d, keep):
             result["removed"].append(os.path.join(d, name))
+    return result
+
+
+def run_with_history(db_path=None, con=None, reason=""):
+    """設定読込 → バックアップ → 件数の比較(急減警告) → 結果記録 までの共通入口。
+    app.py(自動・手動ボタン)と scripts/backup_db.py の両方から呼ぶ。
+
+    con: 設定と結果を読み書きするDB接続。None なら設定を使わず既定値で動く。
+    """
+    import db_query  # 遅延import(このモジュール単体でもテストできるようにする)
+
+    db_path = db_path or DB
+    extra, keep = [], KEEP_DEFAULT
+    prev = {}
+    if con is not None:
+        st = db_query.backup_settings(con)
+        extra = [d.strip() for d in str(st.get("backup_dirs") or "").splitlines() if d.strip()]
+        keep = st.get("backup_keep") or KEEP_DEFAULT
+        prev = db_query.backup_counts(con)
+
+    result = run_backup(db_path, extra, keep)
+
+    # 件数の急減チェック(誤削除・取り込み事故の早期発見)。バックアップ自体の成否とは独立
+    cur = table_counts(db_path)
+    result["counts"] = cur
+    result["count_warnings"] = count_warnings(prev, cur)
+    msg = summary(result)
+    if result["count_warnings"]:
+        msg += " ※件数の急減: " + "・".join(result["count_warnings"])
+    result["message"] = msg
+
+    if con is not None:
+        if result["ok"] and cur:
+            db_query.save_backup_counts(con, cur)   # 成功時のみ基準を更新
+        db_query.record_backup_result(con, result["at"], msg)
     return result
 
 

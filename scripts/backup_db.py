@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(BASE, "server"))
 
 import backup  # noqa: E402
 import db_query  # noqa: E402
+import integrity  # noqa: E402
 
 
 def main():
@@ -28,41 +29,48 @@ def main():
         print(f"[エラー] DBがありません: {db}")
         sys.exit(1)
 
-    # 保存先と世代数は画面の設定(app_settings)を使う。引数があればそれを店外保存先にする
-    extra, keep = [], backup.KEEP_DEFAULT
-    try:
+    # 保存先・世代数は画面の設定(app_settings)を使い、件数の記録と結果の記録も行う。
+    # 引数があればその1か所を店外保存先として上書きする(設定より優先)。
+    if len(sys.argv) > 1:
         con = sqlite3.connect(db)
         try:
-            st = db_query.backup_settings(con)
+            db_query.save_backup_settings(con, dict(db_query.backup_settings(con),
+                                                    backup_dirs=sys.argv[1]))
         finally:
             con.close()
-        extra = [d.strip() for d in str(st.get("backup_dirs") or "").splitlines() if d.strip()]
-        keep = st.get("backup_keep") or backup.KEEP_DEFAULT
-    except Exception as e:  # noqa: BLE001 設定が読めなくてもバックアップ自体は取る
-        print(f"[注意] 設定を読めませんでした({e})。既定値で実行します。")
+        print(f"店外保存先を引数で指定: {sys.argv[1]}")
 
-    if len(sys.argv) > 1:
-        extra = [sys.argv[1]]
+    con = sqlite3.connect(db)
+    try:
+        result = backup.run_with_history(db, con, "コマンド")
+        st = db_query.backup_settings(con)
+    finally:
+        con.close()
 
-    result = backup.run_backup(db, extra, keep)
-    print("バックアップ: " + backup.summary(result))
+    print("バックアップ: " + result["message"])
     for p in result["saved"]:
         print(f"  保存: {os.path.abspath(p)}")
     for p in result["removed"]:
         print(f"  世代削除: {os.path.abspath(p)}")
-    if not extra:
-        print("  ※店外の保存先が未設定です。設定→バックアップ で外付けHDD等を指定してください"
+    for w in result.get("count_warnings", []):
+        print(f"  ⚠ {w} ← 誤削除・取り込み事故の可能性。控えを確認してください")
+    if not str(st.get("backup_dirs") or "").strip():
+        print("  ※店外の保存先が未設定です。設定→バックアップ で外付けHDDやOneDrive等を指定してください"
               "(火災・盗難・PC故障で店内の控えごと失います)。")
 
-    # 実行結果を画面の「最終バックアップ」に反映する
+    # 続けてデータ点検も実行する(破損・参照切れ・残高と履歴の矛盾)
+    con = sqlite3.connect(db)
     try:
-        con = sqlite3.connect(db)
-        try:
-            db_query.record_backup_result(con, result["at"], backup.summary(result))
-        finally:
-            con.close()
-    except Exception:  # noqa: BLE001 記録できなくてもバックアップは成立している
-        pass
+        ig = integrity.run_and_record(db, con)
+    finally:
+        con.close()
+    print("データ点検: " + ig["summary"])
+    for c in ig["checks"]:
+        if c["count"] != 0:
+            mark = "✕" if c["level"] == "error" else "⚠"
+            print(f"  {mark} {c['name']}: " +
+                  ("点検できず" if c["count"] < 0 else f"{c['count']:,}件") +
+                  (f" — {c['detail']}" if c["detail"] else ""))
 
     sys.exit(0 if result["ok"] else 1)
 

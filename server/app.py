@@ -73,7 +73,8 @@ def _decode_image_b64(data):
 sys.path.insert(0, os.path.dirname(__file__))
 import db_query  # noqa: E402
 import devices  # noqa: E402  機器制御層(フェーズ2)。機器OFFモードでは何も送信しない
-import backup  # noqa: E402  DBバックアップ(世代管理・店外複製)
+import backup  # noqa: E402  DBバックアップ(世代管理・店外複製・件数の急減検知)
+import integrity  # noqa: E402  データ点検(破損・参照切れ・残高と履歴の矛盾)
 
 
 def _extra_dirs(settings):
@@ -86,17 +87,23 @@ def run_backup_and_record(reason=""):
     自動(起動時・日次)と手動(設定画面のボタン)で共通に使う。"""
     con = connect()
     try:
-        st = db_query.backup_settings(con)
+        result = backup.run_with_history(DB, con, reason)
     finally:
         con.close()
-    result = backup.run_backup(DB, _extra_dirs(st), st.get("backup_keep"))
-    msg = backup.summary(result)
+    print(f"[バックアップ{('・' + reason) if reason else ''}] {result['message']}")
+    for w in result.get("count_warnings", []):
+        print(f"  ⚠ {w} ← 誤削除・取り込み事故の可能性。設定→バックアップ で控えを確認してください")
+    return result
+
+
+def run_integrity_and_record(reason=""):
+    """データ点検を実行し、結果をDBに記録してコンソールにも出す。"""
     con = connect()
     try:
-        db_query.record_backup_result(con, result["at"], msg)
+        result = integrity.run_and_record(DB, con)
     finally:
         con.close()
-    print(f"[バックアップ{('・' + reason) if reason else ''}] {msg}")
+    print(f"[データ点検{('・' + reason) if reason else ''}] {result['summary']}")
     return result
 
 
@@ -120,6 +127,7 @@ def backup_daemon():
                 done_today = str(st.get("backup_last_at") or "").startswith(today)
                 if last_date != today and not done_today:
                     run_backup_and_record("自動")
+                    run_integrity_and_record("自動")   # バックアップ直後に点検(1日1回)
                     last_date = today
                 elif done_today:
                     last_date = today
@@ -323,6 +331,8 @@ class Handler(BaseHTTPRequestHandler):
                         return self._deny()
                     con = connect()
                     st = db_query.backup_settings(con)
+                    st["integrity"] = db_query.integrity_status(con)   # 最終点検の結果も一緒に返す
+                    st["counts"] = db_query.backup_counts(con)         # 前回の件数(急減検知の基準)
                     con.close()
                     st["local_dir"] = os.path.abspath(backup.LOCAL_DIR)
                     st["dirs"] = backup.list_backups([backup.LOCAL_DIR] + _extra_dirs(st))
@@ -479,7 +489,7 @@ class Handler(BaseHTTPRequestHandler):
     }
     # 管理者のみの操作(担当者マスタ・ログインユーザー管理)
     ADMIN_ONLY_POSTS = {"/api/staff", "/api/app_user", "/api/app_user_logout",
-                        "/api/backup_now", "/api/backup_settings"}
+                        "/api/backup_now", "/api/backup_settings", "/api/integrity_check"}
 
     def do_POST(self):
         try:
@@ -579,7 +589,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/backup_now":
                 result = run_backup_and_record("手動")
-                result["message"] = backup.summary(result)
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/integrity_check":
+                result = run_integrity_and_record("手動")
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/backup_settings":
                 con = connect()

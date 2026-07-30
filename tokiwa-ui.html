@@ -2177,6 +2177,15 @@
         <span style="font-size:0.8em;color:var(--muted)">古いものから自動削除します(削除対象は tokiwa_日時.db のみ。他のファイルには触りません)。1世代だけの運用は、壊れた状態やウイルスに暗号化された状態で上書きすると復旧できなくなるため危険です。</span></div>
       <div class="section-title">保存されている控え</div>
       <div id="bk-list" style="font-size:0.9em"></div>
+      <div class="section-title">データ点検(1日1回・バックアップ直後に自動実行)</div>
+      <p id="bk-ig-summary" style="margin:0 0 0.2rem;font-weight:700"></p>
+      <p id="bk-ig-at" style="margin:0;font-size:0.85em;color:var(--muted)"></p>
+      <div id="bk-ig-list" style="font-size:0.9em;margin-top:0.5rem"></div>
+      <div style="margin-top:0.6rem"><button class="btn" onclick="runIntegrityNow(this)">今すぐ点検</button></div>
+      <p style="margin:0.5rem 0 0;font-size:0.8em;color:var(--muted)">
+        DBの破損・参照切れ(孤児データ)・ポイント残高と履歴の不一致・マイナス金額・空伝票・在庫の二重販売を調べます。
+        <b>移行データ由来の不一致が最初から含まれる場合があります</b>。初回の件数を基準として覚えておき、
+        そこから増えた時に調査してください。件数の急減(誤削除の兆候)はバックアップ時に自動で警告します。</p>
       <div class="section-title">復元のしかた</div>
       <p style="margin:0;font-size:0.9em;color:var(--muted)">
         ①サーバー(トキワ)を止める → ②戻したい <code>tokiwa_日時.db</code> をコピーして
@@ -4490,6 +4499,40 @@
           return esc(f.at) + "(" + (f.size / 1048576).toFixed(1) + "MB)";
         }).join(" / ") + (d.files.length > 3 ? " ほか" : "") + '</div>';
     }).join("") : '<p style="color:var(--muted)">保存先がありません。</p>';
+    paintIntegrity(st.integrity || {});
+  }
+  /* データ点検の結果表示。level: ok=異常なし / warn=注意 / error=要対応 */
+  function paintIntegrity(ig) {
+    var sum = document.getElementById("bk-ig-summary");
+    sum.textContent = ig.integrity_last_summary || "まだ点検していません";
+    var bad = /要対応/.test(ig.integrity_last_summary || "");
+    sum.style.color = bad ? "var(--danger)" : (/注意/.test(ig.integrity_last_summary || "") ? "var(--warn)" : "var(--ok)");
+    document.getElementById("bk-ig-at").textContent = ig.integrity_last_at ? "最終点検: " + ig.integrity_last_at : "";
+    var checks = ig.checks || [];
+    document.getElementById("bk-ig-list").innerHTML = checks.length ? checks.map(function (c) {
+      var mark = c.level === "error" ? '<span style="color:var(--danger)">✕</span>'
+        : (c.count === 0 ? '<span style="color:var(--ok)">✓</span>' : '<span style="color:var(--warn)">⚠</span>');
+      var cnt = c.count < 0 ? "点検できず" : (c.count === 0 ? "問題なし" : c.count.toLocaleString() + "件");
+      return '<div style="padding:0.15em 0">' + mark + " " + esc(c.name) + " — " + esc(cnt) +
+        (c.detail ? '<br><span style="color:var(--muted);padding-left:1.4em">' + esc(c.detail) + '</span>' : '') +
+        (c.count > 0 && c.hint ? '<br><span style="color:var(--muted);padding-left:1.4em">→ ' + esc(c.hint) + '</span>' : '') +
+        '</div>';
+    }).join("") : "";
+  }
+  function runIntegrityNow(btn) {
+    var err = document.getElementById("bk-error");
+    err.style.display = "none";
+    btn.disabled = true; btn.textContent = "点検中…";
+    fetch(API + "/integrity_check", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then(function (r) { return r.json(); }).then(function (res) {
+        btn.disabled = false; btn.textContent = "今すぐ点検";
+        if (res.error) throw new Error(res.error);
+        paintIntegrity({ integrity_last_at: res.at, integrity_last_summary: res.summary, checks: res.checks });
+        showToast((res.ok ? "✅ " : "⚠ ") + "データ点検: " + res.summary);
+      }).catch(function (e) {
+        btn.disabled = false; btn.textContent = "今すぐ点検";
+        err.textContent = "点検に失敗しました: " + fetchErrMsg(e); err.style.display = "block";
+      });
   }
   function loadBackupStatus() {
     fetch(API + "/backup_status").then(function (r) { return r.json(); }).then(function (st) {

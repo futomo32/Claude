@@ -1291,8 +1291,52 @@ def save_backup_settings(con, p):
 def record_backup_result(con, at, message):
     """バックアップの実行結果を記録する(画面に最終実行として表示する)。"""
     _set_setting(con, "backup_last_at", str(at or ""))
-    _set_setting(con, "backup_last_result", str(message or "")[:300])
+    _set_setting(con, "backup_last_result", str(message or "")[:500])
     con.commit()
+
+
+def backup_counts(con):
+    """前回バックアップ時の主要テーブル件数({テーブル名: 件数})。無ければ空。
+    次回との比較で件数の急減(誤削除の兆候)を検知するために使う。"""
+    row = con.execute("SELECT value FROM app_settings WHERE key='backup_counts'").fetchone()
+    if not row or not str(row[0]).strip():
+        return {}
+    try:
+        d = json.loads(row[0])
+        return d if isinstance(d, dict) else {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def save_backup_counts(con, counts):
+    """主要テーブル件数を記録する(次回の比較の基準になる)。"""
+    _set_setting(con, "backup_counts", json.dumps(counts, ensure_ascii=False))
+    con.commit()
+
+
+def record_integrity_result(con, at, summary, checks):
+    """データ点検の結果を記録する(画面の「最終点検」に表示する)。"""
+    _set_setting(con, "integrity_last_at", str(at or ""))
+    _set_setting(con, "integrity_last_summary", str(summary or "")[:500])
+    _set_setting(con, "integrity_last_checks", json.dumps(checks or [], ensure_ascii=False))
+    con.commit()
+
+
+def integrity_status(con):
+    """最後に実行したデータ点検の結果を返す(未実行なら空)。"""
+    out = {"integrity_last_at": "", "integrity_last_summary": "", "checks": []}
+    for k in ("integrity_last_at", "integrity_last_summary"):
+        row = con.execute("SELECT value FROM app_settings WHERE key=?", (k,)).fetchone()
+        if row:
+            out[k] = str(row[0] or "")
+    row = con.execute("SELECT value FROM app_settings WHERE key='integrity_last_checks'").fetchone()
+    if row and str(row[0]).strip():
+        try:
+            c = json.loads(row[0])
+            out["checks"] = c if isinstance(c, list) else []
+        except (ValueError, TypeError):
+            pass
+    return out
 
 
 def adjust_points(con, p):
