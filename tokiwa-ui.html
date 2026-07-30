@@ -6963,18 +6963,20 @@
   }
 
   /* ── 汎用帳票印刷(見積書・請求書・修理伝票): 保存はせずその場で印刷するだけ ── */
-  // 帳票の発行元表記(お客様に見える正式店名)。サーバー経由(assets/logo.png)ならロゴ画像を表示
-  var STORE_PRINT_NAME = "宝石・メガネ・時計 ヤナセ";
+  // ★店舗の固定情報(店名・登録番号・振込先)の正は server/store_info.py。
+  //   サーバーが window.TOKIWA_STORE として注入し、ここでは受け取るだけ(二重管理しない)。
+  //   下の || の右側はサーバー無し単体プレビュー用の見本値(実運用では使われない)。
+  var STORE = window.TOKIWA_STORE || {};
+  var STORE_PRINT_NAME = STORE.name || "トキワ 宝飾店(見本)";
   var STORE_HEAD_HTML = window.TOKIWA_API
     ? '<img src="/assets/logo.png" alt="' + esc(STORE_PRINT_NAME) + '">'
     : esc(STORE_PRINT_NAME);
-  // 帳票に印字する店舗固定情報(適格請求書の登録番号・振込先口座)。変更時はここを直す。
-  var STORE_INVOICE_NO = "T1810816014712";
+  var STORE_INVOICE_NO = STORE.invoice_no || "T0000000000000";
   var STORE_BANK_HTML =
     '<div class="doc-bank"><div class="bk-title">振込先口座</div>' +
-    '<div class="bk-line">豊田信用金庫　普通預金</div>' +
-    '<div class="bk-line">店番 011　口座番号 9264690</div>' +
-    '<div class="bk-line">名義　築瀬 智宏</div></div>';
+    (STORE.bank_lines || ["(見本)〇〇銀行 普通預金", "店番 000 口座番号 0000000"])
+      .map(function (ln) { return '<div class="bk-line">' + esc(ln) + '</div>'; }).join("") +
+    '</div>';
   // opts(任意): { keisho:"様"|"御中", showInvoiceNo:true, footer:HTML }
   function buildDocHtml(title, docNo, toName, innerHtml, opts) {
     opts = opts || {};

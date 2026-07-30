@@ -31,9 +31,10 @@ PRINTER_NAME = "CITIZEN CT-S601"   # Windowsスプーラーのプリンター名
 PRINTER_COM = "COM7"               # 直接COMフォールバック用
 CARD_PORT = "COM3"                 # TCP300II
 RECEIPT_WIDTH = 28                 # 印字桁数。実機で30桁だと右端がはみ出たため28に(2026-07-29実測)
-STORE_TEL = "0565-32-0688"         # レシートに印字する電話番号
-STORE_REG_NO = ""                  # インボイス登録番号(適格請求書発行事業者。例 "T1234567890123")。
-                                   # ★実番号をここに入れる。空の間は印字しない
+# 店名・電話・インボイス登録番号は store_info.py が唯一の正(帳票側と共通)
+import store_info                  # noqa: E402
+STORE_TEL = store_info.STORE_TEL
+STORE_REG_NO = store_info.INVOICE_REG_NO
 LOGO_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "logo.png")
 # PAPER_DOTS は実機で確定済み(2026-07-30 中央寄せテスト): 目盛りが400ドット過ぎまで印字され、
 # ロゴは右+24ドットの位置が中央に見えた → 実効印字幅は 384ドット(58mm紙の標準値)。
@@ -163,7 +164,7 @@ def build_receipt_bytes(r):
         buf += b"\n"
     else:
         buf += GS + b"!" + b"\x01"   # 縦2倍
-        buf += sj(_center("宝石・メガネ・時計 ヤナセ") + "\n")
+        buf += sj(_center(store_info.STORE_NAME) + "\n")
         buf += GS + b"!" + b"\x00"
     buf += sj(_center("御計算書") + "\n")
     buf += sj(_center(f"TEL {STORE_TEL}") + "\n")

@@ -75,6 +75,7 @@ import db_query  # noqa: E402
 import devices  # noqa: E402  機器制御層(フェーズ2)。機器OFFモードでは何も送信しない
 import backup  # noqa: E402  DBバックアップ(世代管理・店外複製・件数の急減検知)
 import integrity  # noqa: E402  データ点検(破損・参照切れ・残高と履歴の矛盾)
+import store_info  # noqa: E402  店舗の固定情報(唯一の正)。画面へ注入して帳票にも使う
 
 
 def _extra_dirs(settings):
@@ -191,6 +192,7 @@ def render_index(user):
         "window.TOKIWA_API='/api';"
         "window.TOKIWA_SAMPLE_STOCK=" + json.dumps(sample) + ";"
         "window.TOKIWA_USER=" + json.dumps(user, ensure_ascii=False) + ";"
+        "window.TOKIWA_STORE=" + json.dumps(store_info.as_dict(), ensure_ascii=False) + ";"
     )
     marker_start = '<script id="tokiwa-data">'
     marker_end = "</script>"
