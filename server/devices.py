@@ -30,20 +30,22 @@ ENABLED = False
 PRINTER_NAME = "CITIZEN CT-S601"   # Windowsスプーラーのプリンター名(RAW印字)
 PRINTER_COM = "COM7"               # 直接COMフォールバック用
 CARD_PORT = "COM3"                 # TCP300II
-RECEIPT_WIDTH = 28                 # 印字桁数。実機で30桁だと右端がはみ出たため28に(2026-07-29実測)
+RECEIPT_WIDTH = 36                 # 印字桁数。桁数テストで36桁=432ドットまで印字OK(2026-07-30実測)。
+                                   # ※旧28桁は「30桁ではみ出た」誤実測(2026-07-29)によるもの
 # 店名・電話・インボイス登録番号は store_info.py が唯一の正(帳票側と共通)
 import store_info                  # noqa: E402
 STORE_TEL = store_info.STORE_TEL
 STORE_REG_NO = store_info.INVOICE_REG_NO
 LOGO_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "logo.png")
-# PAPER_DOTS は実機で確定済み(2026-07-30 中央寄せテスト): 目盛りが400ドット過ぎまで印字され、
-# ロゴは右+24ドットの位置が中央に見えた → 実効印字幅は 384ドット(58mm紙の標準値)。
-# 旧値336(28桁×12dotからの推定)は狭すぎて、幅336のロゴが左に寄る原因だった。
-PAPER_DOTS = 384                   # 実効印字幅(ドット)。中央寄せの基準
-LOGO_DOTS = 336                    # ロゴ印字幅の上限(ドット)。PAPER_DOTS を超えると右が欠ける
+# PAPER_DOTS は実機で確定済み(2026-07-30 桁数テスト): 36桁=432ドットが折り返さず印字された
+# → 実効印字幅は 432ドット(=54mm。CT-S601の58mm紙の最大値)。
+# 中央寄せテストの目盛りが400ドット過ぎまで印字されていたこととも整合する。
+PAPER_DOTS = 432                   # 実効印字幅(ドット)。中央寄せの基準
+LOGO_DOTS = 336                    # ロゴ印字幅の上限(ドット≒42mm)。最大432まで上げられる(紙幅いっぱい)
 LOGO_MAX_H = 336                   # ロゴ高さの上限(ドット≒42mm)。実機の見比べでGパターンを採用(2026-07-30)
 LOGO_OFFSET_DOTS = 0               # 中央寄せの微調整。右へずらすドット数(1ドット単位で効く)。
-                                   # PAPER_DOTS=384 の中央計算で位置(4)=+24dot と一致するため 0 のまま
+                                   # PAPER_DOTS=432 の中央計算=+48dot。位置テストの選択肢は+32までしか
+                                   # 無かったため(4)+24が選ばれたが、真の中央はこちら
 LOGO_DITHER = False                # 二値化方式: False=しきい値(ベタ塗り・線画ロゴ向き。エッジがパリッと出る)
                                    #             True=Floyd-Steinbergディザ(濃淡・グラデのあるロゴ向き)
 LOGO_THRESHOLD = 160               # しきい値方式のときの白黒境界(0-255。上げると太く・黒く印字される)
@@ -217,7 +219,7 @@ def build_receipt_bytes(r):
     buf += sj(_pad_line("加算ポイント", f"{r.get('earned', 0):,}pt") + "\n")
     buf += sj(_pad_line("ポイント残高", f"{r.get('point_balance', 0):,}pt") + "\n")
     buf += sj("-" * RECEIPT_WIDTH + "\n")
-    buf += sj(_center("お買上げありがとうございます") + "\n")  # 28桁に収まる表記(「お買い上げ〜」だと30桁ではみ出す)
+    buf += sj(_center("お買上げありがとうございます") + "\n")
     # レシート下部メッセージ。この会計だけの一言(note)を上に、全レシート共通(message)を下に。
     # どちらも空なら何も印字しない。
     for text in (r.get("note"), r.get("message")):
