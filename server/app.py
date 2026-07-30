@@ -25,6 +25,10 @@ UI = os.path.join(BASE, "tokiwa-ui.html")
 # 機器制御を一切行わない。宝飾ナビがCOMポートを使っている間も、OFFなら全機能を安全にテスト
 # できる。切替は起動バッチ(トキワ起動.bat=OFF / 機器ありで起動.bat=ON)で行い、画面にも表示する。
 HW_ENABLED = False
+
+# ロゴなしモード(起動引数 "nologo")。ロゴ画像の配信だけを止め、帳票ヘッダ・ログイン画面が
+# 正式店名の文字にフォールバックする表示を事前確認するためのテストモード。ファイルは触らない。
+NO_LOGO = False
 ASSETS = os.path.join(BASE, "assets")
 IMAGES = os.path.join(BASE, "data", "real", "images")   # 商品写真(B-7)
 
@@ -343,6 +347,8 @@ class Handler(BaseHTTPRequestHandler):
                 # ロゴ等の静的ファイル配信(帳票ヘッダ表示用)。フォルダ外は不可
                 fname = os.path.basename(path)
                 fpath = os.path.join(ASSETS, fname)
+                if NO_LOGO and fname == "logo.png":   # ロゴなしモード: 店名文字への切替を確認する
+                    return self._send(404, json.dumps({"error": "nologo mode"}).encode())
                 if fname != path[len("/assets/"):] or not os.path.isfile(fpath):
                     return self._send(404, json.dumps({"error": "not found"}).encode())
                 ctype = mimetypes.guess_type(fpath)[0] or "application/octet-stream"
@@ -879,8 +885,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    # 引数: 数字=ポート / "lan"=店内共有モード(他PCからアクセス可) / "kiki"=機器モード。順不同
-    global HW_ENABLED
+    # 引数: 数字=ポート / "lan"=店内共有 / "kiki"=機器モード / "nologo"=ロゴなし表示テスト。順不同
+    global HW_ENABLED, NO_LOGO
     port = 8760
     lan = False
     for a in sys.argv[1:]:
@@ -890,6 +896,8 @@ def main():
             lan = True
         elif a.lower() in ("kiki", "hw", "hardware"):
             HW_ENABLED = True
+        elif a.lower() == "nologo":
+            NO_LOGO = True
     devices.ENABLED = HW_ENABLED  # 機器制御層に伝える(OFFなら一切送信しない)
     host = "0.0.0.0" if lan else "127.0.0.1"
     srv = ThreadingHTTPServer((host, port), Handler)
@@ -900,6 +908,9 @@ def main():
     else:
         print("【機器モード OFF】レシート・ドロワー・カードには一切送信しません(安全なテストモード)。")
         print("  → 機器を使う時は「機器ありで起動.bat」から起動してください。")
+    if NO_LOGO:
+        print("【ロゴなしモード】ロゴ画像を配信しません(帳票・ログイン画面が正式店名の文字になる確認用)。")
+        print("  ※表示テスト専用です。通常運用ではこのモードを使わないでください。")
     if lan:
         ip = lan_ip()
         print("【店内共有モード】他のPC・スマホ・iPadから下のURLで開けます(同じLAN内):")
