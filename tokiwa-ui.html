@@ -872,12 +872,6 @@
             <div class="field"><label>お預かり(現金)</label><input id="deposit" class="num han-num" inputmode="numeric" value="0" style="text-align:right;font-size:1.2em;font-weight:700"></div>
             <div class="pos-total-row"><span>釣銭</span><span class="v num" id="change">¥0</span></div>
           </div>
-          <div class="section-title">レシート下部メッセージ</div>
-          <div class="field"><label>この会計だけの一言(共通メッセージの上に印字)</label>
-            <textarea id="pos-receipt-note" rows="2" maxlength="200" style="width:100%;resize:vertical"
-              placeholder="例: 修理品は8/10頃の仕上がり予定です"></textarea>
-            <span style="font-size:0.8em;color:var(--muted)">空欄なら印字しません。会計を確定すると自動で消えます(次の会計に残りません)。</span></div>
-          <button class="btn" style="margin-bottom:0.6rem" onclick="openReceiptMsg()">全レシート共通のメッセージを編集</button>
           <div id="pos-error" class="pos-error" style="display:none" role="alert"><span id="pos-error-msg"></span></div>
           <div class="tenkey" aria-label="テンキー">
             <button onclick="key(7)">7</button><button onclick="key(8)">8</button><button onclick="key(9)">9</button>
@@ -886,6 +880,12 @@
             <button onclick="key(0)">0</button><button onclick="key('00')">00</button><button onclick="keyClear()">C</button>
             <button class="wide">取消</button><button class="exec" id="btn-checkout" onclick="doCheckout(this)">会計を確定</button>
           </div>
+          <div class="section-title" style="margin-top:0.9rem">レシート下部メッセージ</div>
+          <div class="field"><label>この会計だけの一言(共通メッセージの上に印字)</label>
+            <textarea id="pos-receipt-note" rows="2" maxlength="200" style="width:100%;resize:vertical"
+              placeholder="例: 修理品は8/10頃の仕上がり予定です"></textarea>
+            <span style="font-size:0.8em;color:var(--muted)">空欄なら印字しません。会計を確定すると自動で消えます(次の会計に残りません)。</span></div>
+          <button class="btn" onclick="openReceiptMsg()">全レシート共通のメッセージを編集</button>
         </div>
       </div>
     </section>
