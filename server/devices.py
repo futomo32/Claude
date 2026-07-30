@@ -30,8 +30,9 @@ ENABLED = False
 PRINTER_NAME = "CITIZEN CT-S601"   # Windowsスプーラーのプリンター名(RAW印字)
 PRINTER_COM = "COM7"               # 直接COMフォールバック用
 CARD_PORT = "COM3"                 # TCP300II
-RECEIPT_WIDTH = 36                 # 印字桁数。桁数テストで36桁=432ドットまで印字OK(2026-07-30実測)。
-                                   # ※旧28桁は「30桁ではみ出た」誤実測(2026-07-29)によるもの
+RECEIPT_WIDTH = 34                 # 印字桁数。桁数テストでは36桁=432ドットまで出たが、432は印字幅の
+                                   # 上限ちょうど(余白ゼロ)で、紙の左右の遊びで右端が欠けた(2026-07-31実測。
+                                   # ¥998→¥99・109pt→109p 等)。安全マージン2桁を引いて34桁=408ドットに
 # 店名・電話・インボイス登録番号は store_info.py が唯一の正(帳票側と共通)
 import store_info                  # noqa: E402
 STORE_TEL = store_info.STORE_TEL
