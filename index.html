@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#4a6cf7">
+<title>中学英語マスター</title>
+<style>
+  :root{
+    --primary:#4a6cf7; --primary-dark:#3451c6;
+    --bg:#f4f6fb; --card:#ffffff; --text:#22283a; --sub:#6b7280;
+    --correct:#16a34a; --wrong:#dc2626;
+    --lv1:#22c55e; --lv2:#0ea5e9; --lv3:#f59e0b; --lv4:#ef4444;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+  .app{max-width:480px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;}
+  header{background:linear-gradient(135deg,var(--primary),#7c3aed);color:#fff;padding:18px 20px;border-radius:0 0 20px 20px;}
+  header h1{font-size:1.25rem;}
+  header p{font-size:.8rem;opacity:.85;margin-top:2px;}
+  main{flex:1;padding:16px;}
+  .screen{display:none;}
+  .screen.active{display:block;animation:fade .25s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  .level-card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,.06);display:flex;align-items:center;gap:14px;cursor:pointer;border:2px solid transparent;transition:.15s;}
+  .level-card:active{transform:scale(.98);}
+  .level-badge{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:bold;font-size:1.05rem;flex-shrink:0;}
+  .level-card h2{font-size:1rem;}
+  .level-card p{font-size:.78rem;color:var(--sub);margin-top:3px;line-height:1.4;}
+  .best{margin-left:auto;text-align:right;font-size:.7rem;color:var(--sub);flex-shrink:0;}
+  .best b{display:block;font-size:1rem;color:var(--primary);}
+
+  .quiz-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:.85rem;color:var(--sub);}
+  .quit-btn{background:none;border:none;color:var(--sub);font-size:.85rem;padding:6px;cursor:pointer;}
+  .progress{height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden;margin-bottom:16px;}
+  .progress div{height:100%;background:var(--primary);border-radius:4px;transition:width .3s;}
+
+  .q-card{background:var(--card);border-radius:16px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:16px;}
+  .q-type{display:inline-block;font-size:.7rem;background:#eef2ff;color:var(--primary);padding:3px 10px;border-radius:10px;margin-bottom:10px;}
+  .q-text{font-size:1.05rem;line-height:1.6;white-space:pre-wrap;}
+  .q-text .blank{color:var(--primary);font-weight:bold;}
+
+  .choices button{display:block;width:100%;background:var(--card);border:2px solid #e5e7eb;border-radius:14px;padding:14px 16px;font-size:1rem;text-align:left;margin-bottom:10px;cursor:pointer;transition:.15s;color:var(--text);}
+  .choices button:active{transform:scale(.98);}
+  .choices button.correct{border-color:var(--correct);background:#f0fdf4;color:var(--correct);font-weight:bold;}
+  .choices button.wrong{border-color:var(--wrong);background:#fef2f2;color:var(--wrong);}
+  .choices button:disabled{cursor:default;}
+
+  .feedback{border-radius:14px;padding:14px 16px;margin-bottom:14px;font-size:.9rem;line-height:1.6;display:none;}
+  .feedback.show{display:block;animation:fade .2s;}
+  .feedback.ok{background:#f0fdf4;border:1px solid #bbf7d0;}
+  .feedback.ng{background:#fef2f2;border:1px solid #fecaca;}
+  .feedback .fb-title{font-weight:bold;margin-bottom:4px;}
+  .feedback.ok .fb-title{color:var(--correct);}
+  .feedback.ng .fb-title{color:var(--wrong);}
+
+  .btn{display:block;width:100%;background:var(--primary);color:#fff;border:none;border-radius:14px;padding:15px;font-size:1rem;font-weight:bold;cursor:pointer;transition:.15s;}
+  .btn:active{transform:scale(.98);background:var(--primary-dark);}
+  .btn.ghost{background:#e5e7eb;color:var(--text);margin-top:10px;}
+
+  .result-card{background:var(--card);border-radius:20px;padding:30px 20px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:16px;}
+  .result-emoji{font-size:3rem;}
+  .result-score{font-size:2.4rem;font-weight:bold;color:var(--primary);margin:10px 0 4px;}
+  .result-msg{color:var(--sub);font-size:.9rem;line-height:1.6;}
+  .review-list{margin-top:16px;text-align:left;}
+  .review-item{background:var(--card);border-radius:12px;padding:12px 14px;margin-bottom:8px;font-size:.82rem;line-height:1.5;box-shadow:0 1px 4px rgba(0,0,0,.05);}
+  .review-item .ri-q{color:var(--sub);}
+  .review-item .ri-a{color:var(--correct);font-weight:bold;}
+  .review-item .ri-x{color:var(--wrong);text-decoration:line-through;margin-right:6px;}
+
+  footer{text-align:center;padding:14px;font-size:.7rem;color:var(--sub);}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>📘 中学英語マスター</h1>
+    <p>レベルを選んで10問チャレンジ！</p>
+  </header>
+  <main>
+
+    <!-- レベル選択 -->
+    <section id="screen-home" class="screen active">
+      <div class="level-card" onclick="startQuiz(1)">
+        <div class="level-badge" style="background:var(--lv1)">Lv1</div>
+        <div><h2>きほん（中1）</h2><p>be動詞・一般動詞・単語のきほん</p></div>
+        <div class="best">ベスト<b id="best-1">-</b></div>
+      </div>
+      <div class="level-card" onclick="startQuiz(2)">
+        <div class="level-badge" style="background:var(--lv2)">Lv2</div>
+        <div><h2>過去形マスター（中1〜2）</h2><p>動詞の過去形変化・不規則動詞</p></div>
+        <div class="best">ベスト<b id="best-2">-</b></div>
+      </div>
+      <div class="level-card" onclick="startQuiz(3)">
+        <div class="level-badge" style="background:var(--lv3)">Lv3</div>
+        <div><h2>文法チャレンジ（中2〜3）</h2><p>比較・受け身・現在完了・不定詞</p></div>
+        <div class="best">ベスト<b id="best-3">-</b></div>
+      </div>
+      <div class="level-card" onclick="startQuiz(4)">
+        <div class="level-badge" style="background:var(--lv4)">Lv4</div>
+        <div><h2>高校受験対策</h2><p>関係代名詞・並べかえ・入試頻出問題</p></div>
+        <div class="best">ベスト<b id="best-4">-</b></div>
+      </div>
+    </section>
+
+    <!-- クイズ -->
+    <section id="screen-quiz" class="screen">
+      <div class="quiz-top">
+        <span id="quiz-counter">1 / 10</span>
+        <span id="quiz-score">スコア: 0</span>
+        <button class="quit-btn" onclick="goHome()">✕ やめる</button>
+      </div>
+      <div class="progress"><div id="quiz-bar" style="width:0%"></div></div>
+      <div class="q-card">
+        <span class="q-type" id="q-type"></span>
+        <div class="q-text" id="q-text"></div>
+      </div>
+      <div class="choices" id="choices"></div>
+      <div class="feedback" id="feedback">
+        <div class="fb-title" id="fb-title"></div>
+        <div id="fb-body"></div>
+      </div>
+      <button class="btn" id="next-btn" style="display:none" onclick="nextQuestion()">次へ ▶</button>
+    </section>
+
+    <!-- 結果 -->
+    <section id="screen-result" class="screen">
+      <div class="result-card">
+        <div class="result-emoji" id="result-emoji">🎉</div>
+        <div class="result-score" id="result-score">10/10</div>
+        <div class="result-msg" id="result-msg"></div>
+      </div>
+      <button class="btn" onclick="retry()">🔁 もう一度</button>
+      <button class="btn ghost" onclick="goHome()">🏠 レベル選択へ</button>
+      <div class="review-list" id="review-list"></div>
+    </section>
+
+  </main>
+  <footer>中学英語マスター - がんばって続けよう！</footer>
+</div>
+
+<script>
+// ================= 問題データ =================
+// type: 'choice'（4択） / q に ___ が空所
+const QUESTIONS = {
+  1: [ // Lv1 きほん
+    {t:"be動詞", q:"I ___ a student.", c:["am","is","are","be"], a:0, e:"主語が I のとき be動詞は am を使います。"},
+    {t:"be動詞", q:"She ___ my sister.", c:["is","am","are","be"], a:0, e:"主語が she / he / it（3人称単数）のときは is。"},
+    {t:"be動詞", q:"They ___ from Canada.", c:["are","is","am","be"], a:0, e:"主語が複数（they, we, you）のときは are。"},
+    {t:"一般動詞", q:"He ___ soccer every day.", c:["plays","play","playing","played"], a:0, e:"3人称単数・現在の文では動詞に s をつけます（3単現のs）。"},
+    {t:"一般動詞", q:"I ___ like natto.", c:["don't","doesn't","am not","not"], a:0, e:"一般動詞の否定文は don't（主語がIのとき）。"},
+    {t:"一般動詞", q:"___ she speak English?", c:["Does","Do","Is","Are"], a:0, e:"3人称単数の一般動詞の疑問文は Does を使います。"},
+    {t:"疑問詞", q:"___ is your birthday? — It's May 5th.", c:["When","Where","Who","What"], a:0, e:"「いつ」を聞くときは When。"},
+    {t:"疑問詞", q:"___ do you live? — I live in Tokyo.", c:["Where","When","Why","Who"], a:0, e:"「どこ」を聞くときは Where。"},
+    {t:"単語", q:"「図書館」を英語で言うと？", c:["library","hospital","station","museum"], a:0, e:"library = 図書館。hospital=病院, station=駅, museum=博物館。"},
+    {t:"単語", q:"「水曜日」を英語で言うと？", c:["Wednesday","Tuesday","Thursday","Saturday"], a:0, e:"Wednesday = 水曜日。つづりに注意（d を忘れずに）！"},
+    {t:"複数形", q:"box の複数形は？", c:["boxes","boxs","boxies","box"], a:0, e:"s, x, ch, sh で終わる単語は es をつけます。"},
+    {t:"命令文", q:"___ quiet, please.", c:["Be","Is","Are","Do"], a:0, e:"命令文は動詞の原形から始めます。be動詞の原形は Be。"},
+    {t:"代名詞", q:"This is ___ book.（これは私の本です）", c:["my","I","me","mine"], a:0, e:"「私の＋名詞」は my。mine は「私のもの」。"},
+    {t:"現在進行形", q:"She is ___ TV now.", c:["watching","watch","watches","watched"], a:0, e:"現在進行形は「be動詞 + 動詞のing形」。"},
+    {t:"can", q:"He ___ swim fast.", c:["can","cans","is can","can be"], a:0, e:"can のあとは動詞の原形。主語が3人称単数でも can に s はつきません。"},
+  ],
+  2: [ // Lv2 過去形
+    {t:"規則動詞", q:"play の過去形は？", c:["played","plaied","playd","plays"], a:0, e:"ふつうは ed をつけるだけ。play → played。"},
+    {t:"規則動詞", q:"study の過去形は？", c:["studied","studyed","studed","studies"], a:0, e:"「子音字＋y」で終わる動詞は y を i に変えて ed。"},
+    {t:"規則動詞", q:"stop の過去形は？", c:["stopped","stoped","stopt","stops"], a:0, e:"「短母音＋子音字」で終わる動詞は子音字を重ねて ed。"},
+    {t:"不規則動詞", q:"go の過去形は？", c:["went","goed","gone","goes"], a:0, e:"go → went → gone。不規則動詞は暗記が大事！"},
+    {t:"不規則動詞", q:"have の過去形は？", c:["had","haved","has","haves"], a:0, e:"have → had → had。"},
+    {t:"不規則動詞", q:"see の過去形は？", c:["saw","seed","seen","sees"], a:0, e:"see → saw → seen。seen は過去分詞。"},
+    {t:"不規則動詞", q:"make の過去形は？", c:["made","maked","maden","makes"], a:0, e:"make → made → made。"},
+    {t:"不規則動詞", q:"come の過去形は？", c:["came","comed","come","comes"], a:0, e:"come → came → come。過去分詞は原形と同じ形です。"},
+    {t:"不規則動詞", q:"write の過去形は？", c:["wrote","writed","written","writes"], a:0, e:"write → wrote → written。"},
+    {t:"不規則動詞", q:"take の過去形は？", c:["took","taked","taken","takes"], a:0, e:"take → took → taken。"},
+    {t:"過去の文", q:"I ___ to the park yesterday.", c:["went","go","goed","gone"], a:0, e:"yesterday があるので過去形。go の過去形は went。"},
+    {t:"過去の否定文", q:"She ___ eat breakfast this morning.", c:["didn't","doesn't","don't","wasn't"], a:0, e:"一般動詞の過去の否定文は didn't ＋ 動詞の原形。"},
+    {t:"過去の疑問文", q:"___ you watch the movie last night?", c:["Did","Do","Were","Does"], a:0, e:"一般動詞の過去の疑問文は Did で始めます。"},
+    {t:"be動詞の過去", q:"They ___ busy yesterday.", c:["were","was","are","been"], a:0, e:"be動詞の過去形：am/is → was、are → were。"},
+    {t:"be動詞の過去", q:"I ___ tired last night.", c:["was","were","am","did"], a:0, e:"主語が I のとき、be動詞の過去形は was。"},
+    {t:"過去進行形", q:"He ___ sleeping when I called him.", c:["was","were","is","did"], a:0, e:"過去進行形は「was/were + 動詞のing形」。"},
+  ],
+  3: [ // Lv3 文法チャレンジ
+    {t:"比較", q:"This bag is ___ than that one.", c:["bigger","big","biggest","more big"], a:0, e:"比較級は「-er + than」。big は g を重ねて bigger。"},
+    {t:"比較", q:"Mt. Fuji is the ___ mountain in Japan.", c:["highest","higher","high","most high"], a:0, e:"最上級は「the + -est」。"},
+    {t:"比較", q:"This book is ___ interesting than that one.", c:["more","most","much","many"], a:0, e:"長い形容詞の比較級は more をつけます。"},
+    {t:"受け身", q:"English is ___ in many countries.", c:["spoken","speak","speaking","spoke"], a:0, e:"受け身は「be動詞 + 過去分詞」。speak → spoke → spoken。"},
+    {t:"受け身", q:"This picture was ___ by my father.", c:["taken","take","took","taking"], a:0, e:"「〜によって」は by。take の過去分詞は taken。"},
+    {t:"現在完了", q:"I have ___ in Tokyo for ten years.", c:["lived","live","living","lives"], a:0, e:"現在完了（継続）は「have + 過去分詞」。for 〜 = 〜の間。"},
+    {t:"現在完了", q:"___ you ever been to Kyoto?", c:["Have","Did","Do","Are"], a:0, e:"「〜したことがありますか」は Have you ever + 過去分詞?"},
+    {t:"現在完了", q:"She has ___ finished her homework.", c:["already","yet","ago","before"], a:0, e:"肯定文の「もう〜した」は already。yet は否定文・疑問文で使います。"},
+    {t:"不定詞", q:"I want ___ a doctor.", c:["to be","be","being","been"], a:0, e:"want to + 動詞の原形 =「〜したい」。"},
+    {t:"不定詞", q:"I went to the library ___ books.", c:["to borrow","borrow","borrowing","borrowed"], a:0, e:"「〜するために」は不定詞の副詞的用法（to + 原形）。"},
+    {t:"動名詞", q:"He enjoys ___ music.", c:["listening to","to listen","listen","listened"], a:0, e:"enjoy のあとは動名詞（〜ing）。enjoy ~ing で覚えよう。"},
+    {t:"接続詞", q:"I was watching TV ___ my mother came home.", c:["when","if","because","that"], a:0, e:"「〜したとき」は when。"},
+    {t:"There is", q:"___ many parks in this city.", c:["There are","There is","It is","They are"], a:0, e:"「〜がある」は There is / are。many parks は複数なので are。"},
+    {t:"have to", q:"You ___ to do your homework.", c:["have","must","should","can"], a:0, e:"have to + 原形 =「〜しなければならない」。"},
+    {t:"SVOO", q:"My father gave ___ a present.", c:["me","I","my","mine"], a:0, e:"give + 人 + 物。「人」の位置には目的格（me）。"},
+  ],
+  4: [ // Lv4 高校受験対策
+    {t:"関係代名詞", q:"I have a friend ___ lives in Osaka.", c:["who","which","whose","whom"], a:0, e:"先行詞が「人」で主格のときは who（that も可）。"},
+    {t:"関係代名詞", q:"This is the book ___ I bought yesterday.", c:["which","who","whose","what"], a:0, e:"先行詞が「物」のときは which / that。目的格なので省略も可能。"},
+    {t:"並べかえ", q:"日本語に合う順に：「私は彼が正直だと思います」\nI ( ① think ② is ③ he ④ that ) honest.", c:["①④③②","①③④②","④①③②","①②③④"], a:0, e:"I think that he is honest. — think のあとに接続詞 that の文が続きます。"},
+    {t:"並べかえ", q:"「彼女は私に窓を開けるように頼んだ」\nShe ( ① me ② open ③ asked ④ to ) the window.", c:["③①④②","①③④②","③④①②","④③①②"], a:0, e:"She asked me to open the window. — ask + 人 + to + 原形。"},
+    {t:"間接疑問", q:"I don't know where ___.", c:["he lives","does he live","lives he","he does live"], a:0, e:"間接疑問文は「疑問詞 + 主語 + 動詞」の語順（肯定文の語順）。"},
+    {t:"分詞", q:"The boy ___ over there is my brother.", c:["running","run","ran","runs"], a:0, e:"「走っている少年」— 現在分詞（~ing）が後ろから名詞を修飾。"},
+    {t:"分詞", q:"This is a watch ___ in Japan.", c:["made","making","make","makes"], a:0, e:"「日本で作られた時計」— 過去分詞が後ろから名詞を修飾。"},
+    {t:"現在完了", q:"He has been sick ___ last week.", c:["since","for","from","before"], a:0, e:"since + 起点（〜以来）、for + 期間（〜の間）。"},
+    {t:"仮定法", q:"If I ___ rich, I could buy that car.", c:["were","am","will be","have been"], a:0, e:"仮定法過去：If + 主語 + were（過去形）で「もし〜なら」（現実とちがう仮定）。"},
+    {t:"熟語", q:"I'm looking forward ___ you again.", c:["to seeing","to see","seeing","for seeing"], a:0, e:"look forward to ~ing。この to は前置詞なので動名詞が続きます。入試頻出！"},
+    {t:"熟語", q:"She takes ___ of her little brother.", c:["care","careful","caring","cares"], a:0, e:"take care of 〜 =「〜の世話をする」。"},
+    {t:"長文読解", q:"次の英文の内容に合うものは？\n\"Ken gets up at six every day. He runs in the park before breakfast. He never takes a bus to school.\"", c:["ケンは朝食前に走る","ケンはバスで通学する","ケンは7時に起きる","ケンは夕方に走る"], a:0, e:"He runs in the park before breakfast =「朝食前に公園で走る」。never は「決して〜ない」。"},
+    {t:"適語補充", q:"A: Must I finish this today?\nB: No, you ___. You can do it tomorrow.", c:["don't have to","must not","can't","shouldn't"], a:0, e:"must の疑問文に対する「〜しなくてよい」は don't have to。must not（禁止）とのちがいは入試頻出！"},
+    {t:"tell+人+to", q:"The teacher told us ___ quiet.", c:["to be","be","being","been"], a:0, e:"tell + 人 + to + 原形 =「(人)に〜するように言う」。"},
+    {t:"it...to", q:"It is important ___ us to study English.", c:["for","of","to","with"], a:0, e:"It is ... for 人 to 〜 =「(人)にとって〜することは…だ」。"},
+  ]
+};
+
+const NUM_Q = 10;
+let level=1, quizSet=[], idx=0, score=0, wrongs=[];
+
+// ================= ユーティリティ =================
+function shuffle(arr){
+  const a=[...arr];
+  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
+  return a;
+}
+function show(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0,0);
+}
+function loadBests(){
+  for(let l=1;l<=4;l++){
+    const b=localStorage.getItem('eng-best-'+l);
+    document.getElementById('best-'+l).textContent = b ? b+'/'+NUM_Q : '-';
+  }
+}
+
+// ================= クイズ進行 =================
+function startQuiz(l){
+  level=l; idx=0; score=0; wrongs=[];
+  // 問題ごとに選択肢もシャッフル（正解インデックスを再計算）
+  quizSet = shuffle(QUESTIONS[l]).slice(0,NUM_Q).map(q=>{
+    const order = shuffle(q.c.map((_,i)=>i));
+    return {...q, c: order.map(i=>q.c[i]), a: order.indexOf(q.a)};
+  });
+  show('screen-quiz');
+  renderQuestion();
+}
+
+function renderQuestion(){
+  const q=quizSet[idx];
+  document.getElementById('quiz-counter').textContent=(idx+1)+' / '+NUM_Q;
+  document.getElementById('quiz-score').textContent='スコア: '+score;
+  document.getElementById('quiz-bar').style.width=(idx/NUM_Q*100)+'%';
+  document.getElementById('q-type').textContent=q.t;
+  document.getElementById('q-text').innerHTML=escapeHtml(q.q).replace(/___/g,'<span class="blank">___</span>');
+  const box=document.getElementById('choices');
+  box.innerHTML='';
+  q.c.forEach((c,i)=>{
+    const btn=document.createElement('button');
+    btn.textContent=c;
+    btn.onclick=()=>answer(i,btn);
+    box.appendChild(btn);
+  });
+  document.getElementById('feedback').className='feedback';
+  document.getElementById('next-btn').style.display='none';
+}
+
+function answer(i,btn){
+  const q=quizSet[idx];
+  const buttons=document.querySelectorAll('#choices button');
+  buttons.forEach(b=>b.disabled=true);
+  buttons[q.a].classList.add('correct');
+  const fb=document.getElementById('feedback');
+  if(i===q.a){
+    score++;
+    fb.classList.add('ok','show');
+    document.getElementById('fb-title').textContent='⭕ 正解！';
+  }else{
+    btn.classList.add('wrong');
+    wrongs.push(q);
+    fb.classList.add('ng','show');
+    document.getElementById('fb-title').textContent='❌ ざんねん… 正解は「'+q.c[q.a]+'」';
+  }
+  document.getElementById('fb-body').textContent=q.e;
+  document.getElementById('quiz-score').textContent='スコア: '+score;
+  const nb=document.getElementById('next-btn');
+  nb.textContent = idx===NUM_Q-1 ? '結果を見る 🏁' : '次へ ▶';
+  nb.style.display='block';
+}
+
+function nextQuestion(){
+  idx++;
+  if(idx>=NUM_Q){ showResult(); } else { renderQuestion(); }
+}
+
+function showResult(){
+  show('screen-result');
+  document.getElementById('result-score').textContent=score+'/'+NUM_Q;
+  let emoji,msg;
+  if(score===NUM_Q){emoji='🏆';msg='パーフェクト！すばらしい！次のレベルにも挑戦しよう！';}
+  else if(score>=8){emoji='🎉';msg='よくできました！あと少しで満点だよ！';}
+  else if(score>=5){emoji='💪';msg='いい調子！まちがえた問題の解説を読んで復習しよう。';}
+  else{emoji='📖';msg='まずは解説をじっくり読もう。くり返せば必ずできるようになるよ！';}
+  document.getElementById('result-emoji').textContent=emoji;
+  document.getElementById('result-msg').textContent=msg;
+
+  const key='eng-best-'+level;
+  const best=Number(localStorage.getItem(key)||0);
+  if(score>best) localStorage.setItem(key,score);
+
+  const list=document.getElementById('review-list');
+  list.innerHTML='';
+  if(wrongs.length){
+    const h=document.createElement('div');
+    h.style.cssText='font-weight:bold;font-size:.85rem;margin-bottom:8px;';
+    h.textContent='📝 まちがえた問題の復習';
+    list.appendChild(h);
+    wrongs.forEach(q=>{
+      const d=document.createElement('div');
+      d.className='review-item';
+      d.innerHTML='<div class="ri-q">'+escapeHtml(q.q)+'</div><div>正解: <span class="ri-a">'+escapeHtml(q.c[q.a])+'</span></div><div style="color:var(--sub);margin-top:4px;">'+escapeHtml(q.e)+'</div>';
+      list.appendChild(d);
+    });
+  }
+}
+
+function retry(){ startQuiz(level); }
+function goHome(){ loadBests(); show('screen-home'); }
+function escapeHtml(s){ return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+loadBests();
+</script>
+</body>
+</html>
