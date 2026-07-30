@@ -132,6 +132,11 @@ def _logo_raster():
         bg = Image.new("L", img.size, 255)
         bg.paste(img.getchannel("L"), mask=img.getchannel("A"))
         img = bg
+        # 絵柄の周りの白い縁を自動で切り落とす。縁ごと縮小すると絵柄が小さくなり
+        # 上下に大きな空白が出るため(実ロゴは絵柄が画像の高さ30%しかなかった 2026-07-30)
+        bbox = img.point(lambda p: 255 if p < 240 else 0).getbbox()
+        if bbox:
+            img = img.crop(bbox)
         # 幅・高さ両方の上限に収める(縦横比は維持)。幅は8の倍数に丸める
         scale = min(LOGO_DOTS / img.width, LOGO_MAX_H / img.height)
         w = max(8, int(img.width * scale) // 8 * 8)
