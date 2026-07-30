@@ -1231,6 +1231,70 @@ def save_point_settings(con, p):
     return vals
 
 
+# ── バックアップ設定(app_settings に保存。実処理は server/backup.py) ──
+#   backup_enabled … 1=自動バックアップON(サーバー起動時＋1日1回)
+#   backup_dirs    … 追加の保存先(改行区切り)。店外=外付けHDD・クラウド同期フォルダ。
+#                    空でも店内 db/backups には必ず取る
+#   backup_keep    … 保存先ごとに残す世代数(1世代だけだと壊れた状態で上書きした時に復旧不能)
+#   backup_last_*  … 最終実行の記録(設定ではなくシステムが書く。画面表示用)
+BACKUP_SETTING_DEFAULTS = {
+    "backup_enabled": 1,
+    "backup_dirs": "",
+    "backup_keep": 14,
+    "backup_last_at": "",
+    "backup_last_result": "",
+}
+
+
+def backup_settings(con):
+    """バックアップ設定＋最終実行の記録を返す(未設定は既定値)。"""
+    out = dict(BACKUP_SETTING_DEFAULTS)
+    for k in out:
+        row = con.execute("SELECT value FROM app_settings WHERE key=?", (k,)).fetchone()
+        if row is not None and str(row[0]).strip() != "":
+            if isinstance(BACKUP_SETTING_DEFAULTS[k], int):
+                try:
+                    out[k] = int(row[0])
+                except (ValueError, TypeError):
+                    pass
+            else:
+                out[k] = str(row[0])
+    return out
+
+
+def save_backup_settings(con, p):
+    """バックアップ設定を保存する(最終実行の記録は書き換えない)。"""
+    cur = backup_settings(con)
+    try:
+        keep = int(str(p.get("backup_keep", cur["backup_keep"])).replace(",", ""))
+    except (ValueError, TypeError):
+        keep = cur["backup_keep"]
+    keep = min(365, max(1, keep))   # 1世代だけの運用は危険なため下限1・上限365
+    # 保存先: 1行1パス・空行と重複を除く(最大5か所)
+    dirs, seen = [], set()
+    for ln in str(p.get("backup_dirs", cur["backup_dirs"]) or "").splitlines():
+        d = ln.strip().strip('"')
+        if d and d not in seen:
+            seen.add(d)
+            dirs.append(d)
+    vals = {
+        "backup_enabled": 1 if str(p.get("backup_enabled", cur["backup_enabled"])) in ("1", "True", "true") else 0,
+        "backup_dirs": "\n".join(dirs[:5]),
+        "backup_keep": keep,
+    }
+    for k, v in vals.items():
+        _set_setting(con, k, str(v))
+    con.commit()
+    return backup_settings(con)
+
+
+def record_backup_result(con, at, message):
+    """バックアップの実行結果を記録する(画面に最終実行として表示する)。"""
+    _set_setting(con, "backup_last_at", str(at or ""))
+    _set_setting(con, "backup_last_result", str(message or "")[:300])
+    con.commit()
+
+
 def adjust_points(con, p):
     """ポイントの手動修正(±)。宝飾ナビの「カードを入れてポイント修正」に相当する画面操作。
     理由を必須にして履歴(point_transactions)に「手動修正」として残す(監査できるように)。"""

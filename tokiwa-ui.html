@@ -1402,7 +1402,8 @@
         <div class="card" style="cursor:pointer" onclick="openPointSettings()"><h3>ポイント設定</h3><p>付与レート(100円=1pt)・ポイント使用時の付与ルール・カード有効期限(最終購入日+N年)・機器モードの設定。</p></div>
         <div class="card"><h3>オフライン同期</h3><p>通信障害時の一時保存と自動再送の設定。未送信キューの確認・手動送信もこちら。</p></div>
         <div class="card"><h3>帳票・プリンター</h3><p>保証書・タグ・レシートの印刷設定とプリンター割り当て。</p></div>
-        <div class="card"><h3>データ入出力</h3><p>宝飾ナビからの移行データ取り込み、CSVエクスポート、バックアップ。</p></div>
+        <div class="card" id="card-backup" style="cursor:pointer" onclick="openBackup()"><h3>バックアップ</h3><p>データの控えを自動で保存(1日1回)。店外(外付けHDD・クラウド同期フォルダ)への複製と世代数の設定、今すぐ実行、復元方法の確認。火災・盗難・PC故障への備え。(管理者のみ)</p></div>
+        <div class="card"><h3>データ入出力</h3><p>宝飾ナビからの移行データ取り込み、CSVエクスポート。</p></div>
       </div>
     </section>
   </div>
@@ -2143,6 +2144,54 @@
   </div>
 </div>
 
+<!-- バックアップ(管理者のみ) -->
+<div class="modal-back" id="backup-modal">
+  <div class="modal" style="width:min(720px,100%)" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h3>バックアップ</h3>
+      <button class="close" aria-label="閉じる" onclick="closeBackup()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="card" style="margin-bottom:1rem">
+        <h3>最終バックアップ</h3>
+        <p id="bk-last" style="margin:0;font-weight:700"></p>
+        <p id="bk-last-result" style="margin:0.2rem 0 0;font-size:0.9em;color:var(--muted)"></p>
+        <div style="margin-top:0.7rem"><button class="btn btn-primary" onclick="runBackupNow(this)">今すぐバックアップ</button></div>
+      </div>
+      <div class="field"><label style="display:flex;align-items:center;gap:0.4em;cursor:pointer">
+        <input type="checkbox" id="bk-enabled" style="width:1.1em;height:1.1em">
+        自動バックアップを使う(サーバー起動中に1日1回)</label>
+        <span style="font-size:0.8em;color:var(--muted)">閉店後にも確実に取りたい場合は「バックアップ.bat」をWindowsのタスクスケジューラに登録してください(詳細は docs/backup.md)。</span></div>
+      <div class="field"><label>店外の保存先(1行に1つ・最大5か所)</label>
+        <textarea id="bk-dirs" rows="3" style="width:100%;resize:vertical"
+          placeholder="D:\トキワバックアップ&#10;C:\Users\(ユーザー名)\OneDrive\トキワバックアップ"></textarea>
+        <span style="font-size:0.8em;color:var(--muted)">
+          外付けHDD/USBメモリのフォルダ、またはOneDrive・Dropbox・Googleドライブの同期フォルダを指定します。
+          <b>店内(このPC)には常に保存されます</b>が、火災・盗難・PC故障に備えて店外にも1か所は指定してください。
+          繋がっていない保存先はスキップされ、店内の控えは残ります。</span></div>
+      <div class="field"><label>残す世代数(保存先ごと)</label>
+        <div style="display:flex;align-items:center;gap:0.4em">
+          <input id="bk-keep" class="num han-num" inputmode="numeric" style="width:5em;text-align:right">
+          <span>世代</span>
+        </div>
+        <span style="font-size:0.8em;color:var(--muted)">古いものから自動削除します(削除対象は tokiwa_日時.db のみ。他のファイルには触りません)。1世代だけの運用は、壊れた状態やウイルスに暗号化された状態で上書きすると復旧できなくなるため危険です。</span></div>
+      <div class="section-title">保存されている控え</div>
+      <div id="bk-list" style="font-size:0.9em"></div>
+      <div class="section-title">復元のしかた</div>
+      <p style="margin:0;font-size:0.9em;color:var(--muted)">
+        ①サーバー(トキワ)を止める → ②戻したい <code>tokiwa_日時.db</code> をコピーして
+        <code>db/tokiwa.db</code> に上書き(念のため今の tokiwa.db は別名で退避) → ③トキワを起動。
+        手順の詳細と注意点は <code>docs/backup.md</code> にあります。<b>復元は年に一度は練習しておいてください</b>
+        (バックアップは復元できて初めて意味があります)。</p>
+      <p id="bk-error" style="color:var(--danger);font-size:0.85em;margin:0.6rem 0 0;display:none"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeBackup()">閉じる</button>
+      <button class="btn btn-primary" onclick="saveBackupSettings(this)">設定を保存</button>
+    </div>
+  </div>
+</div>
+
 <!-- レシート共通メッセージ(レジからすぐ書き換えられるように独立モーダルにする) -->
 <div class="modal-back" id="receipt-msg-modal">
   <div class="modal" style="width:min(480px,100%)" role="dialog" aria-modal="true">
@@ -2324,6 +2373,8 @@
     if (!isAdminUser()) {
       var ua = document.getElementById("card-user-admin");
       if (ua) ua.style.display = "none";
+      var bk = document.getElementById("card-backup");
+      if (bk) bk.style.display = "none";   // バックアップ操作は管理者のみ(サーバー側でも拒否)
     }
   }
   function showScreen(name) {
@@ -2814,6 +2865,7 @@
   bindBackdropClose("point-adjust-modal", closePointAdjust);
   bindBackdropClose("point-settings-modal", closePointSettings);
   bindBackdropClose("receipt-msg-modal", closeReceiptMsg);
+  bindBackdropClose("backup-modal", closeBackup);
   bindBackdropClose("repair-modal", closeRepairModal);
   renderPosLines();
 
@@ -4412,6 +4464,79 @@
     document.getElementById("point-settings-modal").classList.add("show");
   }
   function closePointSettings() { document.getElementById("point-settings-modal").classList.remove("show"); }
+  /* ── バックアップ(管理者のみ。実処理は server/backup.py) ── */
+  function openBackup() {
+    if (!API) return showToast("バックアップはサーバー起動時に使えます。");
+    document.getElementById("bk-error").style.display = "none";
+    document.getElementById("backup-modal").classList.add("show");
+    loadBackupStatus();
+  }
+  function closeBackup() { document.getElementById("backup-modal").classList.remove("show"); }
+  function paintBackupStatus(st) {
+    document.getElementById("bk-enabled").checked = !!st.backup_enabled;
+    document.getElementById("bk-dirs").value = st.backup_dirs || "";
+    document.getElementById("bk-keep").value = st.backup_keep || 14;
+    document.getElementById("bk-last").textContent = st.backup_last_at
+      ? "🗄 " + st.backup_last_at : "まだ一度も取っていません";
+    document.getElementById("bk-last-result").textContent = st.backup_last_result || "";
+    var dirs = st.dirs || [];
+    document.getElementById("bk-list").innerHTML = dirs.length ? dirs.map(function (d, i) {
+      var head = '<div style="font-weight:700;margin:0.5rem 0 0.2rem">' +
+        (i === 0 ? "店内(このPC)" : "店外") + ': <span style="font-weight:400">' + esc(d.dir) + '</span></div>';
+      if (d.error) return head + '<div style="color:var(--warn)">⚠ 読めません: ' + esc(d.error) + '(繋がっていない可能性)</div>';
+      if (!d.files.length) return head + '<div style="color:var(--muted)">控えはまだありません。</div>';
+      return head + '<div style="color:var(--muted)">' + d.files.length + '件 — ' +
+        d.files.slice(0, 3).map(function (f) {
+          return esc(f.at) + "(" + (f.size / 1048576).toFixed(1) + "MB)";
+        }).join(" / ") + (d.files.length > 3 ? " ほか" : "") + '</div>';
+    }).join("") : '<p style="color:var(--muted)">保存先がありません。</p>';
+  }
+  function loadBackupStatus() {
+    fetch(API + "/backup_status").then(function (r) { return r.json(); }).then(function (st) {
+      if (st.error) throw new Error(st.error);
+      paintBackupStatus(st);
+    }).catch(function (e) {
+      var err = document.getElementById("bk-error");
+      err.textContent = "状態を取得できません: " + fetchErrMsg(e); err.style.display = "block";
+    });
+  }
+  function runBackupNow(btn) {
+    var err = document.getElementById("bk-error");
+    err.style.display = "none";
+    btn.disabled = true; btn.textContent = "バックアップ中…";
+    fetch(API + "/backup_now", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then(function (r) { return r.json(); }).then(function (res) {
+        btn.disabled = false; btn.textContent = "今すぐバックアップ";
+        if (res.error) throw new Error(res.error);
+        showToast((res.ok ? "✅ " : "⚠ ") + (res.message || ""));
+        loadBackupStatus();
+      }).catch(function (e) {
+        btn.disabled = false; btn.textContent = "今すぐバックアップ";
+        err.textContent = "バックアップに失敗しました: " + fetchErrMsg(e); err.style.display = "block";
+      });
+  }
+  function saveBackupSettings(btn) {
+    var err = document.getElementById("bk-error");
+    err.style.display = "none";
+    btn.disabled = true;
+    fetch(API + "/backup_settings", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        backup_enabled: document.getElementById("bk-enabled").checked ? 1 : 0,
+        backup_dirs: document.getElementById("bk-dirs").value,
+        backup_keep: parseInt(zen2han(document.getElementById("bk-keep").value).replace(/[^0-9]/g, ""), 10) || 14
+      })
+    }).then(function (r) { return r.json(); }).then(function (st) {
+      btn.disabled = false;
+      if (st.error) throw new Error(st.error);
+      paintBackupStatus(st);
+      showToast("バックアップ設定を保存しました" +
+        (st.backup_dirs ? "。" : "(店外の保存先が未設定です。外付けHDD等を指定してください)。"));
+    }).catch(function (e) {
+      btn.disabled = false;
+      err.textContent = "保存に失敗しました: " + fetchErrMsg(e); err.style.display = "block";
+    });
+  }
   /* ── レシート共通メッセージ(レジから直接編集。保存先はポイント設定と同じ app_settings) ── */
   function openReceiptMsg() {
     document.getElementById("rm-text").value = pointRules().receipt_message || "";

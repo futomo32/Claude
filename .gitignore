@@ -3,6 +3,9 @@ db/*.db
 db/*.db-journal
 db/*.db-wal
 
+# ★バックアップ(実顧客データを含むDBの複製。個人情報なので絶対にGitに載せない)
+db/backups/
+
 # Python
 __pycache__/
 *.pyc

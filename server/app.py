@@ -14,7 +14,7 @@
 正式運用(Windows単機)ではこのサーバーをローカルで起動し、ブラウザで開く構成。
 将来デスクトップアプリ(Electron等)に載せ替える場合もAPIはそのまま流用できる。
 """
-import base64, json, mimetypes, os, re, socket, sqlite3, sys, time, uuid, urllib.request, urllib.parse
+import base64, json, mimetypes, os, re, socket, sqlite3, sys, threading, time, uuid, urllib.request, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = os.path.join(os.path.dirname(__file__), "..")
@@ -73,6 +73,59 @@ def _decode_image_b64(data):
 sys.path.insert(0, os.path.dirname(__file__))
 import db_query  # noqa: E402
 import devices  # noqa: E402  機器制御層(フェーズ2)。機器OFFモードでは何も送信しない
+import backup  # noqa: E402  DBバックアップ(世代管理・店外複製)
+
+
+def _extra_dirs(settings):
+    """設定の backup_dirs(改行区切り)を保存先リストに変換する。"""
+    return [d.strip() for d in str(settings.get("backup_dirs") or "").splitlines() if d.strip()]
+
+
+def run_backup_and_record(reason=""):
+    """バックアップを実行し、結果をDBに記録してコンソールにも出す。
+    自動(起動時・日次)と手動(設定画面のボタン)で共通に使う。"""
+    con = connect()
+    try:
+        st = db_query.backup_settings(con)
+    finally:
+        con.close()
+    result = backup.run_backup(DB, _extra_dirs(st), st.get("backup_keep"))
+    msg = backup.summary(result)
+    con = connect()
+    try:
+        db_query.record_backup_result(con, result["at"], msg)
+    finally:
+        con.close()
+    print(f"[バックアップ{('・' + reason) if reason else ''}] {msg}")
+    return result
+
+
+def backup_daemon():
+    """自動バックアップ。起動から少し待って1回取り、以後は日付が変わったら取る。
+    サーバーが動いている間だけ動作する(=店が開いている時間帯に必ず1回は取れる)。
+    閉店後にも確実に取りたい場合は「バックアップ.bat」をタスクスケジューラに登録する。"""
+    time.sleep(30)    # 起動直後の重い処理(データ読み込み)と重ならないよう少し待つ
+    last_date = None
+    while True:
+        try:
+            con = connect()
+            try:
+                st = db_query.backup_settings(con)
+            finally:
+                con.close()
+            if st.get("backup_enabled"):
+                today = time.strftime("%Y-%m-%d")
+                # 起動後の初回、または日付が変わったら取る。
+                # 既に今日のバックアップがある場合(前回起動で取得済み)は取らない
+                done_today = str(st.get("backup_last_at") or "").startswith(today)
+                if last_date != today and not done_today:
+                    run_backup_and_record("自動")
+                    last_date = today
+                elif done_today:
+                    last_date = today
+        except Exception as e:  # noqa: BLE001 バックアップの失敗でサーバーを落とさない
+            print(f"[バックアップ・自動] 失敗: {e}")
+        time.sleep(600)   # 10分ごとに日付が変わったかを確認
 
 
 def connect():
@@ -265,6 +318,15 @@ class Handler(BaseHTTPRequestHandler):
                     result = {"users": db_query.list_app_users(con)}
                     con.close()
                     return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+                if path == "/api/backup_status":
+                    if role != "admin":
+                        return self._deny()
+                    con = connect()
+                    st = db_query.backup_settings(con)
+                    con.close()
+                    st["local_dir"] = os.path.abspath(backup.LOCAL_DIR)
+                    st["dirs"] = backup.list_backups([backup.LOCAL_DIR] + _extra_dirs(st))
+                    return self._send(200, json.dumps(st, ensure_ascii=False).encode("utf-8"))
             if path.startswith("/assets/"):
                 # ロゴ等の静的ファイル配信(帳票ヘッダ表示用)。フォルダ外は不可
                 fname = os.path.basename(path)
@@ -416,7 +478,8 @@ class Handler(BaseHTTPRequestHandler):
         "/api/point_settings", "/api/point_adjust",
     }
     # 管理者のみの操作(担当者マスタ・ログインユーザー管理)
-    ADMIN_ONLY_POSTS = {"/api/staff", "/api/app_user", "/api/app_user_logout"}
+    ADMIN_ONLY_POSTS = {"/api/staff", "/api/app_user", "/api/app_user_logout",
+                        "/api/backup_now", "/api/backup_settings"}
 
     def do_POST(self):
         try:
@@ -513,6 +576,17 @@ class Handler(BaseHTTPRequestHandler):
                 con = connect()
                 result = db_query.save_point_settings(con, payload)
                 con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/backup_now":
+                result = run_backup_and_record("手動")
+                result["message"] = backup.summary(result)
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/backup_settings":
+                con = connect()
+                result = db_query.save_backup_settings(con, payload)
+                con.close()
+                result["local_dir"] = os.path.abspath(backup.LOCAL_DIR)
+                result["dirs"] = backup.list_backups([backup.LOCAL_DIR] + _extra_dirs(result))
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/point_adjust":
                 con = connect()
@@ -820,6 +894,20 @@ def main():
         print("  ※初回はWindowsファイアウォールの許可画面が出たら「アクセスを許可」してください")
     else:
         print("  → このPC専用です。他のPCから使う場合は「店内共有で起動.bat」を使ってください。")
+    # 自動バックアップ(サーバー起動中に1日1回)。設定でOFFにできる
+    con = connect()
+    try:
+        bset = db_query.backup_settings(con)
+    finally:
+        con.close()
+    if bset.get("backup_enabled"):
+        threading.Thread(target=backup_daemon, daemon=True).start()
+        extra = _extra_dirs(bset)
+        print(f"【自動バックアップ ON】1日1回 db/backups へ保存(世代 {bset.get('backup_keep')})。" +
+              (f"店外保管先 {len(extra)}か所へも複製。" if extra else
+               "★店外保管先が未設定です。設定→バックアップ で外付けHDD等を指定してください。"))
+    else:
+        print("【自動バックアップ OFF】設定→バックアップ でONにしてください。")
     print("  → 停止は Ctrl+C。")
     try:
         srv.serve_forever()
