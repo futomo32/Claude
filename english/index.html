@@ -76,7 +76,7 @@
 <div class="app">
   <header>
     <h1>📘 中学英語マスター</h1>
-    <p>レベルを選んで10問チャレンジ！</p>
+    <p>レベルを選んで30問チャレンジ！</p>
   </header>
   <main>
 
@@ -107,7 +107,7 @@
     <!-- クイズ -->
     <section id="screen-quiz" class="screen">
       <div class="quiz-top">
-        <span id="quiz-counter">1 / 10</span>
+        <span id="quiz-counter">1 / 30</span>
         <span id="quiz-score">スコア: 0</span>
         <button class="quit-btn" onclick="goHome()">✕ やめる</button>
       </div>
@@ -160,6 +160,26 @@ const QUESTIONS = {
     {t:"代名詞", q:"This is ___ book.（これは私の本です）", c:["my","I","me","mine"], a:0, e:"「私の＋名詞」は my。mine は「私のもの」。"},
     {t:"現在進行形", q:"She is ___ TV now.", c:["watching","watch","watches","watched"], a:0, e:"現在進行形は「be動詞 + 動詞のing形」。"},
     {t:"can", q:"He ___ swim fast.", c:["can","cans","is can","can be"], a:0, e:"can のあとは動詞の原形。主語が3人称単数でも can に s はつきません。"},
+    {t:"be動詞", q:"We ___ good friends.", c:["are","is","am","be"], a:0, e:"主語が we（複数）のときは are。"},
+    {t:"be動詞", q:"___ this your pen? — Yes, it is.", c:["Is","Are","Am","Do"], a:0, e:"be動詞の疑問文はbe動詞を文の先頭に。this は is を使います。"},
+    {t:"be動詞", q:"That ___ not my bag.", c:["is","are","am","do"], a:0, e:"that（それ・あれ）は3人称単数なので is。否定文は is not (isn't)。"},
+    {t:"一般動詞", q:"They ___ tennis on Sundays.", c:["play","plays","playing","is play"], a:0, e:"主語が they（複数）なので動詞は原形のまま。"},
+    {t:"一般動詞", q:"My mother ___ dinner every evening.", c:["cooks","cook","cooking","is cook"], a:0, e:"my mother は3人称単数なので cooks（3単現のs）。"},
+    {t:"一般動詞", q:"She ___ like math.", c:["doesn't","don't","isn't","not"], a:0, e:"3人称単数の否定文は doesn't ＋ 動詞の原形。"},
+    {t:"疑問詞", q:"___ is that boy? — He is my brother.", c:["Who","What","When","Where"], a:0, e:"「だれ」を聞くときは Who。"},
+    {t:"疑問詞", q:"___ many books do you have?", c:["How","What","Which","Why"], a:0, e:"How many + 複数名詞 =「いくつの〜」。数をたずねる表現です。"},
+    {t:"疑問詞", q:"___ do you like better, cats or dogs?", c:["Which","What","Who","How"], a:0, e:"選択肢の中から「どちら」を聞くときは Which。"},
+    {t:"単語", q:"「火曜日」を英語で言うと？", c:["Tuesday","Thursday","Wednesday","Sunday"], a:0, e:"Tuesday = 火曜日。Thursday（木曜日）とまちがえやすいので注意！"},
+    {t:"単語", q:"「冬」を英語で言うと？", c:["winter","spring","summer","fall"], a:0, e:"winter = 冬。spring=春, summer=夏, fall/autumn=秋。"},
+    {t:"単語", q:"「昼食」を英語で言うと？", c:["lunch","breakfast","dinner","meal"], a:0, e:"lunch = 昼食。breakfast=朝食, dinner=夕食。"},
+    {t:"複数形", q:"child の複数形は？", c:["children","childs","childes","child"], a:0, e:"child → children は特別な変化。他に man→men, foot→feet など。"},
+    {t:"複数形", q:"city の複数形は？", c:["cities","citys","cityes","city"], a:0, e:"「子音字＋y」で終わる語は y を i に変えて es。"},
+    {t:"代名詞", q:"I know ___.（私は彼を知っています）", c:["him","he","his","her"], a:0, e:"動詞の目的語には目的格。he の目的格は him。"},
+    {t:"代名詞", q:"This bike is ___.（この自転車は彼女のものです）", c:["hers","her","she","herself"], a:0, e:"「彼女のもの」は hers。her は「彼女の＋名詞」。"},
+    {t:"現在進行形", q:"I ___ doing my homework now.", c:["am","is","are","do"], a:0, e:"現在進行形は「be動詞 + ing形」。主語が I なので am。"},
+    {t:"現在進行形", q:"___ they playing soccer now? — Yes, they are.", c:["Are","Do","Is","Does"], a:0, e:"進行形の疑問文はbe動詞を先頭に。they なので Are。"},
+    {t:"can", q:"___ I use your pen? — Sure.", c:["Can","Am","Do","Are"], a:0, e:"Can I 〜? =「〜してもいいですか」。許可を求める表現です。"},
+    {t:"命令文", q:"___ run in the classroom.（教室で走ってはいけません）", c:["Don't","Not","Isn't","No"], a:0, e:"禁止の命令文は Don't ＋ 動詞の原形。"},
   ],
   2: [ // Lv2 過去形
     {t:"規則動詞", q:"play の過去形は？", c:["played","plaied","playd","plays"], a:0, e:"ふつうは ed をつけるだけ。play → played。"},
@@ -178,6 +198,26 @@ const QUESTIONS = {
     {t:"be動詞の過去", q:"They ___ busy yesterday.", c:["were","was","are","been"], a:0, e:"be動詞の過去形：am/is → was、are → were。"},
     {t:"be動詞の過去", q:"I ___ tired last night.", c:["was","were","am","did"], a:0, e:"主語が I のとき、be動詞の過去形は was。"},
     {t:"過去進行形", q:"He ___ sleeping when I called him.", c:["was","were","is","did"], a:0, e:"過去進行形は「was/were + 動詞のing形」。"},
+    {t:"規則動詞", q:"use の過去形は？", c:["used","ussed","uesd","uses"], a:0, e:"e で終わる動詞は d をつけるだけ。use → used。"},
+    {t:"規則動詞", q:"cry の過去形は？", c:["cried","cryed","cred","cries"], a:0, e:"「子音字＋y」は y を i に変えて ed。cry → cried。"},
+    {t:"規則動詞", q:"visit の過去形は？", c:["visited","visitted","visid","visits"], a:0, e:"visit はそのまま ed をつけて visited。"},
+    {t:"不規則動詞", q:"eat の過去形は？", c:["ate","eated","eaten","eats"], a:0, e:"eat → ate → eaten。eaten は過去分詞。"},
+    {t:"不規則動詞", q:"get の過去形は？", c:["got","getted","gotten","gets"], a:0, e:"get → got → got(gotten)。"},
+    {t:"不規則動詞", q:"buy の過去形は？", c:["bought","buyed","brought","buys"], a:0, e:"buy → bought。bring の過去形 brought とまちがえやすいので注意！"},
+    {t:"不規則動詞", q:"read の過去形は？", c:["read（レッドと読む）","readed","red","reads"], a:0, e:"read の過去形はつづりは同じで発音だけ変わります（リード→レッド）。"},
+    {t:"不規則動詞", q:"run の過去形は？", c:["ran","runned","run","runs"], a:0, e:"run → ran → run。過去分詞は原形と同じ。"},
+    {t:"不規則動詞", q:"speak の過去形は？", c:["spoke","speaked","spoken","speaks"], a:0, e:"speak → spoke → spoken。"},
+    {t:"不規則動詞", q:"teach の過去形は？", c:["taught","teached","tought","teaches"], a:0, e:"teach → taught → taught。catch → caught も同じパターン。"},
+    {t:"不規則動詞", q:"know の過去形は？", c:["knew","knowed","known","knows"], a:0, e:"know → knew → known。"},
+    {t:"不規則動詞", q:"say の過去形は？", c:["said","sayed","sad","says"], a:0, e:"say → said → said。発音は「セッド」。"},
+    {t:"過去の文", q:"We ___ a good time at the party last week.", c:["had","have","haved","has"], a:0, e:"last week があるので過去形。have → had。"},
+    {t:"過去の文", q:"She ___ me an email two days ago.", c:["sent","send","sended","sends"], a:0, e:"〜ago（〜前）があるので過去形。send → sent。"},
+    {t:"過去の否定文", q:"I ___ go to school yesterday because I was sick.", c:["didn't","don't","wasn't","doesn't"], a:0, e:"一般動詞の過去の否定文は didn't ＋ 原形。"},
+    {t:"過去の疑問文", q:"What ___ you do last Sunday?", c:["did","do","were","does"], a:0, e:"疑問詞つきでも過去の疑問文は did を使います。"},
+    {t:"be動詞の過去", q:"The movie ___ very interesting.", c:["was","were","is","did"], a:0, e:"the movie は3人称単数なので was。"},
+    {t:"be動詞の過去", q:"___ you at home yesterday? — Yes, I was.", c:["Were","Was","Did","Are"], a:0, e:"主語が you のとき be動詞の過去形は were。"},
+    {t:"過去進行形", q:"They ___ playing tennis at three yesterday.", c:["were","was","are","did"], a:0, e:"「〜していた」は過去進行形。they なので were + ing。"},
+    {t:"過去進行形", q:"What ___ you doing at eight last night?", c:["were","did","are","was"], a:0, e:"過去進行形の疑問文。主語 you なので were。"},
   ],
   3: [ // Lv3 文法チャレンジ
     {t:"比較", q:"This bag is ___ than that one.", c:["bigger","big","biggest","more big"], a:0, e:"比較級は「-er + than」。big は g を重ねて bigger。"},
@@ -195,6 +235,26 @@ const QUESTIONS = {
     {t:"There is", q:"___ many parks in this city.", c:["There are","There is","It is","They are"], a:0, e:"「〜がある」は There is / are。many parks は複数なので are。"},
     {t:"have to", q:"You ___ to do your homework.", c:["have","must","should","can"], a:0, e:"have to + 原形 =「〜しなければならない」。"},
     {t:"SVOO", q:"My father gave ___ a present.", c:["me","I","my","mine"], a:0, e:"give + 人 + 物。「人」の位置には目的格（me）。"},
+    {t:"比較", q:"I like summer ___ than winter.", c:["better","more","much","well"], a:0, e:"like A better than B =「BよりAが好き」。"},
+    {t:"比較", q:"This question is as ___ as that one.", c:["easy","easier","easiest","more easy"], a:0, e:"as ... as の間は原級（もとの形）。「同じくらい〜」。"},
+    {t:"比較", q:"He runs ___ in his class.", c:["fastest","faster","fast","most fast"], a:0, e:"「クラスでいちばん速く」は最上級 fastest。副詞の最上級は the を省略できます。"},
+    {t:"比較", q:"Which is ___, this one or that one?", c:["better","best","good","well"], a:0, e:"2つを比べるときは比較級。good/well の比較級は better。"},
+    {t:"受け身", q:"These rooms ___ cleaned every day.", c:["are","is","was","be"], a:0, e:"受け身は「be動詞＋過去分詞」。主語が複数・現在なので are。"},
+    {t:"受け身", q:"When ___ this temple built?", c:["was","did","is","were"], a:0, e:"受け身の疑問文はbe動詞を疑問詞のあとに。this temple は単数・過去なので was。"},
+    {t:"受け身", q:"This song is loved ___ many people.", c:["by","of","from","with"], a:0, e:"受け身の「〜によって」は by。"},
+    {t:"現在完了", q:"I have just ___ lunch.", c:["eaten","ate","eat","eating"], a:0, e:"現在完了は have + 過去分詞。eat の過去分詞は eaten。just =「ちょうど」。"},
+    {t:"現在完了", q:"He has ___ to America twice.", c:["been","gone","go","went"], a:0, e:"「行ったことがある」（経験）は have been to。have gone to は「行ってしまった」。"},
+    {t:"現在完了", q:"Have you finished your homework ___?", c:["yet","already","just","ago"], a:0, e:"疑問文の「もう〜？」は文末に yet。already は肯定文で使います。"},
+    {t:"現在完了", q:"I have ___ seen this movie. It's new to me.", c:["never","ever","just","already"], a:0, e:"never =「一度も〜ない」。経験の否定を表します。"},
+    {t:"不定詞", q:"I have a lot of homework ___ today.", c:["to do","do","doing","did"], a:0, e:"「すべき宿題」— 不定詞の形容詞的用法。名詞を後ろから修飾します。"},
+    {t:"不定詞", q:"I'm glad ___ you.", c:["to see","see","seeing","saw"], a:0, e:"感情の原因を表す不定詞（副詞的用法）。「会えてうれしい」。"},
+    {t:"不定詞", q:"She knows how ___ this computer.", c:["to use","use","using","used"], a:0, e:"how to + 原形 =「〜のしかた」。what to do, where to go なども同じ形。"},
+    {t:"動名詞", q:"___ pictures is a lot of fun.", c:["Taking","Take","Took","Taken"], a:0, e:"動名詞（〜ing）が主語になる形。「写真を撮ることは楽しい」。"},
+    {t:"動名詞", q:"He stopped ___ TV and started to study.", c:["watching","to watch","watch","watched"], a:0, e:"stop ~ing =「〜するのをやめる」。stop to 〜 は「〜するために立ち止まる」。"},
+    {t:"接続詞", q:"___ it was raining, we played soccer outside.", c:["Though","Because","If","When"], a:0, e:"though =「〜だけれども」。雨なのに外でサッカーをした、という流れです。"},
+    {t:"接続詞", q:"I think ___ this book is interesting.", c:["that","if","when","because"], a:0, e:"think that 〜 =「〜だと思う」。この that は省略できます。"},
+    {t:"There is", q:"___ a big park near my house ten years ago.", c:["There was","There is","There were","It was"], a:0, e:"過去の文で a big park は単数なので There was。"},
+    {t:"助動詞", q:"You ___ be tired after the long trip.", c:["must","have","can't","don't"], a:0, e:"must には「〜にちがいない」という推量の意味もあります。"},
   ],
   4: [ // Lv4 高校受験対策
     {t:"関係代名詞", q:"I have a friend ___ lives in Osaka.", c:["who","which","whose","whom"], a:0, e:"先行詞が「人」で主格のときは who（that も可）。"},
@@ -212,10 +272,30 @@ const QUESTIONS = {
     {t:"適語補充", q:"A: Must I finish this today?\nB: No, you ___. You can do it tomorrow.", c:["don't have to","must not","can't","shouldn't"], a:0, e:"must の疑問文に対する「〜しなくてよい」は don't have to。must not（禁止）とのちがいは入試頻出！"},
     {t:"tell+人+to", q:"The teacher told us ___ quiet.", c:["to be","be","being","been"], a:0, e:"tell + 人 + to + 原形 =「(人)に〜するように言う」。"},
     {t:"it...to", q:"It is important ___ us to study English.", c:["for","of","to","with"], a:0, e:"It is ... for 人 to 〜 =「(人)にとって〜することは…だ」。"},
+    {t:"関係代名詞", q:"The dog ___ is running over there is mine.", c:["that","who","whose","what"], a:0, e:"先行詞が「動物・物」で主格のときは that / which。"},
+    {t:"関係代名詞", q:"She is a singer ___ everyone knows.", c:["that","what","whose","when"], a:0, e:"目的格の関係代名詞。先行詞が人でも that は使えます（whom / 省略も可）。"},
+    {t:"並べかえ", q:"「あなたは何のスポーツがいちばん好きですか」\n( ① sport ② what ③ you ④ do ) like the best?", c:["②①④③","②④③①","④②①③","②③④①"], a:0, e:"What sport do you like the best? — 疑問詞＋名詞のかたまりを先頭に。"},
+    {t:"並べかえ", q:"「私は今までに見た中でいちばん美しい景色です」\nThis is ( ① view ② the most beautiful ③ I have ④ that ) ever seen.", c:["②①④③","①②④③","②④①③","④②①③"], a:0, e:"This is the most beautiful view that I have ever seen. — 最上級＋関係代名詞＋現在完了の入試頻出パターン。"},
+    {t:"並べかえ", q:"「駅への道を教えていただけますか」\nCould you ( ① me ② the way ③ tell ④ to ) the station?", c:["③①②④","③②①④","①③②④","③④①②"], a:0, e:"Could you tell me the way to 〜? — tell + 人 + 物の語順。道案内の定番表現。"},
+    {t:"間接疑問", q:"Do you know what time ___?", c:["it is","is it","it does","does it"], a:0, e:"間接疑問文は「疑問詞＋主語＋動詞」の語順。What time is it? が文中に入ると what time it is。"},
+    {t:"間接疑問", q:"I wonder ___ she will come to the party.", c:["if","what","who","which"], a:0, e:"疑問詞がない疑問文を文中に入れるときは if / whether =「〜かどうか」。"},
+    {t:"分詞", q:"Do you know the girl ___ by the window?", c:["standing","stood","stands","stand"], a:0, e:"「窓のそばに立っている少女」— 現在分詞の後置修飾。"},
+    {t:"分詞", q:"I read a novel ___ by Natsume Soseki.", c:["written","writing","wrote","writes"], a:0, e:"「漱石によって書かれた小説」— 過去分詞の後置修飾。write → wrote → written。"},
+    {t:"現在完了", q:"How long ___ you lived in this town?", c:["have","did","do","are"], a:0, e:"期間をたずねる現在完了。How long have you + 過去分詞? は入試頻出。"},
+    {t:"現在完了進行形", q:"It has been ___ since this morning.", c:["raining","rain","rained","rains"], a:0, e:"現在完了進行形 have/has been ~ing =「ずっと〜し続けている」。"},
+    {t:"仮定法", q:"I wish I ___ speak French.", c:["could","can","will","would be"], a:0, e:"I wish + 過去形 =「〜だったらいいのに」（現実とちがう願望）。"},
+    {t:"熟語", q:"Please help me ___ my homework.", c:["with","for","to","of"], a:0, e:"help + 人 + with + 物事 =「(人)の〜を手伝う」。"},
+    {t:"熟語", q:"He is good ___ playing the guitar.", c:["at","in","for","with"], a:0, e:"be good at ~ing =「〜が得意だ」。前置詞 at のあとは動名詞。"},
+    {t:"熟語", q:"I couldn't go out ___ the heavy rain.", c:["because of","because","so","but"], a:0, e:"because of + 名詞 =「〜のために」。because のあとは主語＋動詞の文が続きます。"},
+    {t:"長文読解", q:"次の英文の内容に合うものは？\n\"Yuki wants to be a nurse. Her mother works at a hospital. Yuki visits the hospital every summer to help her.\"", c:["ユキは毎年夏に病院を訪れる","ユキの母は学校で働いている","ユキは医者になりたい","ユキは病院で働いている"], a:0, e:"visits the hospital every summer =「毎年夏に病院を訪れる」。want to be a nurse は「看護師になりたい」。"},
+    {t:"適語補充", q:"A: Thank you for helping me.\nB: ___", c:["You're welcome.","Yes, please.","That's too bad.","Here you are."], a:0, e:"お礼への返事は You're welcome.（どういたしまして）。会話表現は入試頻出！"},
+    {t:"適語補充", q:"A: ___ I carry your bag?\nB: Thank you. It's very heavy.", c:["Shall","Will","Must","Would"], a:0, e:"Shall I 〜? =「（私が）〜しましょうか」と申し出る表現。"},
+    {t:"受け身", q:"This letter ___ written by him last month.", c:["was","is","has","did"], a:0, e:"last month があるので過去の受け身。was + 過去分詞。"},
+    {t:"make+O+C", q:"The news made me ___.", c:["happy","happily","to happy","happiness"], a:0, e:"make + 人 + 形容詞 =「(人)を〜にする」。副詞ではなく形容詞を置きます。"},
   ]
 };
 
-const NUM_Q = 10;
+const NUM_Q = 30;
 let level=1, quizSet=[], idx=0, score=0, wrongs=[];
 
 // ================= ユーティリティ =================
