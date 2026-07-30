@@ -1182,22 +1182,26 @@ POINT_SETTING_DEFAULTS = {
     "card_expiry_years": 5,
     "card_message": "",   # 券面のフリーメッセージ(最大2行・全角22文字。空=印字なし)
     "receipt_message": "",  # レシート下部メッセージ(最大4行。空=印字なし)
+    "receipt_thanks": "お買上げありがとうございます",  # レシートの感謝の一文(1行。空=印字なし)
 }
 
 
 def point_settings(con):
-    """ポイント運用ルールを返す(未設定の項目は既定値)。"""
+    """ポイント運用ルールを返す(未設定の項目は既定値)。
+    文字列の設定は「保存された空文字」も尊重する(例: 感謝の一文を空=印字なしにする)。
+    数値の設定だけは空・不正値を既定値扱いにする。"""
     out = dict(POINT_SETTING_DEFAULTS)
     for k in out:
         row = con.execute("SELECT value FROM app_settings WHERE key=?", (k,)).fetchone()
-        if row is not None and str(row[0]).strip() != "":
-            if isinstance(POINT_SETTING_DEFAULTS[k], int):
-                try:
-                    out[k] = int(row[0])
-                except (ValueError, TypeError):
-                    pass
-            else:
-                out[k] = str(row[0])
+        if row is None:
+            continue
+        if isinstance(POINT_SETTING_DEFAULTS[k], int):
+            try:
+                out[k] = int(row[0])
+            except (ValueError, TypeError):
+                pass
+        else:
+            out[k] = str(row[0])
     return out
 
 
@@ -1218,12 +1222,16 @@ def save_point_settings(con, p):
     # レシート下部メッセージ: 改行は4行まで・全体200文字まで
     rmsg = str(p.get("receipt_message", cur["receipt_message"]) or "")
     rmsg = "\n".join(ln.strip() for ln in rmsg.splitlines()[:4] if ln.strip())[:200]
+    # 感謝の一文: 1行のみ・36桁(全角18文字)に収まるよう50文字で切る。空=印字なし
+    thanks = str(p.get("receipt_thanks", cur["receipt_thanks"]) or "")
+    thanks = thanks.splitlines()[0].strip()[:50] if thanks.strip() else ""
     vals = {
         "point_rate_yen": norm("point_rate_yen", 1, 100000),
         "point_use_no_grant": 1 if str(p.get("point_use_no_grant", cur["point_use_no_grant"])) in ("1", "True", "true") else 0,
         "card_expiry_years": norm("card_expiry_years", 1, 99),
         "card_message": msg,
         "receipt_message": rmsg,
+        "receipt_thanks": thanks,
     }
     for k, v in vals.items():
         _set_setting(con, k, str(v))
@@ -2595,6 +2603,7 @@ def receipt_data(con, slip_id, deposit=None):
             "point_balance": int(bal_row[0] or 0) if bal_row else 0,
             "deposit": deposit, "cash_due": cash_due,
             "note": s["receipt_note"] or "",                          # この会計だけの一言
+            "thanks": point_settings(con).get("receipt_thanks", ""),  # 感謝の一文(設定で変更可)
             "message": point_settings(con).get("receipt_message", "")}  # 全レシート共通
 
 
