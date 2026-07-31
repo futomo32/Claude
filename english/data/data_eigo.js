@@ -1,0 +1,3686 @@
+module.exports = {
+ "levels": [
+  {
+   "n": 1,
+   "grade": "中1",
+   "title": "be動詞と単語のきほん",
+   "desc": "am / is / are・あいさつ・基本単語"
+  },
+  {
+   "n": 2,
+   "grade": "中1",
+   "title": "一般動詞と疑問詞",
+   "desc": "3単現のs・don't/doesn't・What/Where"
+  },
+  {
+   "n": 3,
+   "grade": "中1",
+   "title": "名詞・命令文・can",
+   "desc": "複数形・代名詞・現在進行形"
+  },
+  {
+   "n": 4,
+   "grade": "中2",
+   "title": "過去形マスター",
+   "desc": "規則動詞・不規則動詞の変化"
+  },
+  {
+   "n": 5,
+   "grade": "中2",
+   "title": "未来と助動詞",
+   "desc": "will・be going to・must・接続詞"
+  },
+  {
+   "n": 6,
+   "grade": "中2",
+   "title": "不定詞と動名詞",
+   "desc": "to+原形の3用法・〜ing・文型"
+  },
+  {
+   "n": 7,
+   "grade": "中3",
+   "title": "比較",
+   "desc": "比較級・最上級・as ... as"
+  },
+  {
+   "n": 8,
+   "grade": "中3",
+   "title": "受け身と現在完了",
+   "desc": "be+過去分詞・have+過去分詞"
+  },
+  {
+   "n": 9,
+   "grade": "中3",
+   "title": "関係代名詞・分詞",
+   "desc": "who/which/that・間接疑問文"
+  },
+  {
+   "n": 10,
+   "grade": "受験",
+   "title": "高校受験 総仕上げ",
+   "desc": "並べかえ・仮定法・熟語・長文・会話"
+  }
+ ],
+ "questions": {
+  "1": [
+   {
+    "t": "be動詞",
+    "q": "I ___ a student.",
+    "c": [
+     "am",
+     "is",
+     "are",
+     "be"
+    ],
+    "a": 0,
+    "e": "主語が I のとき be動詞は am。"
+   },
+   {
+    "t": "be動詞",
+    "q": "She ___ my sister.",
+    "c": [
+     "is",
+     "am",
+     "are",
+     "be"
+    ],
+    "a": 0,
+    "e": "she / he / it（3人称単数）のときは is。"
+   },
+   {
+    "t": "be動詞",
+    "q": "They ___ from Canada.",
+    "c": [
+     "are",
+     "is",
+     "am",
+     "be"
+    ],
+    "a": 0,
+    "e": "they, we, you（複数）のときは are。"
+   },
+   {
+    "t": "be動詞",
+    "q": "We ___ good friends.",
+    "c": [
+     "are",
+     "is",
+     "am",
+     "be"
+    ],
+    "a": 0,
+    "e": "主語が we のときは are。"
+   },
+   {
+    "t": "be動詞",
+    "q": "___ this your pen? — Yes, it is.",
+    "c": [
+     "Is",
+     "Are",
+     "Am",
+     "Do"
+    ],
+    "a": 0,
+    "e": "be動詞の疑問文はbe動詞を文の先頭に置きます。"
+   },
+   {
+    "t": "be動詞",
+    "q": "That ___ not my bag.",
+    "c": [
+     "is",
+     "are",
+     "am",
+     "do"
+    ],
+    "a": 0,
+    "e": "that は3人称単数なので is。否定文は is not (isn't)。"
+   },
+   {
+    "t": "be動詞",
+    "q": "You ___ a good singer.",
+    "c": [
+     "are",
+     "is",
+     "am",
+     "be"
+    ],
+    "a": 0,
+    "e": "主語が you のときは are。"
+   },
+   {
+    "t": "be動詞",
+    "q": "Mr. Tanaka ___ our teacher.",
+    "c": [
+     "is",
+     "are",
+     "am",
+     "be"
+    ],
+    "a": 0,
+    "e": "Mr. Tanaka（1人の人）は3人称単数なので is。"
+   },
+   {
+    "t": "be動詞",
+    "q": "My cats ___ very cute.",
+    "c": [
+     "are",
+     "is",
+     "am",
+     "be"
+    ],
+    "a": 0,
+    "e": "my cats は複数なので are。"
+   },
+   {
+    "t": "be動詞",
+    "q": "I ___ not hungry now.",
+    "c": [
+     "am",
+     "is",
+     "are",
+     "do"
+    ],
+    "a": 0,
+    "e": "I の否定文は I am not 〜。I amn't とは言いません。"
+   },
+   {
+    "t": "あいさつ",
+    "q": "A: Nice to meet you.\nB: ___",
+    "c": [
+     "Nice to meet you, too.",
+     "I'm fine.",
+     "See you.",
+     "Good night."
+    ],
+    "a": 0,
+    "e": "「はじめまして」への返事は Nice to meet you, too.（こちらこそ）。"
+   },
+   {
+    "t": "あいさつ",
+    "q": "A: How are you?\nB: ___",
+    "c": [
+     "I'm fine, thank you.",
+     "Yes, I am.",
+     "You're welcome.",
+     "Me, too."
+    ],
+    "a": 0,
+    "e": "How are you?（元気ですか）には I'm fine. などで答えます。"
+   },
+   {
+    "t": "単語",
+    "q": "「図書館」を英語で言うと？",
+    "c": [
+     "library",
+     "hospital",
+     "station",
+     "museum"
+    ],
+    "a": 0,
+    "e": "library=図書館, hospital=病院, station=駅, museum=博物館。"
+   },
+   {
+    "t": "単語",
+    "q": "「水曜日」を英語で言うと？",
+    "c": [
+     "Wednesday",
+     "Tuesday",
+     "Thursday",
+     "Saturday"
+    ],
+    "a": 0,
+    "e": "Wednesday=水曜日。つづりの d を忘れずに！"
+   },
+   {
+    "t": "単語",
+    "q": "「火曜日」を英語で言うと？",
+    "c": [
+     "Tuesday",
+     "Thursday",
+     "Wednesday",
+     "Sunday"
+    ],
+    "a": 0,
+    "e": "Tuesday=火曜日。Thursday（木曜日）と区別しよう。"
+   },
+   {
+    "t": "単語",
+    "q": "「冬」を英語で言うと？",
+    "c": [
+     "winter",
+     "spring",
+     "summer",
+     "fall"
+    ],
+    "a": 0,
+    "e": "winter=冬, spring=春, summer=夏, fall/autumn=秋。"
+   },
+   {
+    "t": "単語",
+    "q": "「昼食」を英語で言うと？",
+    "c": [
+     "lunch",
+     "breakfast",
+     "dinner",
+     "meal"
+    ],
+    "a": 0,
+    "e": "lunch=昼食, breakfast=朝食, dinner=夕食。"
+   },
+   {
+    "t": "単語",
+    "q": "「3月」を英語で言うと？",
+    "c": [
+     "March",
+     "May",
+     "April",
+     "June"
+    ],
+    "a": 0,
+    "e": "March=3月, April=4月, May=5月, June=6月。"
+   },
+   {
+    "t": "単語",
+    "q": "「9」を英語で言うと？",
+    "c": [
+     "nine",
+     "night",
+     "new",
+     "none"
+    ],
+    "a": 0,
+    "e": "nine=9。night（夜）とつづりが似ているので注意。"
+   },
+   {
+    "t": "単語",
+    "q": "「先生」を英語で言うと？",
+    "c": [
+     "teacher",
+     "doctor",
+     "player",
+     "singer"
+    ],
+    "a": 0,
+    "e": "teacher=先生。「動詞+er」で「〜する人」の単語が多いです。"
+   },
+   {
+    "t": "代名詞",
+    "q": "This is ___ book.（これは私の本です）",
+    "c": [
+     "my",
+     "I",
+     "me",
+     "mine"
+    ],
+    "a": 0,
+    "e": "「私の＋名詞」は my。"
+   },
+   {
+    "t": "代名詞",
+    "q": "___ is my friend.（彼は私の友だちです）",
+    "c": [
+     "He",
+     "His",
+     "Him",
+     "She"
+    ],
+    "a": 0,
+    "e": "「彼は」（主語）は He。"
+   },
+   {
+    "t": "代名詞",
+    "q": "Is that ___ bike?（あれは彼女の自転車？）",
+    "c": [
+     "her",
+     "she",
+     "hers",
+     "him"
+    ],
+    "a": 0,
+    "e": "「彼女の＋名詞」は her。"
+   },
+   {
+    "t": "疑問文",
+    "q": "What ___ this? — It's a camera.",
+    "c": [
+     "is",
+     "are",
+     "am",
+     "do"
+    ],
+    "a": 0,
+    "e": "What is this?=「これは何ですか」。this は is。"
+   },
+   {
+    "t": "疑問文",
+    "q": "Who ___ that girl? — She is Yumi.",
+    "c": [
+     "is",
+     "are",
+     "am",
+     "do"
+    ],
+    "a": 0,
+    "e": "Who is 〜?=「〜はだれですか」。"
+   },
+   {
+    "t": "be動詞",
+    "q": "Ken and I ___ in the same class.",
+    "c": [
+     "are",
+     "is",
+     "am",
+     "be"
+    ],
+    "a": 0,
+    "e": "Ken and I（=we）は複数なので are。"
+   },
+   {
+    "t": "be動詞",
+    "q": "It ___ sunny today.",
+    "c": [
+     "is",
+     "are",
+     "am",
+     "be"
+    ],
+    "a": 0,
+    "e": "天気を言うときの主語 it は3人称単数なので is。"
+   },
+   {
+    "t": "単語",
+    "q": "「金曜日」を英語で言うと？",
+    "c": [
+     "Friday",
+     "Monday",
+     "Saturday",
+     "Sunday"
+    ],
+    "a": 0,
+    "e": "Friday=金曜日。Monday=月, Saturday=土, Sunday=日。"
+   },
+   {
+    "t": "単語",
+    "q": "「音楽」を英語で言うと？",
+    "c": [
+     "music",
+     "math",
+     "science",
+     "art"
+    ],
+    "a": 0,
+    "e": "music=音楽, math=数学, science=理科, art=美術。"
+   },
+   {
+    "t": "あいさつ",
+    "q": "A: Thank you.\nB: ___",
+    "c": [
+     "You're welcome.",
+     "Yes, please.",
+     "I'm sorry.",
+     "Good idea."
+    ],
+    "a": 0,
+    "e": "Thank you. への返事は You're welcome.（どういたしまして）。"
+   }
+  ],
+  "2": [
+   {
+    "t": "一般動詞",
+    "q": "I ___ soccer after school.",
+    "c": [
+     "play",
+     "plays",
+     "playing",
+     "am play"
+    ],
+    "a": 0,
+    "e": "主語が I のとき一般動詞は原形のまま。"
+   },
+   {
+    "t": "一般動詞",
+    "q": "He ___ soccer every day.",
+    "c": [
+     "plays",
+     "play",
+     "playing",
+     "played"
+    ],
+    "a": 0,
+    "e": "3人称単数・現在の文では動詞に s（3単現のs）。"
+   },
+   {
+    "t": "一般動詞",
+    "q": "They ___ tennis on Sundays.",
+    "c": [
+     "play",
+     "plays",
+     "playing",
+     "is play"
+    ],
+    "a": 0,
+    "e": "主語が they（複数）なので原形。"
+   },
+   {
+    "t": "一般動詞",
+    "q": "My mother ___ dinner every evening.",
+    "c": [
+     "cooks",
+     "cook",
+     "cooking",
+     "is cook"
+    ],
+    "a": 0,
+    "e": "my mother は3人称単数なので cooks。"
+   },
+   {
+    "t": "3単現",
+    "q": "She ___ English very hard.",
+    "c": [
+     "studies",
+     "studys",
+     "study",
+     "studying"
+    ],
+    "a": 0,
+    "e": "「子音字+y」で終わる動詞は y を i に変えて es。study → studies。"
+   },
+   {
+    "t": "3単現",
+    "q": "He ___ to school by bus.",
+    "c": [
+     "goes",
+     "gos",
+     "go",
+     "going"
+    ],
+    "a": 0,
+    "e": "o で終わる動詞は es。go → goes。"
+   },
+   {
+    "t": "3単現",
+    "q": "My father ___ TV after dinner.",
+    "c": [
+     "watches",
+     "watchs",
+     "watch",
+     "watching"
+    ],
+    "a": 0,
+    "e": "ch で終わる動詞は es。watch → watches。"
+   },
+   {
+    "t": "3単現",
+    "q": "Emi ___ two dogs.",
+    "c": [
+     "has",
+     "haves",
+     "have",
+     "having"
+    ],
+    "a": 0,
+    "e": "have の3単現は has（特別な形）。"
+   },
+   {
+    "t": "否定文",
+    "q": "I ___ like natto.",
+    "c": [
+     "don't",
+     "doesn't",
+     "am not",
+     "not"
+    ],
+    "a": 0,
+    "e": "一般動詞の否定文は don't（主語がIのとき）。"
+   },
+   {
+    "t": "否定文",
+    "q": "She ___ like math.",
+    "c": [
+     "doesn't",
+     "don't",
+     "isn't",
+     "not"
+    ],
+    "a": 0,
+    "e": "3人称単数の否定文は doesn't + 動詞の原形。"
+   },
+   {
+    "t": "否定文",
+    "q": "He doesn't ___ any brothers.",
+    "c": [
+     "have",
+     "has",
+     "having",
+     "had"
+    ],
+    "a": 0,
+    "e": "doesn't のあとの動詞は原形に戻ります。"
+   },
+   {
+    "t": "疑問文",
+    "q": "___ you like music? — Yes, I do.",
+    "c": [
+     "Do",
+     "Does",
+     "Are",
+     "Is"
+    ],
+    "a": 0,
+    "e": "一般動詞の疑問文は Do で始めます。"
+   },
+   {
+    "t": "疑問文",
+    "q": "___ she speak English?",
+    "c": [
+     "Does",
+     "Do",
+     "Is",
+     "Are"
+    ],
+    "a": 0,
+    "e": "3人称単数の疑問文は Does。"
+   },
+   {
+    "t": "疑問文",
+    "q": "Does your brother ___ soccer?",
+    "c": [
+     "like",
+     "likes",
+     "liking",
+     "liked"
+    ],
+    "a": 0,
+    "e": "Does を使ったら動詞は原形に戻します。"
+   },
+   {
+    "t": "疑問詞",
+    "q": "___ is your birthday? — It's May 5th.",
+    "c": [
+     "When",
+     "Where",
+     "Who",
+     "What"
+    ],
+    "a": 0,
+    "e": "「いつ」を聞くときは When。"
+   },
+   {
+    "t": "疑問詞",
+    "q": "___ do you live? — I live in Tokyo.",
+    "c": [
+     "Where",
+     "When",
+     "Why",
+     "Who"
+    ],
+    "a": 0,
+    "e": "「どこ」を聞くときは Where。"
+   },
+   {
+    "t": "疑問詞",
+    "q": "___ is that boy? — He is my brother.",
+    "c": [
+     "Who",
+     "What",
+     "When",
+     "Where"
+    ],
+    "a": 0,
+    "e": "「だれ」を聞くときは Who。"
+   },
+   {
+    "t": "疑問詞",
+    "q": "___ do you get up? — At six.",
+    "c": [
+     "What time",
+     "What day",
+     "How many",
+     "Where"
+    ],
+    "a": 0,
+    "e": "時刻をたずねるのは What time。"
+   },
+   {
+    "t": "疑問詞",
+    "q": "___ many books do you have?",
+    "c": [
+     "How",
+     "What",
+     "Which",
+     "Why"
+    ],
+    "a": 0,
+    "e": "How many + 複数名詞 =「いくつの〜」。"
+   },
+   {
+    "t": "疑問詞",
+    "q": "___ do you like better, cats or dogs?",
+    "c": [
+     "Which",
+     "What",
+     "Who",
+     "How"
+    ],
+    "a": 0,
+    "e": "選択肢から「どちら」を聞くときは Which。"
+   },
+   {
+    "t": "疑問詞",
+    "q": "___ do you go to school? — By bike.",
+    "c": [
+     "How",
+     "What",
+     "When",
+     "Which"
+    ],
+    "a": 0,
+    "e": "手段・方法をたずねるのは How。By bike =「自転車で」。"
+   },
+   {
+    "t": "疑問詞",
+    "q": "___ are you late? — Because I missed the bus.",
+    "c": [
+     "Why",
+     "How",
+     "When",
+     "What"
+    ],
+    "a": 0,
+    "e": "理由をたずねるのは Why。答えは Because 〜。"
+   },
+   {
+    "t": "一般動詞",
+    "q": "We ___ English at school.",
+    "c": [
+     "study",
+     "studies",
+     "studying",
+     "are study"
+    ],
+    "a": 0,
+    "e": "主語が we なので原形 study。"
+   },
+   {
+    "t": "3単現",
+    "q": "The bird ___ very well.",
+    "c": [
+     "sings",
+     "sing",
+     "singing",
+     "sang"
+    ],
+    "a": 0,
+    "e": "the bird は3人称単数なので sings。"
+   },
+   {
+    "t": "否定文",
+    "q": "They ___ play baseball.",
+    "c": [
+     "don't",
+     "doesn't",
+     "aren't",
+     "not"
+    ],
+    "a": 0,
+    "e": "they は複数なので don't。"
+   },
+   {
+    "t": "疑問文",
+    "q": "___ Ken and Yumi walk to school?",
+    "c": [
+     "Do",
+     "Does",
+     "Is",
+     "Are"
+    ],
+    "a": 0,
+    "e": "Ken and Yumi は複数なので Do。"
+   },
+   {
+    "t": "疑問詞",
+    "q": "What ___ does Tom like? — He likes blue.",
+    "c": [
+     "color",
+     "time",
+     "day",
+     "sport"
+    ],
+    "a": 0,
+    "e": "What color =「何色」。答えが blue なので色を聞いています。"
+   },
+   {
+    "t": "一般動詞",
+    "q": "I ___ my homework before dinner.",
+    "c": [
+     "do",
+     "does",
+     "doing",
+     "am"
+    ],
+    "a": 0,
+    "e": "do one's homework =「宿題をする」。主語が I なので do。"
+   },
+   {
+    "t": "3単現",
+    "q": "Mike ___ Japanese every day.",
+    "c": [
+     "practices",
+     "practice",
+     "practicing",
+     "practiced"
+    ],
+    "a": 0,
+    "e": "Mike は3人称単数なので practices。"
+   },
+   {
+    "t": "疑問文",
+    "q": "How many CDs ___ she have?",
+    "c": [
+     "does",
+     "do",
+     "is",
+     "has"
+    ],
+    "a": 0,
+    "e": "How many 〜? でも3人称単数なら does を使います。"
+   }
+  ],
+  "3": [
+   {
+    "t": "複数形",
+    "q": "box の複数形は？",
+    "c": [
+     "boxes",
+     "boxs",
+     "boxies",
+     "box"
+    ],
+    "a": 0,
+    "e": "s, x, ch, sh で終わる語は es をつけます。"
+   },
+   {
+    "t": "複数形",
+    "q": "child の複数形は？",
+    "c": [
+     "children",
+     "childs",
+     "childes",
+     "child"
+    ],
+    "a": 0,
+    "e": "child → children は特別な変化。man→men, foot→feet も。"
+   },
+   {
+    "t": "複数形",
+    "q": "city の複数形は？",
+    "c": [
+     "cities",
+     "citys",
+     "cityes",
+     "city"
+    ],
+    "a": 0,
+    "e": "「子音字+y」は y を i に変えて es。"
+   },
+   {
+    "t": "複数形",
+    "q": "pen の複数形は？",
+    "c": [
+     "pens",
+     "penes",
+     "pennies",
+     "pen"
+    ],
+    "a": 0,
+    "e": "ふつうの名詞は s をつけるだけ。"
+   },
+   {
+    "t": "代名詞",
+    "q": "I know ___.（私は彼を知っています）",
+    "c": [
+     "him",
+     "he",
+     "his",
+     "her"
+    ],
+    "a": 0,
+    "e": "動詞の目的語には目的格。he → him。"
+   },
+   {
+    "t": "代名詞",
+    "q": "This bike is ___.（この自転車は彼女のものです）",
+    "c": [
+     "hers",
+     "her",
+     "she",
+     "herself"
+    ],
+    "a": 0,
+    "e": "「彼女のもの」は hers。"
+   },
+   {
+    "t": "代名詞",
+    "q": "Look at ___.（私たちを見て）",
+    "c": [
+     "us",
+     "we",
+     "our",
+     "ours"
+    ],
+    "a": 0,
+    "e": "we の目的格は us。"
+   },
+   {
+    "t": "代名詞",
+    "q": "These books are ___.（これらの本は彼らのものです）",
+    "c": [
+     "theirs",
+     "their",
+     "them",
+     "they"
+    ],
+    "a": 0,
+    "e": "「彼らのもの」は theirs。their は「彼らの+名詞」。"
+   },
+   {
+    "t": "命令文",
+    "q": "___ quiet, please.",
+    "c": [
+     "Be",
+     "Is",
+     "Are",
+     "Do"
+    ],
+    "a": 0,
+    "e": "命令文は動詞の原形から。be動詞の原形は Be。"
+   },
+   {
+    "t": "命令文",
+    "q": "___ run in the classroom.（走ってはいけません）",
+    "c": [
+     "Don't",
+     "Not",
+     "Isn't",
+     "No"
+    ],
+    "a": 0,
+    "e": "禁止の命令文は Don't + 原形。"
+   },
+   {
+    "t": "命令文",
+    "q": "___ open the window, please.（開けてください）",
+    "c": [
+     "Please",
+     "Do",
+     "Let",
+     "You"
+    ],
+    "a": 0,
+    "e": "please をつけるとていねいな命令文になります。"
+   },
+   {
+    "t": "命令文",
+    "q": "___ play soccer together.（いっしょにしよう）",
+    "c": [
+     "Let's",
+     "Do",
+     "Please",
+     "We"
+    ],
+    "a": 0,
+    "e": "Let's + 原形 =「〜しましょう」。"
+   },
+   {
+    "t": "can",
+    "q": "He ___ swim fast.",
+    "c": [
+     "can",
+     "cans",
+     "is can",
+     "can be"
+    ],
+    "a": 0,
+    "e": "can のあとは原形。3人称単数でも can に s はつきません。"
+   },
+   {
+    "t": "can",
+    "q": "___ I use your pen? — Sure.",
+    "c": [
+     "Can",
+     "Am",
+     "Do",
+     "Are"
+    ],
+    "a": 0,
+    "e": "Can I 〜? =「〜してもいいですか」（許可）。"
+   },
+   {
+    "t": "can",
+    "q": "She ___ play the piano.（弾けません）",
+    "c": [
+     "can't",
+     "don't",
+     "isn't",
+     "not"
+    ],
+    "a": 0,
+    "e": "can の否定は can't (cannot)。"
+   },
+   {
+    "t": "can",
+    "q": "___ you help me? — OK.",
+    "c": [
+     "Can",
+     "Are",
+     "Is",
+     "Am"
+    ],
+    "a": 0,
+    "e": "Can you 〜? =「〜してくれますか」（依頼）。"
+   },
+   {
+    "t": "現在進行形",
+    "q": "She is ___ TV now.",
+    "c": [
+     "watching",
+     "watch",
+     "watches",
+     "watched"
+    ],
+    "a": 0,
+    "e": "現在進行形は「be動詞 + 動詞のing形」。"
+   },
+   {
+    "t": "現在進行形",
+    "q": "I ___ doing my homework now.",
+    "c": [
+     "am",
+     "is",
+     "are",
+     "do"
+    ],
+    "a": 0,
+    "e": "主語が I なので am + ing形。"
+   },
+   {
+    "t": "現在進行形",
+    "q": "___ they playing soccer now? — Yes, they are.",
+    "c": [
+     "Are",
+     "Do",
+     "Is",
+     "Does"
+    ],
+    "a": 0,
+    "e": "進行形の疑問文はbe動詞を先頭に。"
+   },
+   {
+    "t": "現在進行形",
+    "q": "He is ___ in the pool.",
+    "c": [
+     "swimming",
+     "swiming",
+     "swim",
+     "swims"
+    ],
+    "a": 0,
+    "e": "swim は m を重ねて swimming。run → running も同じ。"
+   },
+   {
+    "t": "現在進行形",
+    "q": "We are ___ lunch now.",
+    "c": [
+     "making",
+     "makeing",
+     "make",
+     "makes"
+    ],
+    "a": 0,
+    "e": "e で終わる動詞は e をとって ing。make → making。"
+   },
+   {
+    "t": "現在進行形",
+    "q": "What ___ you doing? — I'm reading.",
+    "c": [
+     "are",
+     "do",
+     "is",
+     "am"
+    ],
+    "a": 0,
+    "e": "What are you doing? =「何をしているの？」。"
+   },
+   {
+    "t": "冠詞",
+    "q": "I have ___ apple.",
+    "c": [
+     "an",
+     "a",
+     "the",
+     "×(なし)"
+    ],
+    "a": 0,
+    "e": "母音の音で始まる語の前は an。an apple, an egg など。"
+   },
+   {
+    "t": "前置詞",
+    "q": "School starts ___ eight thirty.",
+    "c": [
+     "at",
+     "in",
+     "on",
+     "from"
+    ],
+    "a": 0,
+    "e": "時刻の前は at。at eight thirty =「8時半に」。"
+   },
+   {
+    "t": "前置詞",
+    "q": "My birthday is ___ April.",
+    "c": [
+     "in",
+     "at",
+     "on",
+     "of"
+    ],
+    "a": 0,
+    "e": "月・季節・年の前は in。日付なら on。"
+   },
+   {
+    "t": "前置詞",
+    "q": "The cat is ___ the table.（テーブルの下に）",
+    "c": [
+     "under",
+     "on",
+     "in",
+     "at"
+    ],
+    "a": 0,
+    "e": "under =「〜の下に」。on =「〜の上に」。"
+   },
+   {
+    "t": "代名詞",
+    "q": "That is ___ school.（私たちの学校）",
+    "c": [
+     "our",
+     "us",
+     "we",
+     "ours"
+    ],
+    "a": 0,
+    "e": "「私たちの+名詞」は our。"
+   },
+   {
+    "t": "can",
+    "q": "What ___ you cook? — I can cook curry.",
+    "c": [
+     "can",
+     "do",
+     "are",
+     "will"
+    ],
+    "a": 0,
+    "e": "疑問詞のあとに can を続けます。What can you 〜?"
+   },
+   {
+    "t": "現在進行形",
+    "q": "Ken ___ not sleeping now.",
+    "c": [
+     "is",
+     "does",
+     "do",
+     "are"
+    ],
+    "a": 0,
+    "e": "進行形の否定文は be動詞のあとに not。"
+   },
+   {
+    "t": "複数形",
+    "q": "How many ___ do you see?",
+    "c": [
+     "birds",
+     "bird",
+     "birdes",
+     "a bird"
+    ],
+    "a": 0,
+    "e": "How many のあとは必ず複数形。"
+   }
+  ],
+  "4": [
+   {
+    "t": "規則動詞",
+    "q": "play の過去形は？",
+    "c": [
+     "played",
+     "plaied",
+     "playd",
+     "plays"
+    ],
+    "a": 0,
+    "e": "ふつうは ed をつけるだけ。play → played。"
+   },
+   {
+    "t": "規則動詞",
+    "q": "study の過去形は？",
+    "c": [
+     "studied",
+     "studyed",
+     "studed",
+     "studies"
+    ],
+    "a": 0,
+    "e": "「子音字+y」は y を i に変えて ed。"
+   },
+   {
+    "t": "規則動詞",
+    "q": "stop の過去形は？",
+    "c": [
+     "stopped",
+     "stoped",
+     "stopt",
+     "stops"
+    ],
+    "a": 0,
+    "e": "「短母音+子音字」は子音字を重ねて ed。"
+   },
+   {
+    "t": "規則動詞",
+    "q": "use の過去形は？",
+    "c": [
+     "used",
+     "ussed",
+     "uesd",
+     "uses"
+    ],
+    "a": 0,
+    "e": "e で終わる動詞は d をつけるだけ。"
+   },
+   {
+    "t": "規則動詞",
+    "q": "cry の過去形は？",
+    "c": [
+     "cried",
+     "cryed",
+     "cred",
+     "cries"
+    ],
+    "a": 0,
+    "e": "cry → cried。y を i に変えて ed。"
+   },
+   {
+    "t": "規則動詞",
+    "q": "visit の過去形は？",
+    "c": [
+     "visited",
+     "visitted",
+     "visid",
+     "visits"
+    ],
+    "a": 0,
+    "e": "visit はそのまま ed をつけます。"
+   },
+   {
+    "t": "不規則動詞",
+    "q": "go の過去形は？",
+    "c": [
+     "went",
+     "goed",
+     "gone",
+     "goes"
+    ],
+    "a": 0,
+    "e": "go → went → gone。"
+   },
+   {
+    "t": "不規則動詞",
+    "q": "have の過去形は？",
+    "c": [
+     "had",
+     "haved",
+     "has",
+     "haves"
+    ],
+    "a": 0,
+    "e": "have → had → had。"
+   },
+   {
+    "t": "不規則動詞",
+    "q": "see の過去形は？",
+    "c": [
+     "saw",
+     "seed",
+     "seen",
+     "sees"
+    ],
+    "a": 0,
+    "e": "see → saw → seen。"
+   },
+   {
+    "t": "不規則動詞",
+    "q": "make の過去形は？",
+    "c": [
+     "made",
+     "maked",
+     "maden",
+     "makes"
+    ],
+    "a": 0,
+    "e": "make → made → made。"
+   },
+   {
+    "t": "不規則動詞",
+    "q": "come の過去形は？",
+    "c": [
+     "came",
+     "comed",
+     "come",
+     "comes"
+    ],
+    "a": 0,
+    "e": "come → came → come。"
+   },
+   {
+    "t": "不規則動詞",
+    "q": "write の過去形は？",
+    "c": [
+     "wrote",
+     "writed",
+     "written",
+     "writes"
+    ],
+    "a": 0,
+    "e": "write → wrote → written。"
+   },
+   {
+    "t": "不規則動詞",
+    "q": "take の過去形は？",
+    "c": [
+     "took",
+     "taked",
+     "taken",
+     "takes"
+    ],
+    "a": 0,
+    "e": "take → took → taken。"
+   },
+   {
+    "t": "不規則動詞",
+    "q": "eat の過去形は？",
+    "c": [
+     "ate",
+     "eated",
+     "eaten",
+     "eats"
+    ],
+    "a": 0,
+    "e": "eat → ate → eaten。"
+   },
+   {
+    "t": "不規則動詞",
+    "q": "get の過去形は？",
+    "c": [
+     "got",
+     "getted",
+     "gotten",
+     "gets"
+    ],
+    "a": 0,
+    "e": "get → got → got(gotten)。"
+   },
+   {
+    "t": "不規則動詞",
+    "q": "buy の過去形は？",
+    "c": [
+     "bought",
+     "buyed",
+     "brought",
+     "buys"
+    ],
+    "a": 0,
+    "e": "buy → bought。bring → brought と区別！"
+   },
+   {
+    "t": "不規則動詞",
+    "q": "read の過去形は？",
+    "c": [
+     "read（レッドと読む）",
+     "readed",
+     "red",
+     "reads"
+    ],
+    "a": 0,
+    "e": "read はつづりは同じで発音だけ変わります。"
+   },
+   {
+    "t": "不規則動詞",
+    "q": "run の過去形は？",
+    "c": [
+     "ran",
+     "runned",
+     "run",
+     "runs"
+    ],
+    "a": 0,
+    "e": "run → ran → run。"
+   },
+   {
+    "t": "不規則動詞",
+    "q": "speak の過去形は？",
+    "c": [
+     "spoke",
+     "speaked",
+     "spoken",
+     "speaks"
+    ],
+    "a": 0,
+    "e": "speak → spoke → spoken。"
+   },
+   {
+    "t": "不規則動詞",
+    "q": "teach の過去形は？",
+    "c": [
+     "taught",
+     "teached",
+     "tought",
+     "teaches"
+    ],
+    "a": 0,
+    "e": "teach → taught。catch → caught も同じパターン。"
+   },
+   {
+    "t": "不規則動詞",
+    "q": "know の過去形は？",
+    "c": [
+     "knew",
+     "knowed",
+     "known",
+     "knows"
+    ],
+    "a": 0,
+    "e": "know → knew → known。"
+   },
+   {
+    "t": "不規則動詞",
+    "q": "say の過去形は？",
+    "c": [
+     "said",
+     "sayed",
+     "sad",
+     "says"
+    ],
+    "a": 0,
+    "e": "say → said（発音はセッド）。"
+   },
+   {
+    "t": "過去の文",
+    "q": "I ___ to the park yesterday.",
+    "c": [
+     "went",
+     "go",
+     "goed",
+     "gone"
+    ],
+    "a": 0,
+    "e": "yesterday があるので過去形 went。"
+   },
+   {
+    "t": "過去の文",
+    "q": "She ___ me an email two days ago.",
+    "c": [
+     "sent",
+     "send",
+     "sended",
+     "sends"
+    ],
+    "a": 0,
+    "e": "〜ago があるので過去形。send → sent。"
+   },
+   {
+    "t": "過去の否定文",
+    "q": "She ___ eat breakfast this morning.",
+    "c": [
+     "didn't",
+     "doesn't",
+     "don't",
+     "wasn't"
+    ],
+    "a": 0,
+    "e": "過去の否定文は didn't + 原形。"
+   },
+   {
+    "t": "過去の疑問文",
+    "q": "___ you watch the movie last night?",
+    "c": [
+     "Did",
+     "Do",
+     "Were",
+     "Does"
+    ],
+    "a": 0,
+    "e": "過去の疑問文は Did で始めます。"
+   },
+   {
+    "t": "be動詞の過去",
+    "q": "They ___ busy yesterday.",
+    "c": [
+     "were",
+     "was",
+     "are",
+     "been"
+    ],
+    "a": 0,
+    "e": "am/is → was、are → were。"
+   },
+   {
+    "t": "be動詞の過去",
+    "q": "I ___ tired last night.",
+    "c": [
+     "was",
+     "were",
+     "am",
+     "did"
+    ],
+    "a": 0,
+    "e": "I のとき過去形は was。"
+   },
+   {
+    "t": "過去進行形",
+    "q": "He ___ sleeping when I called him.",
+    "c": [
+     "was",
+     "were",
+     "is",
+     "did"
+    ],
+    "a": 0,
+    "e": "過去進行形は was/were + ing形。"
+   },
+   {
+    "t": "過去進行形",
+    "q": "What ___ you doing at eight last night?",
+    "c": [
+     "were",
+     "did",
+     "are",
+     "was"
+    ],
+    "a": 0,
+    "e": "主語 you なので were + ing。"
+   }
+  ],
+  "5": [
+   {
+    "t": "will",
+    "q": "I ___ call you tomorrow.",
+    "c": [
+     "will",
+     "am",
+     "do",
+     "was"
+    ],
+    "a": 0,
+    "e": "will + 原形 =「〜するつもり・〜だろう」（未来）。"
+   },
+   {
+    "t": "will",
+    "q": "It ___ be rainy tomorrow.",
+    "c": [
+     "will",
+     "is",
+     "does",
+     "was"
+    ],
+    "a": 0,
+    "e": "未来の予想は will。will be 〜 =「〜になるだろう」。"
+   },
+   {
+    "t": "will",
+    "q": "___ you open the door? — Sure.",
+    "c": [
+     "Will",
+     "Are",
+     "Do",
+     "Did"
+    ],
+    "a": 0,
+    "e": "Will you 〜? =「〜してくれますか」（依頼）。"
+   },
+   {
+    "t": "will",
+    "q": "She ___ not come to the party.",
+    "c": [
+     "will",
+     "does",
+     "is",
+     "did"
+    ],
+    "a": 0,
+    "e": "will の否定は will not (won't)。"
+   },
+   {
+    "t": "be going to",
+    "q": "I'm ___ to visit Kyoto next week.",
+    "c": [
+     "going",
+     "go",
+     "went",
+     "goes"
+    ],
+    "a": 0,
+    "e": "be going to + 原形 =「〜する予定だ」。"
+   },
+   {
+    "t": "be going to",
+    "q": "___ you going to study tonight?",
+    "c": [
+     "Are",
+     "Do",
+     "Will",
+     "Is"
+    ],
+    "a": 0,
+    "e": "be going to の疑問文はbe動詞を先頭に。"
+   },
+   {
+    "t": "be going to",
+    "q": "He is going to ___ tennis tomorrow.",
+    "c": [
+     "play",
+     "plays",
+     "playing",
+     "played"
+    ],
+    "a": 0,
+    "e": "to のあとは動詞の原形。"
+   },
+   {
+    "t": "must",
+    "q": "You ___ do your homework now.",
+    "c": [
+     "must",
+     "are",
+     "have",
+     "will be"
+    ],
+    "a": 0,
+    "e": "must + 原形 =「〜しなければならない」。"
+   },
+   {
+    "t": "must",
+    "q": "You ___ not swim in this river.（泳いではいけない）",
+    "c": [
+     "must",
+     "have",
+     "do",
+     "are"
+    ],
+    "a": 0,
+    "e": "must not =「〜してはいけない」（禁止）。"
+   },
+   {
+    "t": "have to",
+    "q": "You ___ to do your homework.",
+    "c": [
+     "have",
+     "must",
+     "should",
+     "can"
+    ],
+    "a": 0,
+    "e": "have to + 原形 =「〜しなければならない」。"
+   },
+   {
+    "t": "have to",
+    "q": "She ___ to get up early every day.",
+    "c": [
+     "has",
+     "have",
+     "must",
+     "having"
+    ],
+    "a": 0,
+    "e": "3人称単数は has to。"
+   },
+   {
+    "t": "have to",
+    "q": "A: Must I finish this today?\nB: No, you ___.",
+    "c": [
+     "don't have to",
+     "must not",
+     "can't",
+     "shouldn't"
+    ],
+    "a": 0,
+    "e": "「〜しなくてよい」は don't have to。must not（禁止）と区別！"
+   },
+   {
+    "t": "should",
+    "q": "You ___ go to bed early.（早く寝たほうがいい）",
+    "c": [
+     "should",
+     "must be",
+     "have",
+     "will be"
+    ],
+    "a": 0,
+    "e": "should + 原形 =「〜したほうがよい・〜すべきだ」。"
+   },
+   {
+    "t": "may",
+    "q": "___ I come in? — Yes, of course.",
+    "c": [
+     "May",
+     "Am",
+     "Do",
+     "Was"
+    ],
+    "a": 0,
+    "e": "May I 〜? =「〜してもよろしいですか」（ていねいな許可）。"
+   },
+   {
+    "t": "接続詞",
+    "q": "I was watching TV ___ my mother came home.",
+    "c": [
+     "when",
+     "if",
+     "because",
+     "that"
+    ],
+    "a": 0,
+    "e": "「〜したとき」は when。"
+   },
+   {
+    "t": "接続詞",
+    "q": "___ it rains tomorrow, I will stay home.",
+    "c": [
+     "If",
+     "When",
+     "Because",
+     "That"
+    ],
+    "a": 0,
+    "e": "「もし〜なら」は if。if の文の中は未来のことでも現在形。"
+   },
+   {
+    "t": "接続詞",
+    "q": "I stayed home ___ I was sick.",
+    "c": [
+     "because",
+     "if",
+     "when",
+     "but"
+    ],
+    "a": 0,
+    "e": "理由を表すのは because =「〜なので」。"
+   },
+   {
+    "t": "接続詞",
+    "q": "I think ___ this book is interesting.",
+    "c": [
+     "that",
+     "if",
+     "when",
+     "because"
+    ],
+    "a": 0,
+    "e": "think that 〜 =「〜だと思う」。that は省略可。"
+   },
+   {
+    "t": "接続詞",
+    "q": "___ he is young, he is very smart.",
+    "c": [
+     "Though",
+     "Because",
+     "If",
+     "So"
+    ],
+    "a": 0,
+    "e": "though / although =「〜だけれども」。"
+   },
+   {
+    "t": "There is",
+    "q": "___ many parks in this city.",
+    "c": [
+     "There are",
+     "There is",
+     "It is",
+     "They are"
+    ],
+    "a": 0,
+    "e": "many parks は複数なので There are。"
+   },
+   {
+    "t": "There is",
+    "q": "___ a cat under the chair.",
+    "c": [
+     "There is",
+     "There are",
+     "It is",
+     "This is"
+    ],
+    "a": 0,
+    "e": "a cat は単数なので There is。"
+   },
+   {
+    "t": "There is",
+    "q": "___ a big park near my house ten years ago.",
+    "c": [
+     "There was",
+     "There is",
+     "There were",
+     "It was"
+    ],
+    "a": 0,
+    "e": "過去で単数なので There was。"
+   },
+   {
+    "t": "There is",
+    "q": "___ there any water in the bottle?",
+    "c": [
+     "Is",
+     "Are",
+     "Do",
+     "Does"
+    ],
+    "a": 0,
+    "e": "water は数えられない名詞なので Is there 〜?"
+   },
+   {
+    "t": "未来",
+    "q": "We ___ be high school students next year.",
+    "c": [
+     "will",
+     "are",
+     "were",
+     "do"
+    ],
+    "a": 0,
+    "e": "next year（来年）は未来なので will。"
+   },
+   {
+    "t": "接続詞",
+    "q": "Study hard, ___ you will pass the test.",
+    "c": [
+     "and",
+     "or",
+     "but",
+     "so"
+    ],
+    "a": 0,
+    "e": "命令文, and 〜 =「そうすれば〜」。or なら「さもないと」。"
+   },
+   {
+    "t": "接続詞",
+    "q": "Hurry up, ___ you will be late.",
+    "c": [
+     "or",
+     "and",
+     "but",
+     "because"
+    ],
+    "a": 0,
+    "e": "命令文, or 〜 =「さもないと〜」。"
+   },
+   {
+    "t": "will",
+    "q": "A: The phone is ringing.\nB: OK, I ___ answer it.",
+    "c": [
+     "will",
+     "am going to",
+     "was",
+     "do"
+    ],
+    "a": 0,
+    "e": "その場で決めたことは will。前から決めていた予定は be going to。"
+   },
+   {
+    "t": "must",
+    "q": "He ___ be tired. He worked all day.",
+    "c": [
+     "must",
+     "has",
+     "can't",
+     "don't"
+    ],
+    "a": 0,
+    "e": "must には「〜にちがいない」という推量の意味もあります。"
+   },
+   {
+    "t": "接続詞",
+    "q": "I hope ___ you will like this present.",
+    "c": [
+     "that",
+     "if",
+     "because",
+     "when"
+    ],
+    "a": 0,
+    "e": "hope that 〜 =「〜だといいなと思う」。"
+   },
+   {
+    "t": "be going to",
+    "q": "What ___ you going to do next Sunday?",
+    "c": [
+     "are",
+     "will",
+     "do",
+     "is"
+    ],
+    "a": 0,
+    "e": "疑問詞 + be動詞 + 主語 + going to 〜?の語順。"
+   }
+  ],
+  "6": [
+   {
+    "t": "不定詞",
+    "q": "I want ___ a doctor.",
+    "c": [
+     "to be",
+     "be",
+     "being",
+     "been"
+    ],
+    "a": 0,
+    "e": "want to + 原形 =「〜したい」（名詞的用法）。"
+   },
+   {
+    "t": "不定詞",
+    "q": "I went to the library ___ books.",
+    "c": [
+     "to borrow",
+     "borrow",
+     "borrowing",
+     "borrowed"
+    ],
+    "a": 0,
+    "e": "「〜するために」（副詞的用法・目的）。"
+   },
+   {
+    "t": "不定詞",
+    "q": "I have a lot of homework ___ today.",
+    "c": [
+     "to do",
+     "do",
+     "doing",
+     "did"
+    ],
+    "a": 0,
+    "e": "「すべき宿題」（形容詞的用法）。名詞を後ろから修飾。"
+   },
+   {
+    "t": "不定詞",
+    "q": "I'm glad ___ you.",
+    "c": [
+     "to see",
+     "see",
+     "seeing",
+     "saw"
+    ],
+    "a": 0,
+    "e": "感情の原因を表す不定詞。「会えてうれしい」。"
+   },
+   {
+    "t": "不定詞",
+    "q": "She knows how ___ this computer.",
+    "c": [
+     "to use",
+     "use",
+     "using",
+     "used"
+    ],
+    "a": 0,
+    "e": "how to + 原形 =「〜のしかた」。"
+   },
+   {
+    "t": "不定詞",
+    "q": "I don't know what ___ next.",
+    "c": [
+     "to do",
+     "do",
+     "doing",
+     "did"
+    ],
+    "a": 0,
+    "e": "what to do =「何をすべきか」。"
+   },
+   {
+    "t": "不定詞",
+    "q": "He wants ___ soccer with us.",
+    "c": [
+     "to play",
+     "play",
+     "playing",
+     "played"
+    ],
+    "a": 0,
+    "e": "want to + 原形。to のあとは必ず原形。"
+   },
+   {
+    "t": "不定詞",
+    "q": "Do you have anything ___?（何か飲むもの）",
+    "c": [
+     "to drink",
+     "drink",
+     "drinking",
+     "drank"
+    ],
+    "a": 0,
+    "e": "something/anything to drink =「何か飲むもの」。"
+   },
+   {
+    "t": "不定詞",
+    "q": "I got up early ___ the first train.",
+    "c": [
+     "to catch",
+     "catch",
+     "catching",
+     "caught"
+    ],
+    "a": 0,
+    "e": "「始発に乗るために」— 目的を表す副詞的用法。"
+   },
+   {
+    "t": "動名詞",
+    "q": "He enjoys ___ music.",
+    "c": [
+     "listening to",
+     "to listen",
+     "listen",
+     "listened"
+    ],
+    "a": 0,
+    "e": "enjoy のあとは動名詞（〜ing）。"
+   },
+   {
+    "t": "動名詞",
+    "q": "___ pictures is a lot of fun.",
+    "c": [
+     "Taking",
+     "Take",
+     "Took",
+     "Taken"
+    ],
+    "a": 0,
+    "e": "動名詞が主語。「写真を撮ることは楽しい」。"
+   },
+   {
+    "t": "動名詞",
+    "q": "He stopped ___ TV and started to study.",
+    "c": [
+     "watching",
+     "to watch",
+     "watch",
+     "watched"
+    ],
+    "a": 0,
+    "e": "stop ~ing =「〜するのをやめる」。"
+   },
+   {
+    "t": "動名詞",
+    "q": "She finished ___ her homework.",
+    "c": [
+     "doing",
+     "to do",
+     "do",
+     "did"
+    ],
+    "a": 0,
+    "e": "finish のあとは動名詞。finish ~ing で覚えよう。"
+   },
+   {
+    "t": "動名詞",
+    "q": "My hobby is ___ pictures.",
+    "c": [
+     "drawing",
+     "draw",
+     "drew",
+     "drawn"
+    ],
+    "a": 0,
+    "e": "「私の趣味は絵を描くことです」— 動名詞が補語。"
+   },
+   {
+    "t": "動名詞",
+    "q": "Thank you for ___ me.",
+    "c": [
+     "helping",
+     "to help",
+     "help",
+     "helped"
+    ],
+    "a": 0,
+    "e": "前置詞（for）のあとは動名詞。Thank you for ~ing。"
+   },
+   {
+    "t": "使い分け",
+    "q": "I want ___ a new bike.",
+    "c": [
+     "to buy",
+     "buying",
+     "buy",
+     "bought"
+    ],
+    "a": 0,
+    "e": "want は不定詞のみ。want to buy =「買いたい」。"
+   },
+   {
+    "t": "使い分け",
+    "q": "It began ___ when I left home.",
+    "c": [
+     "to rain",
+     "rain",
+     "rained",
+     "rains"
+    ],
+    "a": 0,
+    "e": "begin は不定詞も動名詞もOK（begin to rain / begin raining）。"
+   },
+   {
+    "t": "SVOO",
+    "q": "My father gave ___ a present.",
+    "c": [
+     "me",
+     "I",
+     "my",
+     "mine"
+    ],
+    "a": 0,
+    "e": "give + 人 + 物。「人」には目的格。"
+   },
+   {
+    "t": "SVOO",
+    "q": "Please show ___ your notebook.",
+    "c": [
+     "me",
+     "I",
+     "my",
+     "to me"
+    ],
+    "a": 0,
+    "e": "show + 人 + 物 =「(人)に(物)を見せる」。"
+   },
+   {
+    "t": "SVOO",
+    "q": "I'll give this book ___ you.",
+    "c": [
+     "to",
+     "for",
+     "at",
+     "with"
+    ],
+    "a": 0,
+    "e": "give + 物 + to + 人 の形。順番を変えると to が必要。"
+   },
+   {
+    "t": "SVOC",
+    "q": "We call him ___.",
+    "c": [
+     "Ken-chan",
+     "to Ken-chan",
+     "as Ken-chan",
+     "for Ken-chan"
+    ],
+    "a": 0,
+    "e": "call + O + C =「OをCと呼ぶ」。前置詞は不要。"
+   },
+   {
+    "t": "SVOC",
+    "q": "The news made me ___.",
+    "c": [
+     "happy",
+     "happily",
+     "to happy",
+     "happiness"
+    ],
+    "a": 0,
+    "e": "make + O + 形容詞 =「Oを〜にする」。"
+   },
+   {
+    "t": "look",
+    "q": "You ___ happy today.（うれしそうだね）",
+    "c": [
+     "look",
+     "see",
+     "watch",
+     "show"
+    ],
+    "a": 0,
+    "e": "look + 形容詞 =「〜に見える」。"
+   },
+   {
+    "t": "look",
+    "q": "That cloud looks ___ a rabbit.",
+    "c": [
+     "like",
+     "as",
+     "at",
+     "for"
+    ],
+    "a": 0,
+    "e": "look like + 名詞 =「〜のように見える」。"
+   },
+   {
+    "t": "不定詞",
+    "q": "It is fun ___ video games.",
+    "c": [
+     "to play",
+     "play",
+     "playing",
+     "played"
+    ],
+    "a": 0,
+    "e": "It is ... to 〜 =「〜することは…だ」。It は仮の主語。"
+   },
+   {
+    "t": "不定詞",
+    "q": "I want him ___ to the party.",
+    "c": [
+     "to come",
+     "come",
+     "coming",
+     "came"
+    ],
+    "a": 0,
+    "e": "want + 人 + to + 原形 =「(人)に〜してほしい」。"
+   },
+   {
+    "t": "動名詞",
+    "q": "How about ___ tennis this afternoon?",
+    "c": [
+     "playing",
+     "to play",
+     "play",
+     "played"
+    ],
+    "a": 0,
+    "e": "How about ~ing? =「〜するのはどう？」。about は前置詞。"
+   },
+   {
+    "t": "動名詞",
+    "q": "She is good at ___ English.",
+    "c": [
+     "speaking",
+     "to speak",
+     "speak",
+     "spoke"
+    ],
+    "a": 0,
+    "e": "be good at ~ing =「〜が得意」。at のあとは動名詞。"
+   },
+   {
+    "t": "SVOO",
+    "q": "Mr. Sato teaches ___ English.",
+    "c": [
+     "us",
+     "we",
+     "our",
+     "to us"
+    ],
+    "a": 0,
+    "e": "teach + 人 + 物。「人」は目的格 us。"
+   },
+   {
+    "t": "不定詞",
+    "q": "Why do you study English? — ___ study abroad.",
+    "c": [
+     "To",
+     "For",
+     "Because",
+     "So"
+    ],
+    "a": 0,
+    "e": "Why に対して To + 原形（〜するため）で答えられます。"
+   }
+  ],
+  "7": [
+   {
+    "t": "比較級",
+    "q": "This bag is ___ than that one.",
+    "c": [
+     "bigger",
+     "big",
+     "biggest",
+     "more big"
+    ],
+    "a": 0,
+    "e": "比較級 + than。big は g を重ねて bigger。"
+   },
+   {
+    "t": "比較級",
+    "q": "Tom is ___ than his brother.",
+    "c": [
+     "taller",
+     "tall",
+     "tallest",
+     "more tall"
+    ],
+    "a": 0,
+    "e": "tall → taller。短い形容詞は er。"
+   },
+   {
+    "t": "比較級",
+    "q": "This book is ___ interesting than that one.",
+    "c": [
+     "more",
+     "most",
+     "much",
+     "many"
+    ],
+    "a": 0,
+    "e": "長い形容詞は more をつけて比較級に。"
+   },
+   {
+    "t": "比較級",
+    "q": "Math is ___ difficult than English for me.",
+    "c": [
+     "more",
+     "most",
+     "much",
+     "very"
+    ],
+    "a": 0,
+    "e": "difficult は長い形容詞なので more difficult。"
+   },
+   {
+    "t": "比較級",
+    "q": "I like summer ___ than winter.",
+    "c": [
+     "better",
+     "more",
+     "much",
+     "well"
+    ],
+    "a": 0,
+    "e": "like A better than B =「BよりAが好き」。"
+   },
+   {
+    "t": "比較級",
+    "q": "early の比較級は？",
+    "c": [
+     "earlier",
+     "earlyer",
+     "more early",
+     "earliest"
+    ],
+    "a": 0,
+    "e": "「子音字+y」は y を i に変えて er。"
+   },
+   {
+    "t": "比較級",
+    "q": "good の比較級は？",
+    "c": [
+     "better",
+     "gooder",
+     "more good",
+     "best"
+    ],
+    "a": 0,
+    "e": "good/well → better → best（不規則変化）。"
+   },
+   {
+    "t": "比較級",
+    "q": "many の比較級は？",
+    "c": [
+     "more",
+     "manier",
+     "much",
+     "most"
+    ],
+    "a": 0,
+    "e": "many/much → more → most（不規則変化）。"
+   },
+   {
+    "t": "最上級",
+    "q": "Mt. Fuji is the ___ mountain in Japan.",
+    "c": [
+     "highest",
+     "higher",
+     "high",
+     "most high"
+    ],
+    "a": 0,
+    "e": "最上級は the + est。"
+   },
+   {
+    "t": "最上級",
+    "q": "This is the ___ beautiful flower of all.",
+    "c": [
+     "most",
+     "more",
+     "much",
+     "best"
+    ],
+    "a": 0,
+    "e": "長い形容詞の最上級は the most 〜。"
+   },
+   {
+    "t": "最上級",
+    "q": "He runs ___ in his class.",
+    "c": [
+     "fastest",
+     "faster",
+     "fast",
+     "most fast"
+    ],
+    "a": 0,
+    "e": "副詞の最上級。the は省略できます。"
+   },
+   {
+    "t": "最上級",
+    "q": "August is the ___ month in Japan.",
+    "c": [
+     "hottest",
+     "hotter",
+     "hot",
+     "most hot"
+    ],
+    "a": 0,
+    "e": "hot は t を重ねて hottest。"
+   },
+   {
+    "t": "最上級",
+    "q": "She is the tallest ___ the three.",
+    "c": [
+     "of",
+     "in",
+     "at",
+     "from"
+    ],
+    "a": 0,
+    "e": "最上級 + of + 複数 / in + 場所・グループ。of the three =「3人の中で」。"
+   },
+   {
+    "t": "最上級",
+    "q": "This is the oldest temple ___ Japan.",
+    "c": [
+     "in",
+     "of",
+     "at",
+     "on"
+    ],
+    "a": 0,
+    "e": "場所・範囲には in。in Japan =「日本で」。"
+   },
+   {
+    "t": "as...as",
+    "q": "This question is as ___ as that one.",
+    "c": [
+     "easy",
+     "easier",
+     "easiest",
+     "more easy"
+    ],
+    "a": 0,
+    "e": "as ... as の間は原級（もとの形）。"
+   },
+   {
+    "t": "as...as",
+    "q": "I can run as ___ as my brother.",
+    "c": [
+     "fast",
+     "faster",
+     "fastest",
+     "more fast"
+    ],
+    "a": 0,
+    "e": "as + 原級 + as =「同じくらい〜」。"
+   },
+   {
+    "t": "as...as",
+    "q": "This bag is not as ___ as mine.",
+    "c": [
+     "heavy",
+     "heavier",
+     "heaviest",
+     "more heavy"
+    ],
+    "a": 0,
+    "e": "not as ... as =「〜ほど…ではない」。"
+   },
+   {
+    "t": "疑問文",
+    "q": "Which is ___, this one or that one?",
+    "c": [
+     "better",
+     "best",
+     "good",
+     "well"
+    ],
+    "a": 0,
+    "e": "2つを比べるので比較級 better。"
+   },
+   {
+    "t": "疑問文",
+    "q": "Who is the ___ in your family?",
+    "c": [
+     "oldest",
+     "older",
+     "old",
+     "most old"
+    ],
+    "a": 0,
+    "e": "「家族でいちばん年上はだれ？」— 最上級。"
+   },
+   {
+    "t": "疑問文",
+    "q": "Which season do you like the ___?",
+    "c": [
+     "best",
+     "better",
+     "most good",
+     "well"
+    ],
+    "a": 0,
+    "e": "like 〜 the best =「〜がいちばん好き」。"
+   },
+   {
+    "t": "比較級",
+    "q": "Your camera is much ___ than mine.",
+    "c": [
+     "better",
+     "best",
+     "good",
+     "well"
+    ],
+    "a": 0,
+    "e": "much は比較級を強めて「ずっと〜」。"
+   },
+   {
+    "t": "比較級",
+    "q": "It is getting ___ and ___.（だんだん暖かく）",
+    "c": [
+     "warmer / warmer",
+     "warm / warm",
+     "warmest / warmest",
+     "more / warm"
+    ],
+    "a": 0,
+    "e": "比較級 and 比較級 =「だんだん〜」。"
+   },
+   {
+    "t": "最上級",
+    "q": "Lake Biwa is ___ lake in Japan.",
+    "c": [
+     "the largest",
+     "largest",
+     "the larger",
+     "larger"
+    ],
+    "a": 0,
+    "e": "最上級には the をつけます。the largest。"
+   },
+   {
+    "t": "比較級",
+    "q": "Which do you like ___, coffee or tea?",
+    "c": [
+     "better",
+     "best",
+     "most",
+     "well"
+    ],
+    "a": 0,
+    "e": "2択の質問は like 〜 better。"
+   },
+   {
+    "t": "as...as",
+    "q": "Please come as soon ___ possible.",
+    "c": [
+     "as",
+     "than",
+     "so",
+     "to"
+    ],
+    "a": 0,
+    "e": "as soon as possible =「できるだけ早く」。入試頻出熟語！"
+   },
+   {
+    "t": "比較級",
+    "q": "He is three years ___ than I.",
+    "c": [
+     "older",
+     "elder",
+     "more old",
+     "oldest"
+    ],
+    "a": 0,
+    "e": "差を表す語（three years）+ 比較級 =「3歳年上」。"
+   },
+   {
+    "t": "最上級",
+    "q": "What is the ___ important thing for you?",
+    "c": [
+     "most",
+     "more",
+     "much",
+     "best"
+    ],
+    "a": 0,
+    "e": "important の最上級は the most important。"
+   },
+   {
+    "t": "比較",
+    "q": "No other student in my class is as ___ as Ken.",
+    "c": [
+     "tall",
+     "taller",
+     "tallest",
+     "more tall"
+    ],
+    "a": 0,
+    "e": "No other ... as 原級 as 〜 =「〜ほど…な人はいない」＝実質最上級。"
+   },
+   {
+    "t": "比較級",
+    "q": "The population of Tokyo is ___ than that of Osaka.",
+    "c": [
+     "larger",
+     "more",
+     "bigger than",
+     "many"
+    ],
+    "a": 0,
+    "e": "人口の大小は large を使います。population is large/larger。"
+   },
+   {
+    "t": "比較",
+    "q": "Time is ___ important than money.",
+    "c": [
+     "more",
+     "most",
+     "much",
+     "many"
+    ],
+    "a": 0,
+    "e": "important の比較級は more important。"
+   }
+  ],
+  "8": [
+   {
+    "t": "受け身",
+    "q": "English is ___ in many countries.",
+    "c": [
+     "spoken",
+     "speak",
+     "speaking",
+     "spoke"
+    ],
+    "a": 0,
+    "e": "受け身は be動詞 + 過去分詞。speak → spoken。"
+   },
+   {
+    "t": "受け身",
+    "q": "This picture was ___ by my father.",
+    "c": [
+     "taken",
+     "take",
+     "took",
+     "taking"
+    ],
+    "a": 0,
+    "e": "take の過去分詞は taken。by 〜 =「〜によって」。"
+   },
+   {
+    "t": "受け身",
+    "q": "These rooms ___ cleaned every day.",
+    "c": [
+     "are",
+     "is",
+     "was",
+     "be"
+    ],
+    "a": 0,
+    "e": "主語が複数・現在なので are + 過去分詞。"
+   },
+   {
+    "t": "受け身",
+    "q": "When ___ this temple built?",
+    "c": [
+     "was",
+     "did",
+     "is",
+     "were"
+    ],
+    "a": 0,
+    "e": "受け身の疑問文。単数・過去なので was。"
+   },
+   {
+    "t": "受け身",
+    "q": "This song is loved ___ many people.",
+    "c": [
+     "by",
+     "of",
+     "from",
+     "with"
+    ],
+    "a": 0,
+    "e": "「〜によって」は by。"
+   },
+   {
+    "t": "受け身",
+    "q": "This letter ___ written by him last month.",
+    "c": [
+     "was",
+     "is",
+     "has",
+     "did"
+    ],
+    "a": 0,
+    "e": "last month があるので過去の受け身。"
+   },
+   {
+    "t": "受け身",
+    "q": "Japanese ___ taught in this school.",
+    "c": [
+     "is",
+     "are",
+     "do",
+     "does"
+    ],
+    "a": 0,
+    "e": "Japanese（日本語）は単数扱いなので is。"
+   },
+   {
+    "t": "受け身",
+    "q": "The window ___ broken by Tom yesterday.",
+    "c": [
+     "was",
+     "is",
+     "did",
+     "has"
+    ],
+    "a": 0,
+    "e": "break → broke → broken。過去の受け身は was + 過去分詞。"
+   },
+   {
+    "t": "受け身",
+    "q": "Stars can ___ seen from here at night.",
+    "c": [
+     "be",
+     "are",
+     "is",
+     "been"
+    ],
+    "a": 0,
+    "e": "助動詞 + be + 過去分詞。can be seen =「見られる」。"
+   },
+   {
+    "t": "受け身",
+    "q": "This desk is made ___ wood.",
+    "c": [
+     "of",
+     "by",
+     "from",
+     "in"
+    ],
+    "a": 0,
+    "e": "be made of + 材料（見てわかる）。be made from は原料。"
+   },
+   {
+    "t": "現在完了",
+    "q": "I have ___ in Tokyo for ten years.",
+    "c": [
+     "lived",
+     "live",
+     "living",
+     "lives"
+    ],
+    "a": 0,
+    "e": "現在完了（継続）は have + 過去分詞。for =「〜の間」。"
+   },
+   {
+    "t": "現在完了",
+    "q": "___ you ever been to Kyoto?",
+    "c": [
+     "Have",
+     "Did",
+     "Do",
+     "Are"
+    ],
+    "a": 0,
+    "e": "Have you ever + 過去分詞? =「〜したことある？」（経験）。"
+   },
+   {
+    "t": "現在完了",
+    "q": "She has ___ finished her homework.",
+    "c": [
+     "already",
+     "yet",
+     "ago",
+     "before"
+    ],
+    "a": 0,
+    "e": "肯定文の「もう」は already。"
+   },
+   {
+    "t": "現在完了",
+    "q": "I have just ___ lunch.",
+    "c": [
+     "eaten",
+     "ate",
+     "eat",
+     "eating"
+    ],
+    "a": 0,
+    "e": "just =「ちょうど」。eat の過去分詞は eaten。"
+   },
+   {
+    "t": "現在完了",
+    "q": "He has ___ to America twice.",
+    "c": [
+     "been",
+     "gone",
+     "go",
+     "went"
+    ],
+    "a": 0,
+    "e": "have been to =「行ったことがある」。have gone to =「行ってしまった」。"
+   },
+   {
+    "t": "現在完了",
+    "q": "Have you finished your homework ___?",
+    "c": [
+     "yet",
+     "already",
+     "just",
+     "ago"
+    ],
+    "a": 0,
+    "e": "疑問文の「もう〜？」は文末に yet。"
+   },
+   {
+    "t": "現在完了",
+    "q": "I have ___ seen this movie.（一度も見たことがない）",
+    "c": [
+     "never",
+     "ever",
+     "just",
+     "already"
+    ],
+    "a": 0,
+    "e": "never =「一度も〜ない」。"
+   },
+   {
+    "t": "現在完了",
+    "q": "He has been sick ___ last week.",
+    "c": [
+     "since",
+     "for",
+     "from",
+     "before"
+    ],
+    "a": 0,
+    "e": "since + 起点、for + 期間。"
+   },
+   {
+    "t": "現在完了",
+    "q": "How long ___ you lived in this town?",
+    "c": [
+     "have",
+     "did",
+     "do",
+     "are"
+    ],
+    "a": 0,
+    "e": "期間をたずねる現在完了。How long have you 〜?"
+   },
+   {
+    "t": "現在完了",
+    "q": "I ___ my key. I can't open the door.",
+    "c": [
+     "have lost",
+     "lost",
+     "lose",
+     "was lost"
+    ],
+    "a": 0,
+    "e": "「なくして今もない」→ 現在完了（結果）。"
+   },
+   {
+    "t": "現在完了",
+    "q": "She hasn't come home ___.",
+    "c": [
+     "yet",
+     "already",
+     "just",
+     "never"
+    ],
+    "a": 0,
+    "e": "否定文の yet =「まだ（〜ない）」。"
+   },
+   {
+    "t": "現在完了",
+    "q": "How many times ___ you visited Okinawa?",
+    "c": [
+     "have",
+     "did",
+     "do",
+     "were"
+    ],
+    "a": 0,
+    "e": "回数をたずねる経験の現在完了。How many times have you 〜?"
+   },
+   {
+    "t": "現在完了進行形",
+    "q": "It has been ___ since this morning.",
+    "c": [
+     "raining",
+     "rain",
+     "rained",
+     "rains"
+    ],
+    "a": 0,
+    "e": "have/has been ~ing =「ずっと〜し続けている」。"
+   },
+   {
+    "t": "現在完了進行形",
+    "q": "They ___ been playing soccer for two hours.",
+    "c": [
+     "have",
+     "has",
+     "are",
+     "were"
+    ],
+    "a": 0,
+    "e": "they なので have been ~ing。"
+   },
+   {
+    "t": "受け身",
+    "q": "What language ___ spoken in Australia?",
+    "c": [
+     "is",
+     "does",
+     "do",
+     "are"
+    ],
+    "a": 0,
+    "e": "疑問詞が主語部分の受け身。What language is spoken 〜?"
+   },
+   {
+    "t": "受け身",
+    "q": "The room was not ___ yesterday.",
+    "c": [
+     "cleaned",
+     "clean",
+     "cleaning",
+     "cleans"
+    ],
+    "a": 0,
+    "e": "受け身の否定は be動詞 + not + 過去分詞。"
+   },
+   {
+    "t": "現在完了",
+    "q": "We have known each other ___ ten years.",
+    "c": [
+     "for",
+     "since",
+     "from",
+     "in"
+    ],
+    "a": 0,
+    "e": "期間（ten years）には for。"
+   },
+   {
+    "t": "現在完了",
+    "q": "My brother has ___ the book before.",
+    "c": [
+     "read",
+     "reads",
+     "reading",
+     "red"
+    ],
+    "a": 0,
+    "e": "read の過去分詞は read（同じつづり）。before =「以前に」。"
+   },
+   {
+    "t": "受け身",
+    "q": "I was surprised ___ the news.",
+    "c": [
+     "at",
+     "of",
+     "with",
+     "on"
+    ],
+    "a": 0,
+    "e": "be surprised at 〜 =「〜に驚く」。熟語として覚えよう。"
+   },
+   {
+    "t": "受け身",
+    "q": "Mt. Fuji is covered ___ snow in winter.",
+    "c": [
+     "with",
+     "by",
+     "of",
+     "at"
+    ],
+    "a": 0,
+    "e": "be covered with 〜 =「〜でおおわれている」。"
+   }
+  ],
+  "9": [
+   {
+    "t": "関係代名詞",
+    "q": "I have a friend ___ lives in Osaka.",
+    "c": [
+     "who",
+     "which",
+     "whose",
+     "whom"
+    ],
+    "a": 0,
+    "e": "先行詞が「人」で主格 → who（that も可）。"
+   },
+   {
+    "t": "関係代名詞",
+    "q": "This is the book ___ I bought yesterday.",
+    "c": [
+     "which",
+     "who",
+     "whose",
+     "what"
+    ],
+    "a": 0,
+    "e": "先行詞が「物」→ which / that。目的格は省略も可。"
+   },
+   {
+    "t": "関係代名詞",
+    "q": "The dog ___ is running over there is mine.",
+    "c": [
+     "that",
+     "who",
+     "whose",
+     "what"
+    ],
+    "a": 0,
+    "e": "先行詞が動物・物で主格 → that / which。"
+   },
+   {
+    "t": "関係代名詞",
+    "q": "She is a singer ___ everyone knows.",
+    "c": [
+     "that",
+     "what",
+     "whose",
+     "when"
+    ],
+    "a": 0,
+    "e": "目的格。先行詞が人でも that は使えます。"
+   },
+   {
+    "t": "関係代名詞",
+    "q": "I want a robot ___ can clean my room.",
+    "c": [
+     "which",
+     "who",
+     "whose",
+     "whom"
+    ],
+    "a": 0,
+    "e": "先行詞が物で主格 → which / that。"
+   },
+   {
+    "t": "関係代名詞",
+    "q": "The man ___ is standing there is my uncle.",
+    "c": [
+     "who",
+     "which",
+     "whose",
+     "what"
+    ],
+    "a": 0,
+    "e": "先行詞が人で主格 → who。"
+   },
+   {
+    "t": "関係代名詞",
+    "q": "This is a picture ___ was taken in Hokkaido.",
+    "c": [
+     "which",
+     "who",
+     "whose",
+     "whom"
+    ],
+    "a": 0,
+    "e": "先行詞が物で主格 → which。"
+   },
+   {
+    "t": "関係代名詞",
+    "q": "The cake ___ she made was delicious.",
+    "c": [
+     "that",
+     "who",
+     "whose",
+     "when"
+    ],
+    "a": 0,
+    "e": "先行詞が物で目的格 → that / which（省略可）。"
+   },
+   {
+    "t": "分詞",
+    "q": "The boy ___ over there is my brother.",
+    "c": [
+     "running",
+     "run",
+     "ran",
+     "runs"
+    ],
+    "a": 0,
+    "e": "「走っている少年」— 現在分詞の後置修飾。"
+   },
+   {
+    "t": "分詞",
+    "q": "This is a watch ___ in Japan.",
+    "c": [
+     "made",
+     "making",
+     "make",
+     "makes"
+    ],
+    "a": 0,
+    "e": "「日本で作られた時計」— 過去分詞の後置修飾。"
+   },
+   {
+    "t": "分詞",
+    "q": "Do you know the girl ___ by the window?",
+    "c": [
+     "standing",
+     "stood",
+     "stands",
+     "stand"
+    ],
+    "a": 0,
+    "e": "「立っている少女」— 現在分詞。"
+   },
+   {
+    "t": "分詞",
+    "q": "I read a novel ___ by Natsume Soseki.",
+    "c": [
+     "written",
+     "writing",
+     "wrote",
+     "writes"
+    ],
+    "a": 0,
+    "e": "「書かれた小説」— 過去分詞。"
+   },
+   {
+    "t": "分詞",
+    "q": "Look at that ___ baby.（眠っている赤ちゃん）",
+    "c": [
+     "sleeping",
+     "slept",
+     "sleep",
+     "sleeps"
+    ],
+    "a": 0,
+    "e": "1語なら名詞の前に。sleeping baby =「眠っている赤ちゃん」。"
+   },
+   {
+    "t": "分詞",
+    "q": "This is a car ___ in Germany.",
+    "c": [
+     "made",
+     "making",
+     "makes",
+     "make"
+    ],
+    "a": 0,
+    "e": "「ドイツで作られた車」— 過去分詞 made。"
+   },
+   {
+    "t": "間接疑問",
+    "q": "I don't know where ___.",
+    "c": [
+     "he lives",
+     "does he live",
+     "lives he",
+     "he does live"
+    ],
+    "a": 0,
+    "e": "間接疑問文は「疑問詞 + 主語 + 動詞」の語順。"
+   },
+   {
+    "t": "間接疑問",
+    "q": "Do you know what time ___?",
+    "c": [
+     "it is",
+     "is it",
+     "it does",
+     "does it"
+    ],
+    "a": 0,
+    "e": "What time is it? が文中に入ると what time it is。"
+   },
+   {
+    "t": "間接疑問",
+    "q": "I wonder ___ she will come to the party.",
+    "c": [
+     "if",
+     "what",
+     "who",
+     "which"
+    ],
+    "a": 0,
+    "e": "疑問詞がないときは if / whether =「〜かどうか」。"
+   },
+   {
+    "t": "間接疑問",
+    "q": "Please tell me when ___.",
+    "c": [
+     "the train leaves",
+     "does the train leave",
+     "leaves the train",
+     "the train does leave"
+    ],
+    "a": 0,
+    "e": "疑問詞のあとは肯定文の語順。"
+   },
+   {
+    "t": "間接疑問",
+    "q": "Do you know who ___ this cake?",
+    "c": [
+     "made",
+     "did make",
+     "does made",
+     "making"
+    ],
+    "a": 0,
+    "e": "疑問詞が主語のときはそのまま「疑問詞+動詞」。"
+   },
+   {
+    "t": "関係代名詞",
+    "q": "Kyoto is a city ___ has many old temples.",
+    "c": [
+     "which",
+     "who",
+     "whose",
+     "whom"
+    ],
+    "a": 0,
+    "e": "先行詞が場所（物）で主格 → which / that。"
+   },
+   {
+    "t": "関係代名詞",
+    "q": "He is the only student ___ can solve this problem.",
+    "c": [
+     "that",
+     "which",
+     "whose",
+     "what"
+    ],
+    "a": 0,
+    "e": "先行詞に only・最上級などがつくと that が好まれます。"
+   },
+   {
+    "t": "分詞",
+    "q": "The language ___ in Brazil is Portuguese.",
+    "c": [
+     "spoken",
+     "speaking",
+     "spoke",
+     "speaks"
+    ],
+    "a": 0,
+    "e": "「ブラジルで話されている言語」— 過去分詞 spoken。"
+   },
+   {
+    "t": "分詞",
+    "q": "Who is the boy ___ with your sister?",
+    "c": [
+     "talking",
+     "talked",
+     "talks",
+     "talk"
+    ],
+    "a": 0,
+    "e": "「話している少年」— 現在分詞 talking。"
+   },
+   {
+    "t": "間接疑問",
+    "q": "I don't know why ___ angry.",
+    "c": [
+     "she is",
+     "is she",
+     "does she",
+     "she does"
+    ],
+    "a": 0,
+    "e": "why のあとも「主語+動詞」の語順。"
+   },
+   {
+    "t": "関係代名詞",
+    "q": "The book ___ on the desk is mine.",
+    "c": [
+     "which is",
+     "who is",
+     "whose",
+     "what is"
+    ],
+    "a": 0,
+    "e": "The book which is on the desk =「机の上にある本」。"
+   },
+   {
+    "t": "分詞",
+    "q": "There are many students ___ in the library.",
+    "c": [
+     "studying",
+     "studied",
+     "study",
+     "studies"
+    ],
+    "a": 0,
+    "e": "「勉強している生徒たち」— 現在分詞。"
+   },
+   {
+    "t": "間接疑問",
+    "q": "Can you tell me how ___ to the station?",
+    "c": [
+     "to get",
+     "get",
+     "getting",
+     "got"
+    ],
+    "a": 0,
+    "e": "how to get to 〜 =「〜への行き方」。"
+   },
+   {
+    "t": "関係代名詞",
+    "q": "This is the house ___ my grandfather built.",
+    "c": [
+     "that",
+     "who",
+     "whose",
+     "when"
+    ],
+    "a": 0,
+    "e": "目的格の that（省略可）。「祖父が建てた家」。"
+   },
+   {
+    "t": "分詞",
+    "q": "The girl ___ a red dress is Aya.（着ている）",
+    "c": [
+     "wearing",
+     "worn",
+     "wears",
+     "wear"
+    ],
+    "a": 0,
+    "e": "「赤い服を着ている少女」— 現在分詞 wearing。"
+   },
+   {
+    "t": "関係代名詞",
+    "q": "I met a woman ___ speaks five languages.",
+    "c": [
+     "who",
+     "which",
+     "whose",
+     "whom"
+    ],
+    "a": 0,
+    "e": "先行詞が人で主格 → who。"
+   }
+  ],
+  "10": [
+   {
+    "t": "並べかえ",
+    "q": "「私は彼が正直だと思います」\nI ( ① think ② is ③ he ④ that ) honest.",
+    "c": [
+     "①④③②",
+     "①③④②",
+     "④①③②",
+     "①②③④"
+    ],
+    "a": 0,
+    "e": "I think that he is honest."
+   },
+   {
+    "t": "並べかえ",
+    "q": "「彼女は私に窓を開けるように頼んだ」\nShe ( ① me ② open ③ asked ④ to ) the window.",
+    "c": [
+     "③①④②",
+     "①③④②",
+     "③④①②",
+     "④③①②"
+    ],
+    "a": 0,
+    "e": "She asked me to open the window. — ask + 人 + to + 原形。"
+   },
+   {
+    "t": "並べかえ",
+    "q": "「あなたは何のスポーツがいちばん好きですか」\n( ① sport ② what ③ you ④ do ) like the best?",
+    "c": [
+     "②①④③",
+     "②④③①",
+     "④②①③",
+     "②③④①"
+    ],
+    "a": 0,
+    "e": "What sport do you like the best?"
+   },
+   {
+    "t": "並べかえ",
+    "q": "「今までに見た中でいちばん美しい景色です」\nThis is ( ① view ② the most beautiful ③ I have ④ that ) ever seen.",
+    "c": [
+     "②①④③",
+     "①②④③",
+     "②④①③",
+     "④②①③"
+    ],
+    "a": 0,
+    "e": "This is the most beautiful view that I have ever seen."
+   },
+   {
+    "t": "並べかえ",
+    "q": "「駅への道を教えていただけますか」\nCould you ( ① me ② the way ③ tell ④ to ) the station?",
+    "c": [
+     "③①②④",
+     "③②①④",
+     "①③②④",
+     "③④①②"
+    ],
+    "a": 0,
+    "e": "Could you tell me the way to the station?"
+   },
+   {
+    "t": "並べかえ",
+    "q": "「彼がいつ来るか知っていますか」\nDo you ( ① he ② when ③ know ④ will ) come?",
+    "c": [
+     "③②①④",
+     "②③①④",
+     "③①②④",
+     "③②④①"
+    ],
+    "a": 0,
+    "e": "Do you know when he will come? — 間接疑問の語順。"
+   },
+   {
+    "t": "仮定法",
+    "q": "If I ___ rich, I could buy that car.",
+    "c": [
+     "were",
+     "am",
+     "will be",
+     "have been"
+    ],
+    "a": 0,
+    "e": "仮定法過去：If + 主語 + were で現実とちがう仮定。"
+   },
+   {
+    "t": "仮定法",
+    "q": "I wish I ___ speak French.",
+    "c": [
+     "could",
+     "can",
+     "will",
+     "would be"
+    ],
+    "a": 0,
+    "e": "I wish + 過去形 =「〜だったらいいのに」。"
+   },
+   {
+    "t": "仮定法",
+    "q": "If it ___ sunny, we could go on a picnic.",
+    "c": [
+     "were",
+     "is",
+     "will be",
+     "was been"
+    ],
+    "a": 0,
+    "e": "仮定法過去。現実は晴れていない、という仮定。"
+   },
+   {
+    "t": "tell+人+to",
+    "q": "The teacher told us ___ quiet.",
+    "c": [
+     "to be",
+     "be",
+     "being",
+     "been"
+    ],
+    "a": 0,
+    "e": "tell + 人 + to + 原形 =「〜するように言う」。"
+   },
+   {
+    "t": "it...to",
+    "q": "It is important ___ us to study English.",
+    "c": [
+     "for",
+     "of",
+     "to",
+     "with"
+    ],
+    "a": 0,
+    "e": "It is ... for 人 to 〜。"
+   },
+   {
+    "t": "熟語",
+    "q": "I'm looking forward ___ you again.",
+    "c": [
+     "to seeing",
+     "to see",
+     "seeing",
+     "for seeing"
+    ],
+    "a": 0,
+    "e": "look forward to ~ing。to は前置詞。入試頻出！"
+   },
+   {
+    "t": "熟語",
+    "q": "She takes ___ of her little brother.",
+    "c": [
+     "care",
+     "careful",
+     "caring",
+     "cares"
+    ],
+    "a": 0,
+    "e": "take care of 〜 =「〜の世話をする」。"
+   },
+   {
+    "t": "熟語",
+    "q": "Please help me ___ my homework.",
+    "c": [
+     "with",
+     "for",
+     "to",
+     "of"
+    ],
+    "a": 0,
+    "e": "help + 人 + with + 物事。"
+   },
+   {
+    "t": "熟語",
+    "q": "He is good ___ playing the guitar.",
+    "c": [
+     "at",
+     "in",
+     "for",
+     "with"
+    ],
+    "a": 0,
+    "e": "be good at ~ing =「〜が得意」。"
+   },
+   {
+    "t": "熟語",
+    "q": "I couldn't go out ___ the heavy rain.",
+    "c": [
+     "because of",
+     "because",
+     "so",
+     "but"
+    ],
+    "a": 0,
+    "e": "because of + 名詞。because のあとは文。"
+   },
+   {
+    "t": "熟語",
+    "q": "She is proud ___ her son.",
+    "c": [
+     "of",
+     "at",
+     "with",
+     "for"
+    ],
+    "a": 0,
+    "e": "be proud of 〜 =「〜を誇りに思う」。"
+   },
+   {
+    "t": "熟語",
+    "q": "I agree ___ you.",
+    "c": [
+     "with",
+     "to",
+     "at",
+     "for"
+    ],
+    "a": 0,
+    "e": "agree with 〜 =「〜に賛成する」。"
+   },
+   {
+    "t": "長文読解",
+    "q": "次の英文の内容に合うものは？\n\"Ken gets up at six every day. He runs in the park before breakfast. He never takes a bus to school.\"",
+    "c": [
+     "ケンは朝食前に走る",
+     "ケンはバスで通学する",
+     "ケンは7時に起きる",
+     "ケンは夕方に走る"
+    ],
+    "a": 0,
+    "e": "before breakfast =「朝食前に」。never =「決して〜ない」。"
+   },
+   {
+    "t": "長文読解",
+    "q": "次の英文の内容に合うものは？\n\"Yuki wants to be a nurse. Her mother works at a hospital. Yuki visits the hospital every summer to help her.\"",
+    "c": [
+     "ユキは毎年夏に病院を訪れる",
+     "ユキの母は学校で働いている",
+     "ユキは医者になりたい",
+     "ユキは病院で働いている"
+    ],
+    "a": 0,
+    "e": "visits the hospital every summer =「毎年夏に病院を訪れる」。"
+   },
+   {
+    "t": "長文読解",
+    "q": "次の英文の内容に合うものは？\n\"Mike came to Japan three years ago. At first he couldn't eat sushi, but now it is his favorite food.\"",
+    "c": [
+     "マイクは今では寿司が大好物だ",
+     "マイクは日本に来て5年になる",
+     "マイクはずっと寿司が好きだった",
+     "マイクは寿司が食べられない"
+    ],
+    "a": 0,
+    "e": "At first =「最初は」、but now =「でも今は」。変化を読み取ろう。"
+   },
+   {
+    "t": "会話表現",
+    "q": "A: Thank you for helping me.\nB: ___",
+    "c": [
+     "You're welcome.",
+     "Yes, please.",
+     "That's too bad.",
+     "Here you are."
+    ],
+    "a": 0,
+    "e": "お礼への返事は You're welcome."
+   },
+   {
+    "t": "会話表現",
+    "q": "A: ___ I carry your bag?\nB: Thank you. It's very heavy.",
+    "c": [
+     "Shall",
+     "Will",
+     "Must",
+     "Would"
+    ],
+    "a": 0,
+    "e": "Shall I 〜? =「〜しましょうか」（申し出）。"
+   },
+   {
+    "t": "会話表現",
+    "q": "A: Would you like some more tea?\nB: ___",
+    "c": [
+     "Yes, please.",
+     "You're welcome.",
+     "Never mind.",
+     "That's all."
+    ],
+    "a": 0,
+    "e": "Would you like 〜? のすすめには Yes, please. / No, thank you."
+   },
+   {
+    "t": "会話表現",
+    "q": "A: I have a headache.\nB: ___",
+    "c": [
+     "That's too bad.",
+     "Good job.",
+     "You're welcome.",
+     "Me neither."
+    ],
+    "a": 0,
+    "e": "That's too bad. =「それはいけませんね」。相手を気づかう表現。"
+   },
+   {
+    "t": "適語補充",
+    "q": "A: Must I finish this today?\nB: No, you ___. You can do it tomorrow.",
+    "c": [
+     "don't have to",
+     "must not",
+     "can't",
+     "shouldn't"
+    ],
+    "a": 0,
+    "e": "「しなくてよい」は don't have to。must not（禁止）と区別！"
+   },
+   {
+    "t": "間接疑問",
+    "q": "I don't know where ___ from.",
+    "c": [
+     "she comes",
+     "does she come",
+     "comes she",
+     "she does come"
+    ],
+    "a": 0,
+    "e": "間接疑問は肯定文の語順。where she comes from。"
+   },
+   {
+    "t": "関係代名詞",
+    "q": "Is there anything ___ I can do for you?",
+    "c": [
+     "that",
+     "who",
+     "what",
+     "whose"
+    ],
+    "a": 0,
+    "e": "先行詞が anything のときは that。「何かできることはありますか」。"
+   },
+   {
+    "t": "熟語",
+    "q": "We had to give ___ the game because of the rain.",
+    "c": [
+     "up",
+     "in",
+     "out",
+     "away"
+    ],
+    "a": 0,
+    "e": "give up =「あきらめる・中止する」。"
+   },
+   {
+    "t": "仮定法",
+    "q": "If I ___ you, I would say sorry to her.",
+    "c": [
+     "were",
+     "am",
+     "was being",
+     "will be"
+    ],
+    "a": 0,
+    "e": "If I were you =「もし私があなたなら」。アドバイスの定番表現。"
+   }
+  ]
+ }
+};
