@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#4a6cf7">
+<title>中学5教科マスター</title>
+<style>
+  :root{
+    --primary:#4a6cf7; --primary-dark:#3451c6;
+    --bg:#f4f6fb; --card:#ffffff; --text:#22283a; --sub:#6b7280;
+    --correct:#16a34a; --wrong:#dc2626;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+  .app{max-width:480px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;}
+  header{background:linear-gradient(135deg,var(--primary),#7c3aed);color:#fff;padding:18px 20px;border-radius:0 0 20px 20px;}
+  header h1{font-size:1.25rem;}
+  header p{font-size:.8rem;opacity:.85;margin-top:2px;}
+  main{flex:1;padding:16px;}
+  .screen{display:none;}
+  .screen.active{display:block;animation:fade .25s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  .subject-card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,.06);display:flex;align-items:center;gap:14px;cursor:pointer;transition:.15s;}
+  .subject-card:active{transform:scale(.98);}
+  .subject-card.soon{opacity:.55;}
+  .subject-icon{width:52px;height:52px;border-radius:15px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:bold;font-size:1.35rem;flex-shrink:0;}
+  .subject-card h2{font-size:1.05rem;}
+  .subject-card p{font-size:.75rem;color:var(--sub);margin-top:3px;}
+  .subject-card .arrow{margin-left:auto;color:var(--sub);font-size:1.1rem;flex-shrink:0;}
+  .soon-tag{margin-left:auto;font-size:.68rem;color:var(--sub);background:#f1f3f7;padding:4px 9px;border-radius:9px;flex-shrink:0;}
+
+  .back-btn{background:none;border:none;color:var(--primary);font-size:.85rem;padding:6px 2px;margin-bottom:6px;cursor:pointer;font-weight:bold;}
+
+  .grade-label{font-size:.78rem;font-weight:bold;color:var(--sub);margin:14px 4px 8px;}
+  .grade-label:first-child{margin-top:0;}
+  .level-card{background:var(--card);border-radius:16px;padding:13px 14px;margin-bottom:10px;box-shadow:0 2px 8px rgba(0,0,0,.06);display:flex;align-items:center;gap:12px;cursor:pointer;transition:.15s;}
+  .level-card:active{transform:scale(.98);}
+  .level-badge{width:46px;height:46px;border-radius:13px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:bold;font-size:.9rem;flex-shrink:0;}
+  .level-card h2{font-size:.92rem;}
+  .level-card p{font-size:.73rem;color:var(--sub);margin-top:2px;line-height:1.4;}
+  .best{margin-left:auto;text-align:right;font-size:.65rem;color:var(--sub);flex-shrink:0;}
+  .best b{display:block;font-size:.95rem;color:var(--primary);}
+
+  .quiz-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:.85rem;color:var(--sub);}
+  .quit-btn{background:none;border:none;color:var(--sub);font-size:.85rem;padding:6px;cursor:pointer;}
+  .progress{height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden;margin-bottom:16px;}
+  .progress div{height:100%;background:var(--primary);border-radius:4px;transition:width .3s;}
+
+  .q-card{background:var(--card);border-radius:16px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:16px;}
+  .q-type{display:inline-block;font-size:.7rem;background:#eef2ff;color:var(--primary);padding:3px 10px;border-radius:10px;margin-bottom:10px;}
+  .q-text{font-size:1.05rem;line-height:1.6;white-space:pre-wrap;}
+  .q-text .blank{color:var(--primary);font-weight:bold;}
+  .q-fig{margin:14px 0 2px;text-align:center;}
+  .q-fig svg{width:100%;max-width:320px;height:auto;max-height:230px;}
+
+  .choices button{display:block;width:100%;background:var(--card);border:2px solid #e5e7eb;border-radius:14px;padding:14px 16px;font-size:1rem;text-align:left;margin-bottom:10px;cursor:pointer;transition:.15s;color:var(--text);line-height:1.5;}
+  .choices button:active{transform:scale(.98);}
+  .choices button.correct{border-color:var(--correct);background:#f0fdf4;color:var(--correct);font-weight:bold;}
+  .choices button.wrong{border-color:var(--wrong);background:#fef2f2;color:var(--wrong);}
+  .choices button:disabled{cursor:default;}
+
+  .feedback{border-radius:14px;padding:14px 16px;margin-bottom:14px;font-size:.9rem;line-height:1.6;display:none;}
+  .feedback.show{display:block;animation:fade .2s;}
+  .feedback.ok{background:#f0fdf4;border:1px solid #bbf7d0;}
+  .feedback.ng{background:#fef2f2;border:1px solid #fecaca;}
+  .feedback .fb-title{font-weight:bold;margin-bottom:4px;}
+  .feedback.ok .fb-title{color:var(--correct);}
+  .feedback.ng .fb-title{color:var(--wrong);}
+
+  .btn{display:block;width:100%;background:var(--primary);color:#fff;border:none;border-radius:14px;padding:15px;font-size:1rem;font-weight:bold;cursor:pointer;transition:.15s;}
+  .btn:active{transform:scale(.98);background:var(--primary-dark);}
+  .btn.ghost{background:#e5e7eb;color:var(--text);margin-top:10px;}
+
+  .result-card{background:var(--card);border-radius:20px;padding:30px 20px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:16px;}
+  .result-emoji{font-size:3rem;}
+  .result-score{font-size:2.4rem;font-weight:bold;color:var(--primary);margin:10px 0 4px;}
+  .result-msg{color:var(--sub);font-size:.9rem;line-height:1.6;}
+  .review-list{margin-top:16px;text-align:left;}
+  .review-item{background:var(--card);border-radius:12px;padding:12px 14px;margin-bottom:8px;font-size:.82rem;line-height:1.5;box-shadow:0 1px 4px rgba(0,0,0,.05);}
+  .review-item .ri-q{color:var(--sub);white-space:pre-wrap;}
+  .review-item .ri-a{color:var(--correct);font-weight:bold;}
+
+  footer{text-align:center;padding:14px;font-size:.7rem;color:var(--sub);}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1 id="head-title">📚 中学5教科マスター</h1>
+    <p id="head-sub">教科を選んでスタート！</p>
+  </header>
+  <main>
+    <section id="screen-subjects" class="screen active"></section>
+
+    <section id="screen-home" class="screen">
+      <button class="back-btn" onclick="goSubjects()">← 教科をえらぶ</button>
+      <div id="level-list"></div>
+    </section>
+
+    <section id="screen-quiz" class="screen">
+      <div class="quiz-top">
+        <span id="quiz-counter">1 / 30</span>
+        <span id="quiz-score">スコア: 0</span>
+        <button class="quit-btn" onclick="goHome()">✕ やめる</button>
+      </div>
+      <div class="progress"><div id="quiz-bar" style="width:0%"></div></div>
+      <div class="q-card">
+        <span class="q-type" id="q-type"></span>
+        <div class="q-text" id="q-text"></div>
+        <div class="q-fig" id="q-fig" style="display:none"></div>
+      </div>
+      <div class="choices" id="choices"></div>
+      <div class="feedback" id="feedback">
+        <div class="fb-title" id="fb-title"></div>
+        <div id="fb-body"></div>
+      </div>
+      <button class="btn" id="next-btn" style="display:none" onclick="nextQuestion()">次へ ▶</button>
+    </section>
+
+    <section id="screen-result" class="screen">
+      <div class="result-card">
+        <div class="result-emoji" id="result-emoji">🎉</div>
+        <div class="result-score" id="result-score"></div>
+        <div class="result-msg" id="result-msg"></div>
+      </div>
+      <button class="btn" onclick="retry()">🔁 もう一度</button>
+      <button class="btn ghost" onclick="goHome()">🏠 レベル選択へ</button>
+      <div class="review-list" id="review-list"></div>
+    </section>
+  </main>
+  <footer>中学5教科マスター - がんばって続けよう！</footer>
+</div>
+
+<script>
+// ================= 教科定義 =================
+const SUBJECTS = [
+  {id:"kokugo",  name:"国語", icon:"国", color:"#ef4444", desc:"漢字・文法・読解・古典"},
+  {id:"suugaku", name:"数学", icon:"数", color:"#3b82f6", desc:"計算・方程式・関数・図形"},
+  {id:"eigo",    name:"英語", icon:"英", color:"#8b5cf6", desc:"文法・単語・高校受験対策"},
+  {id:"rika",    name:"理科", icon:"理", color:"#10b981", desc:"物理・化学・生物・地学"},
+  {id:"shakai",  name:"社会", icon:"社", color:"#f59e0b", desc:"地理・歴史・公民"},
+];
+
+// レベル1〜10の色（全教科共通）
+const LEVEL_COLORS = ["#22c55e","#10b981","#14b8a6","#0ea5e9","#3b82f6","#6366f1","#8b5cf6","#f59e0b","#f97316","#ef4444"];
+
+const GRADE_LABELS = {"中1":"📗 中1レベル","中2":"📘 中2レベル","中3":"📙 中3レベル","受験":"🔥 高校受験"};
+
+// ================= 問題データ =================
+// {t:分類, q:問題文(空所は___), fig:図のSVG(任意), c:[正解,誤答,誤答,誤答], a:0, e:解説}
+const SUBJECT_DATA = /*__SUBJECT_DATA__*/;
+
+const NUM_Q = 30;
+let subject="eigo", level=1, quizSet=[], idx=0, score=0, wrongs=[];
+
+// ================= ユーティリティ =================
+function shuffle(arr){
+  const a=[...arr];
+  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
+  return a;
+}
+function show(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0,0);
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function bestKey(sid,n){ return 'best-'+sid+'-'+n; }
+function setHeader(title,sub){
+  document.getElementById('head-title').textContent=title;
+  document.getElementById('head-sub').textContent=sub;
+}
+
+// 旧バージョン（英語のみ）のベストスコアを新しいキーに引き継ぐ
+function migrateOldScores(){
+  try{
+    if(localStorage.getItem('best-migrated')) return;
+    for(let n=1;n<=10;n++){
+      const old=localStorage.getItem('eng10-best-'+n);
+      if(old!==null && localStorage.getItem(bestKey('eigo',n))===null){
+        localStorage.setItem(bestKey('eigo',n),old);
+      }
+    }
+    localStorage.setItem('best-migrated','1');
+  }catch(e){/* localStorageが使えない環境では何もしない */}
+}
+
+// ================= 教科選択画面 =================
+function renderSubjects(){
+  const box=document.getElementById('screen-subjects');
+  box.innerHTML='';
+  SUBJECTS.forEach(s=>{
+    const ready=!!SUBJECT_DATA[s.id];
+    const card=document.createElement('div');
+    card.className='subject-card'+(ready?'':' soon');
+    card.onclick=()=>selectSubject(s.id);
+    card.innerHTML='<div class="subject-icon" style="background:'+s.color+'">'+escapeHtml(s.icon)+'</div>'
+      +'<div><h2>'+escapeHtml(s.name)+'</h2><p>'+escapeHtml(s.desc)+'</p></div>'
+      +(ready?'<div class="arrow">›</div>':'<div class="soon-tag">準備中</div>');
+    box.appendChild(card);
+  });
+}
+
+function selectSubject(id){
+  const s=SUBJECTS.find(x=>x.id===id);
+  if(!SUBJECT_DATA[id]){ alert(s.name+'は現在準備中です。\nもうしばらくお待ちください！'); return; }
+  subject=id;
+  setHeader('📘 中学'+s.name+'マスター','10段階レベル × 30問チャレンジ！');
+  renderHome();
+  show('screen-home');
+}
+
+function goSubjects(){
+  setHeader('📚 中学5教科マスター','教科を選んでスタート！');
+  renderSubjects();
+  show('screen-subjects');
+}
+
+// ================= レベル選択画面 =================
+function renderHome(){
+  const list=document.getElementById('level-list');
+  list.innerHTML='';
+  let lastGrade='';
+  SUBJECT_DATA[subject].levels.forEach(lv=>{
+    if(lv.grade!==lastGrade){
+      lastGrade=lv.grade;
+      const g=document.createElement('div');
+      g.className='grade-label';
+      g.textContent=GRADE_LABELS[lv.grade]||lv.grade;
+      list.appendChild(g);
+    }
+    const total=(SUBJECT_DATA[subject].questions[lv.n]||[]).length;
+    const shown=Math.min(NUM_Q,total);
+    const best=localStorage.getItem(bestKey(subject,lv.n));
+    const card=document.createElement('div');
+    card.className='level-card';
+    card.onclick=()=>startQuiz(lv.n);
+    card.innerHTML='<div class="level-badge" style="background:'+LEVEL_COLORS[lv.n-1]+'">Lv'+lv.n+'</div>'
+      +'<div><h2>'+escapeHtml(lv.title)+'</h2><p>'+escapeHtml(lv.desc)+'</p></div>'
+      +'<div class="best">ベスト<b>'+(best?best+'/'+shown:'-')+'</b></div>';
+    list.appendChild(card);
+  });
+}
+
+// ================= クイズ進行 =================
+function startQuiz(l){
+  level=l; idx=0; score=0; wrongs=[];
+  const bank=SUBJECT_DATA[subject].questions[l]||[];
+  quizSet = shuffle(bank).slice(0,NUM_Q).map(q=>{
+    const order = shuffle(q.c.map((_,i)=>i));
+    return {...q, c: order.map(i=>q.c[i]), a: order.indexOf(q.a)};
+  });
+  show('screen-quiz');
+  renderQuestion();
+}
+
+function renderQuestion(){
+  const q=quizSet[idx];
+  document.getElementById('quiz-counter').textContent=(idx+1)+' / '+quizSet.length;
+  document.getElementById('quiz-score').textContent='スコア: '+score;
+  document.getElementById('quiz-bar').style.width=(idx/quizSet.length*100)+'%';
+  document.getElementById('q-type').textContent=q.t;
+  document.getElementById('q-text').innerHTML=escapeHtml(q.q).replace(/___/g,'<span class="blank">___</span>');
+  const fig=document.getElementById('q-fig');
+  if(q.fig){ fig.innerHTML=q.fig; fig.style.display='block'; }
+  else{ fig.innerHTML=''; fig.style.display='none'; }
+  const box=document.getElementById('choices');
+  box.innerHTML='';
+  q.c.forEach((c,i)=>{
+    const btn=document.createElement('button');
+    btn.textContent=c;
+    btn.onclick=()=>answer(i,btn);
+    box.appendChild(btn);
+  });
+  document.getElementById('feedback').className='feedback';
+  document.getElementById('next-btn').style.display='none';
+}
+
+function answer(i,btn){
+  const q=quizSet[idx];
+  const buttons=document.querySelectorAll('#choices button');
+  buttons.forEach(b=>b.disabled=true);
+  buttons[q.a].classList.add('correct');
+  const fb=document.getElementById('feedback');
+  if(i===q.a){
+    score++;
+    fb.classList.add('ok','show');
+    document.getElementById('fb-title').textContent='⭕ 正解！';
+  }else{
+    btn.classList.add('wrong');
+    wrongs.push(q);
+    fb.classList.add('ng','show');
+    document.getElementById('fb-title').textContent='❌ ざんねん… 正解は「'+q.c[q.a]+'」';
+  }
+  document.getElementById('fb-body').textContent=q.e;
+  document.getElementById('quiz-score').textContent='スコア: '+score;
+  const nb=document.getElementById('next-btn');
+  nb.textContent = idx===quizSet.length-1 ? '結果を見る 🏁' : '次へ ▶';
+  nb.style.display='block';
+}
+
+function nextQuestion(){
+  idx++;
+  if(idx>=quizSet.length){ showResult(); } else { renderQuestion(); }
+}
+
+function showResult(){
+  show('screen-result');
+  const total=quizSet.length;
+  document.getElementById('result-score').textContent=score+'/'+total;
+  const rate=total? score/total : 0;
+  let emoji,msg;
+  if(rate===1){emoji='🏆';msg='パーフェクト！すばらしい！次のレベルにも挑戦しよう！';}
+  else if(rate>=.8){emoji='🎉';msg='よくできました！あと少しで満点だよ！';}
+  else if(rate>=.5){emoji='💪';msg='いい調子！まちがえた問題の解説を読んで復習しよう。';}
+  else{emoji='📖';msg='まずは解説をじっくり読もう。くり返せば必ずできるようになるよ！';}
+  document.getElementById('result-emoji').textContent=emoji;
+  document.getElementById('result-msg').textContent=msg;
+
+  const key=bestKey(subject,level);
+  const best=Number(localStorage.getItem(key)||0);
+  if(score>best) localStorage.setItem(key,score);
+
+  const list=document.getElementById('review-list');
+  list.innerHTML='';
+  if(wrongs.length){
+    const h=document.createElement('div');
+    h.style.cssText='font-weight:bold;font-size:.85rem;margin-bottom:8px;';
+    h.textContent='📝 まちがえた問題の復習';
+    list.appendChild(h);
+    wrongs.forEach(q=>{
+      const d=document.createElement('div');
+      d.className='review-item';
+      d.innerHTML='<div class="ri-q">'+escapeHtml(q.q)+'</div>'
+        +(q.fig?'<div class="q-fig">'+q.fig+'</div>':'')
+        +'<div>正解: <span class="ri-a">'+escapeHtml(q.c[q.a])+'</span></div>'
+        +'<div style="color:var(--sub);margin-top:4px;">'+escapeHtml(q.e)+'</div>';
+      list.appendChild(d);
+    });
+  }
+}
+
+function retry(){ startQuiz(level); }
+function goHome(){ renderHome(); show('screen-home'); }
+
+migrateOldScores();
+goSubjects();
+</script>
+</body>
+</html>
