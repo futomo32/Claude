@@ -204,9 +204,13 @@ def build_receipt_bytes(r):
         else:
             buf += sj(_pad_line(nm, amt) + "\n")
     buf += sj("-" * RECEIPT_WIDTH + "\n")
+    # 適格簡易請求書の記載要件: 税率ごとに区分した対価の額と消費税額。
+    # 現在の取扱商品は全て標準税率10%だが、「10%対象」と区分を明示する
+    # (将来8%(食品の贈答等)が混ざっても同じ形で並べられる)。
     tax = r["total"] * 10 // 110
+    buf += sj(_pad_line("10%対象", f"\\{r['total']:,}") + "\n")
+    buf += sj(_pad_line("(内消費税)", f"\\{tax:,}") + "\n")
     buf += sj(_pad_line("合計(税込)", f"\\{r['total']:,}") + "\n")
-    buf += sj(_pad_line("(内消費税10%)", f"\\{tax:,}") + "\n")
     for method, amount in r["payments"]:
         label = f"{amount:,}pt" if method == "ポイント" else f"\\{amount:,}"
         buf += sj(_pad_line(f"  {method}", label) + "\n")

@@ -3866,8 +3866,10 @@
         }).join("") +
         // 取消済み明細(監査ログ)。トグルON時のみ、グレー＋打ち消し線＋取消バッジで表示
         (histShowVoided ? voided.map(function (s) {
+          // s[9]=取消日時 / s[10]=取消した人。誰がいつ取り消したかを監査できるように出す
           return '<tr style="color:var(--muted);text-decoration:line-through;background:#fafafa"><td></td><td class="num">' + esc(s[0]) +
-            '</td><td>' + esc(dash(s[1])) + ' <span class="chip chip-danger" style="text-decoration:none">取消' + (s[9] ? " " + esc(s[9]) : "") + '</span></td><td>' + esc(dash(s[2])) +
+            '</td><td>' + esc(dash(s[1])) + ' <span class="chip chip-danger" style="text-decoration:none">取消' +
+            (s[9] ? " " + esc(s[9]) : "") + (s[10] ? " / " + esc(shortName(s[10])) : "") + '</span></td><td>' + esc(dash(s[2])) +
             '</td><td class="r num">¥' + num(s[3]) + '</td><td>' + esc(dash(s[4])) + '</td><td>' + esc(shortName(s[5])) + '</td><td></td></tr>';
         }).join("") : "") +  /* 取消済みは列数を購入一覧に合わせる(先頭にサムネイル用の空セル) */
         '</tbody></table></div>';
