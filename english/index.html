@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4a6cf7">
-<title>中学英語マスター</title>
+<title>中学5教科マスター</title>
 <style>
   :root{
     --primary:#4a6cf7; --primary-dark:#3451c6;
@@ -21,6 +21,17 @@
   .screen{display:none;}
   .screen.active{display:block;animation:fade .25s ease;}
   @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  .subject-card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,.06);display:flex;align-items:center;gap:14px;cursor:pointer;transition:.15s;}
+  .subject-card:active{transform:scale(.98);}
+  .subject-card.soon{opacity:.55;}
+  .subject-icon{width:52px;height:52px;border-radius:15px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:bold;font-size:1.35rem;flex-shrink:0;}
+  .subject-card h2{font-size:1.05rem;}
+  .subject-card p{font-size:.75rem;color:var(--sub);margin-top:3px;}
+  .subject-card .arrow{margin-left:auto;color:var(--sub);font-size:1.1rem;flex-shrink:0;}
+  .soon-tag{margin-left:auto;font-size:.68rem;color:var(--sub);background:#f1f3f7;padding:4px 9px;border-radius:9px;flex-shrink:0;}
+
+  .back-btn{background:none;border:none;color:var(--primary);font-size:.85rem;padding:6px 2px;margin-bottom:6px;cursor:pointer;font-weight:bold;}
 
   .grade-label{font-size:.78rem;font-weight:bold;color:var(--sub);margin:14px 4px 8px;}
   .grade-label:first-child{margin-top:0;}
@@ -75,11 +86,16 @@
 <body>
 <div class="app">
   <header>
-    <h1>📘 中学英語マスター</h1>
-    <p>10段階レベル × 30問チャレンジ！</p>
+    <h1 id="head-title">📚 中学5教科マスター</h1>
+    <p id="head-sub">教科を選んでスタート！</p>
   </header>
   <main>
-    <section id="screen-home" class="screen active"></section>
+    <section id="screen-subjects" class="screen active"></section>
+
+    <section id="screen-home" class="screen">
+      <button class="back-btn" onclick="goSubjects()">← 教科をえらぶ</button>
+      <div id="level-list"></div>
+    </section>
 
     <section id="screen-quiz" class="screen">
       <div class="quiz-top">
@@ -111,10 +127,20 @@
       <div class="review-list" id="review-list"></div>
     </section>
   </main>
-  <footer>中学英語マスター - がんばって続けよう！</footer>
+  <footer>中学5教科マスター - がんばって続けよう！</footer>
 </div>
 
 <script>
+// ================= 教科定義 =================
+// ready:false の教科は「準備中」表示。問題を用意したら true にしてください。
+const SUBJECTS = [
+  {id:"kokugo",  name:"国語", icon:"国", color:"#ef4444", desc:"漢字・文法・古典", ready:false},
+  {id:"suugaku", name:"数学", icon:"数", color:"#3b82f6", desc:"計算・方程式・関数・図形", ready:false},
+  {id:"eigo",    name:"英語", icon:"英", color:"#8b5cf6", desc:"文法・単語・高校受験対策", ready:true},
+  {id:"rika",    name:"理科", icon:"理", color:"#10b981", desc:"物理・化学・生物・地学", ready:false},
+  {id:"shakai",  name:"社会", icon:"社", color:"#f59e0b", desc:"地理・歴史・公民", ready:false},
+];
+
 // ================= レベル定義 =================
 const LEVELS = [
   {n:1, grade:"中1", title:"be動詞と単語のきほん", desc:"am / is / are・あいさつ・基本単語", color:"#22c55e"},
@@ -470,9 +496,43 @@ function show(id){
 }
 function escapeHtml(s){ return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
-// ================= ホーム画面 =================
+// ================= 教科選択画面 =================
+function setHeader(title,sub){
+  document.getElementById('head-title').textContent=title;
+  document.getElementById('head-sub').textContent=sub;
+}
+
+function renderSubjects(){
+  const box=document.getElementById('screen-subjects');
+  box.innerHTML='';
+  SUBJECTS.forEach(s=>{
+    const card=document.createElement('div');
+    card.className='subject-card'+(s.ready?'':' soon');
+    card.onclick=()=>selectSubject(s.id);
+    card.innerHTML='<div class="subject-icon" style="background:'+s.color+'">'+escapeHtml(s.icon)+'</div>'
+      +'<div><h2>'+escapeHtml(s.name)+'</h2><p>'+escapeHtml(s.desc)+'</p></div>'
+      +(s.ready?'<div class="arrow">›</div>':'<div class="soon-tag">準備中</div>');
+    box.appendChild(card);
+  });
+}
+
+function selectSubject(id){
+  const s=SUBJECTS.find(x=>x.id===id);
+  if(!s.ready){ alert(s.name+'は現在準備中です。\nもうしばらくお待ちください！'); return; }
+  setHeader('📘 中学'+s.name+'マスター','10段階レベル × 30問チャレンジ！');
+  renderHome();
+  show('screen-home');
+}
+
+function goSubjects(){
+  setHeader('📚 中学5教科マスター','教科を選んでスタート！');
+  renderSubjects();
+  show('screen-subjects');
+}
+
+// ================= レベル選択画面 =================
 function renderHome(){
-  const home=document.getElementById('screen-home');
+  const home=document.getElementById('level-list');
   home.innerHTML='';
   let lastGrade='';
   LEVELS.forEach(lv=>{
@@ -588,7 +648,7 @@ function showResult(){
 function retry(){ startQuiz(level); }
 function goHome(){ renderHome(); show('screen-home'); }
 
-renderHome();
+goSubjects();
 </script>
 </body>
 </html>
