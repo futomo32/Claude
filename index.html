@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#ffd6e0">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.png" type="image/png">
+<link rel="apple-touch-icon" href="icon.png">
+<title>ヤナセぱっと勤怠</title>
+<style>
+  :root {
+    --bg: #fff7f0;
+    --card: #ffffff;
+    --pink: #ff8fab;
+    --pink-soft: #ffd6e0;
+    --mint: #7ed6b5;
+    --mint-soft: #d4f5e9;
+    --sun: #ffb86b;
+    --sun-soft: #ffe8cc;
+    --sky: #8ab6ff;
+    --sky-soft: #dbe7ff;
+    --ink: #5a4a4a;
+    --ink-light: #a08c8c;
+    --radius: 20px;
+    --shadow: 0 4px 14px rgba(255, 143, 171, .18);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Hiragino Maru Gothic ProN", "BIZ UDGothic", "Yu Gothic", "Meiryo", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+    max-width: 480px;
+    margin: 0 auto;
+    padding-bottom: calc(70px + env(safe-area-inset-bottom));
+    /* 日本語を文節単位で折り返し、単語の途中で改行されないようにする */
+    word-break: auto-phrase;
+    line-break: strict;
+  }
+
+  /* ---------- header ---------- */
+  header {
+    background: linear-gradient(135deg, var(--pink-soft), #ffe9f0);
+    padding: calc(9px + env(safe-area-inset-top)) 20px 8px;
+    border-radius: 0 0 var(--radius) var(--radius);
+    text-align: center;
+  }
+  .brandlogo { height: 18px; width: auto; display: block; margin: 0 auto 4px; }
+  header h1 { font-size: 1.3rem; font-weight: 800; letter-spacing: .06em; color: var(--ink); line-height: 1.15; }
+  #headerDate { font-size: .76rem; color: var(--ink-light); margin-top: 1px; }
+  #headerClock { font-size: 1.55rem; font-weight: bold; font-variant-numeric: tabular-nums; letter-spacing: .04em; line-height: 1.2; margin-top: 2px; }
+
+  main { flex: 1; padding: 14px; }
+  .page { display: none; }
+  .page.active { display: block; animation: pop .25s ease; }
+  @keyframes pop { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  /* ---------- status card ---------- */
+  .status-card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 11px;
+    text-align: center;
+    margin-bottom: 9px;
+  }
+  .status-emoji { font-size: 2rem; line-height: 1.1; }
+  .status-label { font-size: 1rem; font-weight: bold; margin-top: 2px; }
+  .status-sub { font-size: .74rem; color: var(--ink-light); margin-top: 1px; }
+
+  /* ---------- punch buttons ---------- */
+  .punch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 9px; }
+  .punch-btn {
+    border: none;
+    border-radius: var(--radius);
+    padding: 13px 8px;
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: bold;
+    color: var(--ink);
+    box-shadow: var(--shadow);
+    cursor: pointer;
+    transition: transform .1s ease, opacity .2s;
+  }
+  .punch-btn:active { transform: scale(.95); }
+  .punch-btn .big { display: block; font-size: 1.5rem; margin-bottom: 2px; }
+  /* ラベルは単語のまとまりで折り返す（「休憩」「スタート」が途中で切れない） */
+  .punch-btn .lbl { display: block; line-height: 1.25; }
+  .punch-btn .lbl > span { display: inline-block; }
+  .punch-btn:disabled { opacity: .35; box-shadow: none; cursor: default; }
+  #btnIn    { background: var(--pink-soft); }
+  #btnBreak { background: var(--sun-soft); }
+  #btnBack  { background: var(--mint-soft); }
+  #btnOut   { background: var(--sky-soft); }
+
+  /* ---------- today's record ---------- */
+  .record-card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 12px 16px;
+  }
+  .record-card h2 { font-size: .88rem; color: var(--ink-light); margin-bottom: 6px; }
+  .record-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 0;
+    border-bottom: 1px dashed #f3dede;
+    font-size: .95rem;
+  }
+  .record-row:last-child { border-bottom: none; }
+  .record-row .time-value {
+    font-variant-numeric: tabular-nums;
+    font-weight: bold;
+    background: var(--bg);
+    border-radius: 10px;
+    padding: 4px 12px;
+    min-width: 76px;
+    text-align: center;
+  }
+  .record-row .time-value.editable { border: 1.5px dashed var(--pink); }
+  .hint { font-size: .72rem; color: var(--ink-light); text-align: center; margin-top: 8px; }
+
+  /* ---------- history ---------- */
+  .month-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .month-nav button {
+    border: none;
+    background: var(--card);
+    box-shadow: var(--shadow);
+    border-radius: 12px;
+    width: 40px; height: 40px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    color: var(--ink);
+  }
+  .month-nav .month-label { font-weight: bold; font-size: 1.05rem; }
+
+  .summary-card {
+    background: linear-gradient(135deg, var(--mint-soft), #eafff5);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 14px 18px;
+    display: flex;
+    justify-content: space-around;
+    text-align: center;
+    margin-bottom: 14px;
+  }
+  .summary-card .num { font-size: 1.25rem; font-weight: bold; }
+  .summary-card .cap { font-size: .7rem; color: var(--ink-light); }
+
+  .history-list { display: flex; flex-direction: column; gap: 8px; }
+  .history-item {
+    background: var(--card);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 10px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: .85rem;
+    cursor: pointer;
+  }
+  .history-item .day { font-weight: bold; }
+  .history-item .day .dow { font-size: .7rem; color: var(--ink-light); margin-left: 4px; }
+  .history-item .times { color: var(--ink-light); font-variant-numeric: tabular-nums; }
+  .history-item .worked { font-weight: bold; color: var(--mint); }
+  .empty-msg { text-align: center; color: var(--ink-light); padding: 30px 0; font-size: .9rem; }
+
+  .csv-btn {
+    display: block;
+    width: 100%;
+    margin-top: 16px;
+    border: none;
+    border-radius: var(--radius);
+    background: var(--pink);
+    color: #fff;
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: bold;
+    padding: 14px;
+    box-shadow: var(--shadow);
+    cursor: pointer;
+  }
+  .csv-btn:active { transform: scale(.97); }
+
+  /* ---------- settings ---------- */
+  .setting-card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 16px 18px;
+    margin-bottom: 14px;
+  }
+  .setting-card label { font-size: .8rem; color: var(--ink-light); display: block; margin-bottom: 6px; }
+  .setting-card input {
+    width: 100%;
+    border: 1.5px solid var(--pink-soft);
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-family: inherit;
+    font-size: 1rem;
+    color: var(--ink);
+    background: var(--bg);
+  }
+  .setting-card input:focus { outline: none; border-color: var(--pink); }
+  .about { font-size: .75rem; color: var(--ink-light); line-height: 1.7; }
+  .guide-link {
+    display: flex; align-items: center; gap: 12px;
+    text-decoration: none; color: var(--ink);
+  }
+  .guide-link .gl-emoji { font-size: 1.6rem; }
+  .guide-link .gl-text { flex: 1; font-weight: bold; font-size: .98rem; }
+  .guide-link .gl-text small { display: block; font-weight: normal; font-size: .78rem; color: var(--ink-light); margin-top: 1px; }
+  .guide-link .gl-arrow { font-size: 1.5rem; color: var(--pink); }
+  .guide-link:active { transform: scale(.98); }
+
+  /* ---------- bottom nav ---------- */
+  nav {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    max-width: 480px;
+    margin: 0 auto;
+    background: var(--card);
+    display: flex;
+    box-shadow: 0 -4px 14px rgba(255,143,171,.15);
+    border-radius: var(--radius) var(--radius) 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  nav button {
+    flex: 1;
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: .72rem;
+    color: var(--ink-light);
+    padding: 10px 0 8px;
+    cursor: pointer;
+  }
+  nav button .icon { display: block; font-size: 1.4rem; margin-bottom: 2px; filter: grayscale(1) opacity(.5); }
+  nav button.active { color: var(--pink); font-weight: bold; }
+  nav button.active .icon { filter: none; }
+
+  /* ---------- edit modal ---------- */
+  .modal-backdrop {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(90,74,74,.35);
+    z-index: 10;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--card);
+    width: 100%;
+    max-width: 480px;
+    border-radius: var(--radius) var(--radius) 0 0;
+    padding: 20px max(16px, env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    animation: slideUp .25s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .modal h3 { font-size: 1rem; margin-bottom: 14px; text-align: center; }
+  .modal .field { margin-bottom: 12px; }
+  .modal .field label { font-size: .78rem; color: var(--ink-light); display: block; margin-bottom: 4px; }
+  .modal input[type="time"] {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    -webkit-appearance: none;
+    appearance: none;
+    border: 1.5px solid var(--pink-soft);
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-family: inherit;
+    font-size: 1.1rem;
+    color: var(--ink);
+    background: var(--bg);
+  }
+  /* iOSのネイティブ時刻入力がはみ出して右端が切れるのを防ぐ */
+  .modal input[type="time"]::-webkit-date-and-time-value { text-align: left; margin: 0; }
+  .modal input[type="time"]::-webkit-calendar-picker-indicator { margin-left: auto; }
+  .break-edit-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .break-edit-row input { flex: 1; }
+  .break-edit-row .del-break {
+    border: none; background: var(--pink-soft); color: var(--ink);
+    border-radius: 10px; width: 36px; height: 36px; font-size: 1rem; cursor: pointer;
+  }
+  .add-break {
+    border: 1.5px dashed var(--mint);
+    background: none;
+    color: var(--mint);
+    border-radius: 12px;
+    width: 100%;
+    padding: 8px;
+    font-family: inherit;
+    font-size: .85rem;
+    cursor: pointer;
+    margin-bottom: 12px;
+  }
+  .modal-actions { display: flex; gap: 10px; }
+  .modal-actions button {
+    flex: 1;
+    border: none;
+    border-radius: 14px;
+    padding: 13px;
+    font-family: inherit;
+    font-size: .95rem;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  .modal-actions .cancel { background: var(--bg); color: var(--ink-light); }
+  .modal-actions .save { background: var(--pink); color: #fff; }
+  .modal-actions .delete { background: none; color: var(--ink-light); flex: 0 0 auto; font-size: .78rem; text-decoration: underline; }
+
+  /* ---------- toast ---------- */
+  #toast {
+    position: fixed;
+    left: 50%; bottom: 90px;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--ink);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 999px;
+    font-size: .85rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: all .3s ease;
+    z-index: 20;
+    white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<header>
+  <img class="brandlogo" src="logo.png" alt="YANASE">
+  <h1>ヤナセぱっと勤怠</h1>
+  <div id="headerClock">--:--</div>
+  <div id="headerDate"></div>
+</header>
+
+<main>
+  <!-- ============ today ============ -->
+  <section id="page-today" class="page active">
+    <div class="status-card">
+      <div class="status-emoji" id="statusEmoji">🌸</div>
+      <div class="status-label" id="statusLabel">本日もお疲れさまでした！</div>
+      <div class="status-sub" id="statusSub">ボタンを押すと現在時刻が記録されます</div>
+    </div>
+
+    <div class="punch-grid">
+      <button class="punch-btn" id="btnIn"><span class="big">🌞</span><span class="lbl">出勤</span></button>
+      <button class="punch-btn" id="btnOut"><span class="big">🌙</span><span class="lbl">退勤</span></button>
+      <button class="punch-btn" id="btnBreak"><span class="big">☕</span><span class="lbl"><span>休憩</span><span>スタート</span></span></button>
+      <button class="punch-btn" id="btnBack"><span class="big">💪</span><span class="lbl"><span>休憩</span><span>おわり</span></span></button>
+    </div>
+
+    <div class="record-card">
+      <h2>📝 本日の記録</h2>
+      <div id="todayRecord"></div>
+      <div class="hint">時刻をタップすると手動で修正できます ✍️</div>
+    </div>
+  </section>
+
+  <!-- ============ history ============ -->
+  <section id="page-history" class="page">
+    <div class="month-nav">
+      <button id="prevMonth">‹</button>
+      <div class="month-label" id="monthLabel"></div>
+      <button id="nextMonth">›</button>
+    </div>
+
+    <div class="summary-card">
+      <div><div class="num" id="sumDays">0</div><div class="cap">出勤日数</div></div>
+      <div><div class="num" id="sumHours">0:00</div><div class="cap">勤務時間</div></div>
+      <div id="sumPayWrap" style="display:none"><div class="num" id="sumPay">¥0</div><div class="cap">給与の目安</div></div>
+    </div>
+
+    <div class="history-list" id="historyList"></div>
+    <button class="csv-btn" id="csvBtn">📄 CSVでダウンロード</button>
+  </section>
+
+  <!-- ============ settings ============ -->
+  <section id="page-settings" class="page">
+    <div class="setting-card">
+      <label for="setName">👤 お名前（CSVに記載されます）</label>
+      <input type="text" id="setName" placeholder="例）山田 花子">
+    </div>
+    <div class="setting-card">
+      <label for="setWage">💰 時給（円）を入力すると、履歴に給与の目安が表示されます</label>
+      <input type="number" id="setWage" inputmode="numeric" placeholder="例）1100">
+    </div>
+    <a class="setting-card guide-link" href="guide.html">
+      <span class="gl-emoji">📖</span>
+      <span class="gl-text">はじめての方へ<small>使い方ガイドを見る</small></span>
+      <span class="gl-arrow">›</span>
+    </a>
+    <div class="setting-card about">
+      🌸 <b>ヤナセぱっと勤怠</b> は、このスマートフォンの中だけにデータを保存します（サーバーには送信しません）。<br>
+      📲 ブラウザのメニューから「ホーム画面に追加」すると、アプリのように使用できます。<br>
+      ⚠️ ブラウザのデータを削除すると記録も消えるため、月末に CSV を保存しておくことをおすすめします。
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button id="tab-today" class="active"><span class="icon">🏠</span>今日</button>
+  <button id="tab-history"><span class="icon">📅</span>履歴</button>
+  <button id="tab-settings"><span class="icon">⚙️</span>設定</button>
+</nav>
+
+<!-- ============ edit modal ============ -->
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <h3 id="modalTitle">記録の修正</h3>
+    <div class="field">
+      <label>🌞 出勤</label>
+      <input type="time" id="editIn">
+    </div>
+    <div class="field">
+      <label>🌙 退勤</label>
+      <input type="time" id="editOut">
+    </div>
+    <div class="field">
+      <label>☕ 休憩</label>
+      <div id="editBreaks"></div>
+      <button class="add-break" id="addBreakBtn">＋ 休憩を追加</button>
+    </div>
+    <div class="modal-actions">
+      <button class="delete" id="modalDelete">この日を削除</button>
+      <button class="cancel" id="modalCancel">やめる</button>
+      <button class="save" id="modalSave">保存する 💾</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+
+/* ================= storage ================= */
+const STORE_KEY = "patto-kintai-records";
+const SETTINGS_KEY = "patto-kintai-settings";
+
+function loadRecords() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveRecords(recs) { localStorage.setItem(STORE_KEY, JSON.stringify(recs)); }
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
+
+let records = loadRecords();
+let settings = loadSettings();
+
+/* ================= date utils ================= */
+const DOW = ["日", "月", "火", "水", "木", "金", "土"];
+const pad = n => String(n).padStart(2, "0");
+
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+function nowHM() {
+  const d = new Date();
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function toMin(hm) {
+  if (!hm) return null;
+  const [h, m] = hm.split(":").map(Number);
+  return h * 60 + m;
+}
+function minToHM(min) {
+  const sign = min < 0 ? "-" : "";
+  min = Math.abs(min);
+  return `${sign}${Math.floor(min / 60)}:${pad(min % 60)}`;
+}
+
+/* break minutes: only closed intervals count */
+function breakMinutes(rec) {
+  return (rec.breaks || []).reduce((sum, b) => {
+    if (b.start && b.end) {
+      let d = toMin(b.end) - toMin(b.start);
+      if (d < 0) d += 24 * 60;
+      return sum + d;
+    }
+    return sum;
+  }, 0);
+}
+
+/* worked minutes; handles shifts that cross midnight */
+function workedMinutes(rec) {
+  if (!rec.in || !rec.out) return null;
+  let d = toMin(rec.out) - toMin(rec.in);
+  if (d < 0) d += 24 * 60;
+  return Math.max(0, d - breakMinutes(rec));
+}
+
+function statusOf(rec) {
+  if (!rec || !rec.in) return "before";
+  if (rec.out) return "done";
+  const last = (rec.breaks || [])[rec.breaks ? rec.breaks.length - 1 : -1];
+  if (last && last.start && !last.end) return "break";
+  return "working";
+}
+
+/* ================= header clock ================= */
+function tickClock() {
+  const d = new Date();
+  document.getElementById("headerClock").textContent =
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  document.getElementById("headerDate").textContent =
+    `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日（${DOW[d.getDay()]}）`;
+}
+setInterval(tickClock, 1000);
+tickClock();
+
+/* ================= toast ================= */
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+/* ================= today page ================= */
+const STATUS_VIEW = {
+  before:  { emoji: "🌸", label: "出勤前です",       sub: "「出勤」を押して開始してください" },
+  working: { emoji: "💼", label: "お仕事中です",     sub: "休憩・退勤の際にボタンを押してください" },
+  break:   { emoji: "☕", label: "休憩中です",       sub: "戻ったら「休憩おわり」を押してください" },
+  done:    { emoji: "🎉", label: "本日もお疲れさまでした！", sub: "ゆっくりお休みください" },
+};
+
+function renderToday() {
+  const rec = records[todayKey()] || {};
+  const st = statusOf(rec);
+  const v = STATUS_VIEW[st];
+  document.getElementById("statusEmoji").textContent = v.emoji;
+  document.getElementById("statusLabel").textContent = v.label;
+  document.getElementById("statusSub").textContent = v.sub;
+
+  document.getElementById("btnIn").disabled = st !== "before";
+  document.getElementById("btnBreak").disabled = st !== "working";
+  document.getElementById("btnBack").disabled = st !== "break";
+  document.getElementById("btnOut").disabled = !(st === "working" || st === "break");
+
+  const rows = [];
+  rows.push(row("🌞 出勤", rec.in));
+  (rec.breaks || []).forEach((b, i) => {
+    rows.push(row(`☕ 休憩${rec.breaks.length > 1 ? i + 1 : ""}`,
+      b.start ? `${b.start}〜${b.end || "…"}` : null, true));
+  });
+  rows.push(row("🌙 退勤", rec.out));
+  const w = workedMinutes(rec);
+  if (w !== null) rows.push(row("⏱️ 勤務時間", minToHM(w) + `（休憩 ${breakMinutes(rec)}分）`, true));
+  document.getElementById("todayRecord").innerHTML = rows.join("");
+
+  function row(label, value, wide) {
+    return `<div class="record-row" onclick="openEdit('${todayKey()}')">
+      <span>${label}</span>
+      <span class="time-value editable" ${wide ? 'style="min-width:auto"' : ""}>${value || "--:--"}</span>
+    </div>`;
+  }
+}
+
+function punch(kind) {
+  const key = todayKey();
+  const rec = records[key] || (records[key] = { breaks: [] });
+  rec.breaks = rec.breaks || [];
+  const t = nowHM();
+  if (kind === "in") { rec.in = t; toast(`🌞 出勤 ${t} を記録しました`); }
+  if (kind === "break") { rec.breaks.push({ start: t, end: null }); toast(`☕ 休憩を開始しました ${t}`); }
+  if (kind === "back") {
+    const last = rec.breaks[rec.breaks.length - 1];
+    if (last && !last.end) last.end = t;
+    toast(`💪 休憩を終了しました ${t}`);
+  }
+  if (kind === "out") {
+    const last = rec.breaks[rec.breaks.length - 1];
+    if (last && !last.end) last.end = t; /* close open break automatically */
+    rec.out = t;
+    toast(`🌙 退勤 ${t} お疲れさまでした`);
+  }
+  saveRecords(records);
+  renderToday();
+}
+
+document.getElementById("btnIn").onclick = () => punch("in");
+document.getElementById("btnBreak").onclick = () => punch("break");
+document.getElementById("btnBack").onclick = () => punch("back");
+document.getElementById("btnOut").onclick = () => punch("out");
+
+/* ================= edit modal ================= */
+let editingKey = null;
+
+function openEdit(key) {
+  editingKey = key;
+  const rec = records[key] || { breaks: [] };
+  const [y, m, d] = key.split("-").map(Number);
+  const dow = DOW[new Date(y, m - 1, d).getDay()];
+  document.getElementById("modalTitle").textContent = `${m}月${d}日（${dow}）の記録`;
+  document.getElementById("editIn").value = rec.in || "";
+  document.getElementById("editOut").value = rec.out || "";
+  renderBreakEditor(rec.breaks || []);
+  document.getElementById("modalBackdrop").classList.add("open");
+}
+window.openEdit = openEdit;
+
+function renderBreakEditor(breaks) {
+  const box = document.getElementById("editBreaks");
+  box.innerHTML = "";
+  breaks.forEach((b, i) => addBreakRow(b.start || "", b.end || ""));
+}
+function addBreakRow(start = "", end = "") {
+  const box = document.getElementById("editBreaks");
+  const row = document.createElement("div");
+  row.className = "break-edit-row";
+  row.innerHTML = `
+    <input type="time" class="bk-start" value="${start}">
+    <span>〜</span>
+    <input type="time" class="bk-end" value="${end}">
+    <button class="del-break" title="削除">🗑️</button>`;
+  row.querySelector(".del-break").onclick = () => row.remove();
+  box.appendChild(row);
+}
+document.getElementById("addBreakBtn").onclick = () => addBreakRow();
+
+document.getElementById("modalCancel").onclick = closeModal;
+document.getElementById("modalBackdrop").onclick = e => {
+  if (e.target === document.getElementById("modalBackdrop")) closeModal();
+};
+function closeModal() {
+  document.getElementById("modalBackdrop").classList.remove("open");
+  editingKey = null;
+}
+
+document.getElementById("modalSave").onclick = () => {
+  if (!editingKey) return;
+  const rec = records[editingKey] || (records[editingKey] = {});
+  rec.in = document.getElementById("editIn").value || null;
+  rec.out = document.getElementById("editOut").value || null;
+  rec.breaks = [...document.querySelectorAll("#editBreaks .break-edit-row")]
+    .map(r => ({
+      start: r.querySelector(".bk-start").value || null,
+      end: r.querySelector(".bk-end").value || null,
+    }))
+    .filter(b => b.start || b.end);
+  if (!rec.in && !rec.out && rec.breaks.length === 0) delete records[editingKey];
+  saveRecords(records);
+  closeModal();
+  renderToday();
+  renderHistory();
+  toast("💾 保存しました！");
+};
+
+document.getElementById("modalDelete").onclick = () => {
+  if (!editingKey) return;
+  if (!confirm("この日の記録を削除しますか？")) return;
+  delete records[editingKey];
+  saveRecords(records);
+  closeModal();
+  renderToday();
+  renderHistory();
+  toast("🗑️ 削除しました");
+};
+
+/* ================= history page ================= */
+let viewYear, viewMonth; /* month: 1-12 */
+{
+  const d = new Date();
+  viewYear = d.getFullYear();
+  viewMonth = d.getMonth() + 1;
+}
+
+function monthKeys(y, m) {
+  const prefix = `${y}-${pad(m)}-`;
+  return Object.keys(records).filter(k => k.startsWith(prefix)).sort();
+}
+
+function renderHistory() {
+  document.getElementById("monthLabel").textContent = `${viewYear}年 ${viewMonth}月`;
+  const keys = monthKeys(viewYear, viewMonth);
+  const list = document.getElementById("historyList");
+  list.innerHTML = "";
+
+  let totalMin = 0, days = 0;
+  keys.forEach(k => {
+    const rec = records[k];
+    const [y, m, d] = k.split("-").map(Number);
+    const dow = DOW[new Date(y, m - 1, d).getDay()];
+    const w = workedMinutes(rec);
+    if (rec.in) days++;
+    if (w !== null) totalMin += w;
+
+    const item = document.createElement("div");
+    item.className = "history-item";
+    item.innerHTML = `
+      <span class="day">${d}日<span class="dow">（${dow}）</span></span>
+      <span class="times">${rec.in || "--:--"} 〜 ${rec.out || "--:--"}</span>
+      <span class="worked">${w !== null ? minToHM(w) : "…"}</span>`;
+    item.onclick = () => openEdit(k);
+    list.appendChild(item);
+  });
+
+  if (keys.length === 0) {
+    list.innerHTML = `<div class="empty-msg">この月の記録はまだありません 🌱</div>`;
+  }
+
+  document.getElementById("sumDays").textContent = days;
+  document.getElementById("sumHours").textContent = minToHM(totalMin);
+
+  const wage = Number(settings.wage) || 0;
+  const payWrap = document.getElementById("sumPayWrap");
+  if (wage > 0) {
+    payWrap.style.display = "";
+    const pay = Math.floor(totalMin / 60 * wage);
+    document.getElementById("sumPay").textContent = "¥" + pay.toLocaleString();
+  } else {
+    payWrap.style.display = "none";
+  }
+}
+
+document.getElementById("prevMonth").onclick = () => {
+  viewMonth--;
+  if (viewMonth < 1) { viewMonth = 12; viewYear--; }
+  renderHistory();
+};
+document.getElementById("nextMonth").onclick = () => {
+  viewMonth++;
+  if (viewMonth > 12) { viewMonth = 1; viewYear++; }
+  renderHistory();
+};
+
+/* ================= CSV export ================= */
+document.getElementById("csvBtn").onclick = () => {
+  const keys = monthKeys(viewYear, viewMonth);
+  if (keys.length === 0) { toast("この月の記録がありません 🙏"); return; }
+  const name = settings.name || "";
+  const lines = [];
+  lines.push(`氏名,${csvEsc(name)}`);
+  lines.push(`対象月,${viewYear}年${viewMonth}月`);
+  lines.push("");
+  lines.push("日付,曜日,出勤,退勤,休憩(分),勤務時間");
+  let totalMin = 0;
+  keys.forEach(k => {
+    const rec = records[k];
+    const [y, m, d] = k.split("-").map(Number);
+    const dow = DOW[new Date(y, m - 1, d).getDay()];
+    const w = workedMinutes(rec);
+    if (w !== null) totalMin += w;
+    lines.push([
+      k, dow, rec.in || "", rec.out || "",
+      breakMinutes(rec), w !== null ? minToHM(w) : "",
+    ].join(","));
+  });
+  lines.push("");
+  lines.push(`合計,,,,,${minToHM(totalMin)}`);
+
+  /* BOM so Excel opens it with correct Japanese encoding */
+  const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `勤怠_${viewYear}-${pad(viewMonth)}${name ? "_" + name : ""}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast("📄 CSVを書き出しました！");
+};
+function csvEsc(s) { return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }
+
+/* ================= settings page ================= */
+const setName = document.getElementById("setName");
+const setWage = document.getElementById("setWage");
+setName.value = settings.name || "";
+setWage.value = settings.wage || "";
+setName.onchange = () => { settings.name = setName.value.trim(); saveSettings(settings); toast("💾 保存しました"); };
+setWage.onchange = () => { settings.wage = setWage.value; saveSettings(settings); renderHistory(); toast("💾 保存しました"); };
+
+/* ================= tabs ================= */
+const tabs = { today: "page-today", history: "page-history", settings: "page-settings" };
+Object.keys(tabs).forEach(t => {
+  document.getElementById("tab-" + t).onclick = () => {
+    document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+    document.querySelectorAll("nav button").forEach(b => b.classList.remove("active"));
+    document.getElementById(tabs[t]).classList.add("active");
+    document.getElementById("tab-" + t).classList.add("active");
+    if (t === "history") renderHistory();
+  };
+});
+
+/* ================= date rollover ================= */
+/* if the app stays open past midnight, refresh the "today" view */
+let lastDay = todayKey();
+setInterval(() => {
+  if (todayKey() !== lastDay) {
+    lastDay = todayKey();
+    renderToday();
+  }
+}, 30 * 1000);
+
+/* ================= init ================= */
+renderToday();
+renderHistory();
+
+/* PWA: offline cache */
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+</script>
+</body>
+</html>
