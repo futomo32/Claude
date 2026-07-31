@@ -590,6 +590,19 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/card_read_cancel":
                 result = devices.card_eject()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/card_issue":
+                # 会員証発行: 1回の挿入で 磁気書込(TKW+顧客ID)→券面印字→排出。
+                # 新品(磁気が空)のカードでも使える。★挿入カードの磁気を上書きする
+                cid = payload.get("customer_id")
+                con = connect()
+                try:
+                    face = db_query.card_face_data(con, cid)
+                except ValueError as e:
+                    return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                finally:
+                    con.close()
+                result = devices.card_issue(cid, face)
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/card_face":
                 # 会計確定後の券面リライト(保持中カードのポイント等を書き換えて排出)。
                 # 失敗しても会計・ポイント残高(DB)は成立済み。券面は次回来店時に書き直せる

@@ -948,7 +948,7 @@
           <span class="spacer" style="flex:1"></span>
           <button class="btn" id="cd-back-btn" onclick="custBack()">← 一覧へ戻る</button>
           <button class="btn" onclick="openLabelPrint([window.__curCust])">🏷 住所ラベル印刷</button>
-          <button class="btn" onclick="showToast('会員証を発行しました(デモ)。TCP300IIでのカード書き込みは機器連携フェーズで実装します。')">会員証発行</button>
+          <button class="btn" id="cd-issue-card" onclick="issueMemberCard(this)">💳 会員証発行</button>
           <button class="btn btn-primary" onclick="openCustModal(window.__curCust)">編集</button>
         </div>
 
@@ -4300,6 +4300,40 @@
         btn.disabled = false; btn.textContent = "💳 カード呼出";
         showToast("カード読取の通信に失敗: " + fetchErrMsg(e));
       });
+  }
+  /* 会員証発行(顧客詳細): 1回の挿入で 磁気書込→券面印字→排出。新品カードでも使える。
+     ★挿入したカードの磁気を上書きするため、実行前に必ず確認を取る。 */
+  function issueMemberCard(btn) {
+    var c = window.__curCust ? findCust(window.__curCust) : null;
+    if (!c) return showToast("顧客が選択されていません。");
+    if (!API || !D.hardwareMode)
+      return showToast("会員証発行は機器ONモードで使えます(「機器ありで起動.bat」で起動してください)。");
+    alertPopup(c[1] + " 様の会員証を発行します。\n\n" +
+      "・カードリーダーにカードを入れてください(入っていなければ挿入待ちになります)\n" +
+      "・挿入したカードの磁気は上書きされます。他のお客様のカードを入れないでください\n" +
+      "・磁気書込のあと券面(名前・有効期限・ポイント)を印字して排出します", {
+      type: "warn", title: "会員証を発行します", confirm: true, okText: "発行する",
+      onOk: function () {
+        btn.disabled = true; btn.textContent = "💳 カードを入れてください…";
+        fetch(API + "/card_issue", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ customer_id: String(c[0]) })
+        }).then(function (r) { return r.json(); }).then(function (res) {
+          btn.disabled = false; btn.textContent = "💳 会員証発行";
+          if (res.skipped) return showToast(res.message);
+          if (res.error) return showToast("⚠ " + res.error);
+          if (res.face_error) {
+            // 磁気は書けている(カード呼出は使える)。券面だけ失敗
+            return showToast("💳 磁気は書き込めました(カード呼出は使えます)が、券面印字に失敗: " +
+              res.face_error + " — 会計時に書き直せます。");
+          }
+          showToast("💳 " + c[1] + " 様の会員証を発行しました(磁気 " + res.written + " / 券面印字済み)。");
+        }).catch(function (e) {
+          btn.disabled = false; btn.textContent = "💳 会員証発行";
+          showToast("会員証発行の通信に失敗: " + fetchErrMsg(e));
+        });
+      }
+    });
   }
   /* カード保持状態(案A・宝飾ナビ方式): 読取後は装置内に保持し、会計確定で券面書換→排出 */
   var cardHeldId = null;

@@ -347,6 +347,52 @@ def card_link(customer_id, timeout=30.0):
         return {"error": f"カード書込に失敗: {e}"}
 
 
+def card_issue(customer_id, face, timeout=60.0):
+    """会員証発行: 1回の挿入で「磁気書込(TKW+顧客ID)→券面印字→排出」まで行う。
+
+    新品(磁気が空)のカードでも使える。読み取りを挟まずいきなり書き込むため、
+    ★挿入されたカードの磁気は問答無用で上書きされる(予備カード・新品カードで使うこと)。
+    face は db_query.card_face_data() の dict(名前・有効期限・ポイント・メッセージ)。
+    """
+    if not ENABLED:
+        return _skip()
+    cid = str(customer_id or "").strip()
+    if not cid:
+        return {"error": "顧客が指定されていません"}
+    data = (CARD_PREFIX + cid).encode("ascii", "replace")
+    try:
+        from tcp300ii import TCP300II, status_text
+        with TCP300II(CARD_PORT) as dev:
+            # (1) 磁気書込。カードが入っていなければ装置が挿入を待つ
+            status = dev.write_track2(data, dataset_cmd=TCP300II.DATASET_REV7,
+                                      resp_timeout=timeout)
+            if status != 0x20:
+                return {"error": "磁気書込に失敗: " + status_text(status) +
+                                 "(カードは装置内に残っています。取り出して再実行してください)"}
+            # (2) 券面印字 → 排出(46h)。磁気は書けたので、ここで失敗しても呼出は使える
+            st = dev.print_buffer_clear()
+            if st != 0x20:
+                _eject_safe(dev)
+                return {"ok": True, "face_error": "印字バッファクリアに失敗: " + status_text(st),
+                        "customer_id": cid, "written": CARD_PREFIX + cid}
+            for c in build_card_face_cmds(face.get("name") or "", face.get("issued"),
+                                          face.get("expiry"), face.get("points"),
+                                          face.get("message") or ""):
+                st = dev.set_print_text(c)
+                if st != 0x20:
+                    _eject_safe(dev)
+                    return {"ok": True, "face_error": "印字データ設定に失敗: " + status_text(st),
+                            "customer_id": cid, "written": CARD_PREFIX + cid}
+            st = dev.erase_print_eject()
+            if st != 0x20:
+                _eject_safe(dev)
+                return {"ok": True, "face_error": "券面の消去+印字に失敗: " + status_text(st),
+                        "customer_id": cid, "written": CARD_PREFIX + cid}
+            return {"ok": True, "customer_id": cid, "written": CARD_PREFIX + cid}
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"会員証の発行に失敗: {e}"}
+
+
 # ── 券面リライト印字(カード表面の文字の書き換え) ──
 # 座標系(2026-07-29 実機グリッド印字で確定):
 #   ・Yは小さいほど上(Y23〜319が使える。白枠上端≈Y0)
