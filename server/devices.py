@@ -405,6 +405,7 @@ FACE_DIR = "0"
 FACE_LABEL_X = 20     # 項目名のX
 FACE_VALUE_X = 130    # 値のX(有効期限=全角4文字96ドットの右に余白)
 FACE_MAX_X = 300      # 白枠の右端
+FACE_RIGHT_X = 290    # 右揃えの基準X(枠ぎりぎりだと欠けるため10ドット内側)
 FACE_TOP_Y = 40       # 1行目のY(Y小=上)
 FACE_LINE_H = 45      # 行送り。長い名前の5行構成(最終行Y220)でも下端230に収まる
 
@@ -449,10 +450,22 @@ def build_card_face_cmds(name, issued, expiry, points, message=""):
     y += 28
     cmds.append(_cmd(FACE_LABEL_X, y, ESC_B + b"E11" + sj("有効期限")))
     cmds.append(_cmd(FACE_VALUE_X, y, ESC_B + b"E11" + sj(str(expiry or ""))))
-    # ポイント(数値は名前と同じ縦倍48ドット)。ラベルと下端揃え
+    # ポイント(数値は名前と同じ縦倍48ドット)。ラベルと下端揃え・数値は右揃え(桁が増えても右端が揃う)
     y += 52
-    cmds.append(_cmd(FACE_LABEL_X, y, ESC_B + b"E11" + sj("ポイント")))
-    cmds.append(_cmd(FACE_VALUE_X, y, ESC_B + b"E21" + sj(f"{int(points or 0):,}")))
+    label = "ポイント"
+    cmds.append(_cmd(FACE_LABEL_X, y, ESC_B + b"E11" + sj(label)))
+    pts = f"{int(points or 0):,}"
+    # 安全弁: 右揃えでラベルに重なる桁数になったら、数値を通常サイズ(半角12ドット)に落とす。
+    # それでも重なる場合はラベルの右隣から左揃え(欠けさせない・重ねないことを優先)
+    label_end = FACE_LABEL_X + _dots(label) + 8   # ラベル右端+余白
+    size, unit = b"E21", 24                        # 縦倍(半角24ドット)
+    x = FACE_RIGHT_X - len(pts) * unit
+    if x < label_end:
+        size, unit = b"E11", 12                    # 通常サイズにして幅を半分に
+        x = FACE_RIGHT_X - len(pts) * unit
+        if x < label_end:
+            x = label_end                          # それでも入らなければ左揃えで逃がす
+    cmds.append(_cmd(x, y, ESC_B + size + sj(pts)))
     # フリーメッセージ(通常・ラベルなし)。ポイントとの間に半行(16ドット)の余白を入れる。
     # 長い名前の時は行が1本増えているため1行まで
     gap = 16
