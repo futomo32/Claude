@@ -312,6 +312,91 @@ def build_receipt_doc_bytes(r):
     return bytes(buf)
 
 
+def build_void_receipt_bytes(r):
+    """返品レシートのESC/POSバイト列。r = db_query.void_receipt_data() の dict。
+
+    返品は現金が出ていく取引なので、お客様控と店控(受領サイン欄つき)の2枚を出す。
+    取消日時・担当者・理由も印字し、紙の上でも「誰がなぜ返品したか」を追えるようにする。
+    """
+    def sj(text):
+        return text.encode("shift_jis", "replace")
+
+    def one(kind, sign=False):
+        buf = bytearray()
+        buf += ESC + b"@"
+        buf += FS + b"C" + b"\x01"
+        buf += FS + b"&"
+        logo = _logo_raster()
+        if logo:
+            buf += logo
+            buf += b"\n"
+        buf += GS + b"!" + b"\x11"          # 縦横2倍
+        buf += sj(_center("返 品 明 細", width=RECEIPT_WIDTH // 2) + "\n")
+        buf += GS + b"!" + b"\x00"
+        buf += sj(_center(f"({kind})") + "\n")
+        buf += sj("-" * RECEIPT_WIDTH + "\n")
+        if r.get("customer"):
+            buf += sj(f"{r['customer']} 様\n")
+        buf += sj(f"元の売上: {r['sold_at']} 伝票#{r['slip_id']}\n")
+        buf += sj(f"区分: {r['kind']}\n")
+        buf += sj("-" * RECEIPT_WIDTH + "\n")
+        for name, amount in r["lines"]:
+            for seg in _wrap(str(name or "お品物")):
+                buf += sj(seg + "\n")
+            buf += sj(_pad_line("", f"-\\{amount:,}") + "\n")
+        buf += sj("-" * RECEIPT_WIDTH + "\n")
+        buf += GS + b"!" + b"\x01"          # 縦2倍(返金額を目立たせる)
+        buf += sj(_pad_line("返金額", f"\\{r['total']:,}") + "\n")
+        buf += GS + b"!" + b"\x00"
+        buf += sj(_pad_line("(内消費税)", f"\\{r['tax']:,}") + "\n")
+        # 元の支払方法(返金の手段の目安。クレジットはカード会社経由で現金は動かない)
+        if r.get("payments"):
+            buf += sj("元のお支払い:\n")
+            for method, amount in r["payments"]:
+                label = f"{amount:,}pt" if method == "ポイント" else f"\\{amount:,}"
+                buf += sj(_pad_line(f"  {method}", label) + "\n")
+            if not r.get("cash_refund"):
+                buf += sj("※現金以外のお支払いのため\n")
+                buf += sj("  返金方法は店頭でご確認ください\n")
+        buf += sj("-" * RECEIPT_WIDTH + "\n")
+        if r.get("voided_at"):
+            buf += sj(f"取消日時: {r['voided_at']}\n")
+        if r.get("voided_staff"):
+            buf += sj(f"取消担当: {r['voided_staff']}\n")
+        if r.get("voided_reason"):
+            for seg in _wrap("理由: " + r["voided_reason"]):
+                buf += sj(seg + "\n")
+        buf += sj("\n")
+        if sign:
+            buf += sj("上記の返金を受け取りました\n\n")
+            buf += sj("お客様サイン\n")
+            buf += sj("_" * RECEIPT_WIDTH + "\n")
+        else:
+            buf += sj(_center("上記を返品・返金いたしました") + "\n")
+        buf += FS + b"."
+        buf += b"\n\n\n\n\n\n"
+        buf += GS + b"V" + b"\x00"          # フルカット(2枚に切り分ける)
+        return bytes(buf)
+
+    return one("お客様控") + one("店控", sign=True)
+
+
+def print_void_receipt(doc, drawer=None):
+    """返品レシートを印字する。現金で受け取った売上の返品ならドロワーも開ける
+    (現金を返すため)。クレジット等のみの返品では開けない。"""
+    if not ENABLED:
+        return _skip()
+    data = build_void_receipt_bytes(doc)
+    open_drawer_now = doc.get("cash_refund", False) if drawer is None else bool(drawer)
+    if open_drawer_now:
+        data += DRAWER_KICK
+    try:
+        via = _send_to_printer(data)
+        return {"ok": True, "via": via, "drawer": open_drawer_now}
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"返品レシートの印字に失敗: {e}"}
+
+
 def print_receipt_doc(doc):
     """領収書を印字する(レシートプリンタ)。"""
     if not ENABLED:

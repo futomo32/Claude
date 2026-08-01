@@ -4164,6 +4164,19 @@
       btn.disabled = false;
       if (res.error) throw new Error(res.error);
       closeVoidModal();
+      // 返品レシート(お客様控+店控)を印字。現金売上の返品ならドロワーも開く。
+      // 失敗しても取消は成立済み(エラーだけ知らせる)
+      if (D.hardwareMode) {
+        fetch(API + "/void_receipt_print", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ line_id: ctx.lineId })
+        }).then(function (r) { return r.json(); }).then(function (pr) {
+          if (pr.error) showToast("⚠ " + pr.error + "（取消は完了しています）");
+          else if (pr.skipped) showToast("返品レシートは機器OFFモードのため印字していません。");
+          else showToast("🧾 返品レシート(お客様控+店控)を発行しました。" +
+            (pr.drawer ? "現金返金のためドロワーが開きます。" : ""));
+        }).catch(function () { showToast("⚠ 返品レシート印字の通信に失敗（取消は完了しています）"); });
+      }
       // 累計購入額(c[8])をローカルで減算し、詳細を取り直して再描画
       var c = findCust(ctx.cid);
       if (c) c[8] = Math.max(0, (c[8] || 0) - (ctx.amount || 0));

@@ -2667,6 +2667,51 @@ def receipt_doc_data(con, slip_id, to_name=None, note=None, reissue=False):
             "credit_methods": credit_methods, "reissue": bool(reissue)}
 
 
+def void_receipt_data(con, line_id=None, slip_id=None):
+    """返品レシート用のデータ(取消済みの明細/伝票から組み立てる)。
+
+    返品は現金が出ていく取引なので、お客様控と店控(受領サイン用)を出せるようにする。
+    元の支払方法も返す: 現金で受け取った分があればドロワーを開ける判断に使う
+    (クレジットの返金はカード会社経由のため現金は動かない)。
+    """
+    con.row_factory = sqlite3.Row
+    if line_id is not None:
+        rows = con.execute("""SELECT l.line_id, l.slip_id, l.amount,
+                                     COALESCE(l.free_name, p.name) nm,
+                                     l.voided_at, l.voided_staff, l.voided_reason, l.voided_by
+                              FROM sale_lines l LEFT JOIN products p ON p.product_key = l.product_key
+                              WHERE l.line_id=? AND COALESCE(l.voided,0)=1""", (int(line_id),)).fetchall()
+        if not rows:
+            raise ValueError("取消済みの明細が見つかりません")
+        slip_id = rows[0]["slip_id"]
+        kind = "明細取消"
+    else:
+        rows = con.execute("""SELECT l.line_id, l.slip_id, l.amount,
+                                     COALESCE(l.free_name, p.name) nm,
+                                     l.voided_at, l.voided_staff, l.voided_reason, l.voided_by
+                              FROM sale_lines l LEFT JOIN products p ON p.product_key = l.product_key
+                              WHERE l.slip_id=? AND COALESCE(l.voided,0)=1
+                              ORDER BY l.line_id""", (int(slip_id),)).fetchall()
+        if not rows:
+            raise ValueError("取消済みの明細が見つかりません")
+        kind = "伝票取消(返品)"
+
+    s = con.execute("""SELECT s.slip_id, s.sold_at, s.staff_name, c.name cname
+                       FROM sales_slips s LEFT JOIN customers c ON c.customer_id = s.customer_id
+                       WHERE s.slip_id=?""", (int(slip_id),)).fetchone()
+    payments = [(r["method"] or "現金", int(r["amount"] or 0)) for r in con.execute(
+        "SELECT method, amount FROM sale_payments WHERE slip_id=? ORDER BY id", (int(slip_id),))]
+    total = sum(int(r["amount"] or 0) for r in rows)
+    first = rows[0]
+    return {"kind": kind, "slip_id": int(slip_id), "sold_at": s["sold_at"] if s else "",
+            "customer": (s["cname"] if s else "") or "", "staff": shorten_staff(s["staff_name"] if s else ""),
+            "lines": [(r["nm"] or "お品物", int(r["amount"] or 0)) for r in rows],
+            "total": total, "tax": total * 10 // 110, "payments": payments,
+            "cash_refund": any(m == "現金" and a > 0 for m, a in payments),
+            "voided_at": first["voided_at"] or "", "voided_staff": first["voided_staff"] or "",
+            "voided_reason": first["voided_reason"] or "", "voided_by": first["voided_by"] or ""}
+
+
 def card_face_data(con, customer_id):
     """カード券面リライト印字用のデータ(devices.card_face_print に渡す dict)。
     名前・有効期限(最終購入日+N年)・ポイント残高・券面メッセージ。会計直後に呼ぶ想定
