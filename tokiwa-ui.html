@@ -658,6 +658,32 @@
   .doc-sheet .doc-note { margin-top: 1.2em; font-size: 9pt; color: #333; }
   .doc-sheet .doc-reg { font-size: 9pt; color: #222; margin-top: 0.3em; }
   .doc-sheet .doc-bank { margin-top: 1.6em; border: 1.5px solid #000; padding: 0.7em 1em; display: inline-block; min-width: 70mm; }
+  /* ── 領収書(A4に財布サイズで印刷し、切り取り線で裁断する) ──
+     1枚 170×80mm。長財布に折らずに入る寸法。A4縦に「お客様控」「店控」の2枚を配置する。 */
+  .rcpt-sheet { width: 210mm; box-sizing: border-box; padding: 15mm 20mm;
+    font-family: "游ゴシック", "Yu Gothic", sans-serif; color: #000; }
+  .rcpt-cut { width: 170mm; height: 80mm; box-sizing: border-box; border: 1px dashed #999;
+    padding: 6mm 7mm; position: relative; font-size: 9pt; line-height: 1.5; overflow: hidden; }
+  .rcpt-cut + .rcpt-cut { margin-top: 10mm; }
+  .rcpt-cut .rc-kind { position: absolute; top: 2mm; right: 4mm; font-size: 7.5pt; color: #555; }
+  .rcpt-cut .rc-title { font-size: 16pt; font-weight: 700; letter-spacing: 0.35em; text-align: center;
+    margin: 0 0 3mm; }
+  .rcpt-cut .rc-reissue { text-align: center; font-size: 8pt; color: #a00; margin: -2mm 0 2mm; }
+  .rcpt-cut .rc-row { display: flex; align-items: flex-end; gap: 4mm; }
+  .rcpt-cut .rc-to { flex: 1; font-size: 12pt; font-weight: 700; border-bottom: 1px solid #000;
+    padding-bottom: 1mm; }
+  .rcpt-cut .rc-date { font-size: 8.5pt; white-space: nowrap; }
+  .rcpt-cut .rc-amount { font-size: 18pt; font-weight: 700; border: 1.5px solid #000;
+    padding: 1.5mm 4mm; display: inline-block; margin: 2.5mm 0; letter-spacing: 0.05em; }
+  .rcpt-cut .rc-note { font-size: 9pt; }
+  .rcpt-cut .rc-foot { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 2mm; }
+  .rcpt-cut .rc-store { font-size: 8.5pt; line-height: 1.45; text-align: right; }
+  .rcpt-cut .rc-store img { max-height: 10mm; max-width: 40mm; display: block; margin-left: auto; }
+  .rcpt-cut .rc-stamp { width: 26mm; height: 32mm; border: 1px solid #000; font-size: 7pt;
+    text-align: center; padding-top: 2mm; color: #444; }
+  .rcpt-cut .rc-nostamp { font-size: 8pt; color: #333; }
+  .rcpt-cut .rc-tax { font-size: 8pt; color: #333; }
+  @media print { .rcpt-cut { border-color: #bbb; } }
   .doc-sheet .doc-bank .bk-title { font-weight: 700; font-size: 10.5pt; margin-bottom: 0.4em; }
   .doc-sheet .doc-bank .bk-line { font-size: 10pt; line-height: 1.9; }
   /* 商品写真(B-7) */
@@ -884,6 +910,10 @@
             <button onclick="key(1)">1</button><button onclick="key(2)">2</button><button onclick="key(3)">3</button>
             <button onclick="key(0)">0</button><button onclick="key('00')">00</button><button onclick="keyClear()">C</button>
             <button class="wide">取消</button><button class="exec" id="btn-checkout" onclick="doCheckout(this)">会計を確定</button>
+          </div>
+          <div id="pos-lastdoc" style="display:none;margin-top:0.7rem;padding:0.5em 0.8em;background:var(--accent-soft);border:1px solid var(--accent);border-radius:8px;font-size:0.88em">
+            🧾 直前の会計: <span id="pos-lastdoc-label"></span>
+            <button class="btn" style="margin-left:0.5em" onclick="openLastReceiptDoc()">領収書を発行</button>
           </div>
           <div class="section-title" style="margin-top:0.9rem">レシート下部メッセージ</div>
           <div class="field"><label>この会計だけの一言(共通メッセージの上に印字)</label>
@@ -2152,6 +2182,34 @@
   </div>
 </div>
 
+<!-- 領収書の発行(レシートプリンタ / A4を選べる) -->
+<div class="modal-back" id="rcpt-modal">
+  <div class="modal" style="width:min(520px,100%)" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h3>領収書の発行</h3>
+      <button class="close" aria-label="閉じる" onclick="closeRcptModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="rc-target" style="margin:0 0 0.8rem;font-weight:700"></p>
+      <div class="field"><label>宛名</label>
+        <input id="rc-to" maxlength="60" placeholder="空欄なら顧客名(顧客なしは「上様」)">
+        <span style="font-size:0.8em;color:var(--muted)">お客様の希望どおりに入力してください(会社名・「上様」など)。</span></div>
+      <div class="field"><label>但し書き</label>
+        <div id="rc-note-bar" style="display:flex;flex-wrap:wrap;gap:0.3em;margin-bottom:0.4em"></div>
+        <input id="rc-note" maxlength="60" placeholder="お品代として"></div>
+      <p id="rc-stamp-info" style="margin:0.6rem 0 0;font-size:0.88em"></p>
+      <p style="margin:0.6rem 0 0;font-size:0.8em;color:var(--muted)">
+        A4は<b>170×80mm(財布に入る大きさ)</b>で「お客様控」「店控」の2枚を印刷します。切り取り線で裁断してください。</p>
+      <p id="rc-error" style="color:var(--danger);font-size:0.85em;margin:0.6rem 0 0;display:none"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeRcptModal()">やめる</button>
+      <button class="btn" onclick="issueReceiptDoc('a4', this)">A4で印刷</button>
+      <button class="btn btn-primary" onclick="issueReceiptDoc('print', this)">🧾 レシートプリンタで発行</button>
+    </div>
+  </div>
+</div>
+
 <!-- 購入明細の取消(担当者+理由を必ず記録する) -->
 <div class="modal-back" id="void-modal">
   <div class="modal" style="width:min(520px,100%)" role="dialog" aria-modal="true">
@@ -2912,6 +2970,7 @@
   bindBackdropClose("receipt-msg-modal", closeReceiptMsg);
   bindBackdropClose("backup-modal", closeBackup);
   bindBackdropClose("void-modal", closeVoidModal);
+  bindBackdropClose("rcpt-modal", closeRcptModal);
   bindBackdropClose("repair-modal", closeRepairModal);
   renderPosLines();
 
@@ -3883,6 +3942,10 @@
             : (API && s[7] != null
                 ? ' style="cursor:pointer" title="ダブルクリックで品名を修正" ondblclick="openLineEdit(' + s[7] + ',\'' + esc(id) + '\')"'
                 : '');
+          // s[8]=slip_id。後日「領収書ください」と言われた時に伝票から発行できるように
+          var docCell = (API && s[8] != null)
+            ? '<button class="btn" style="padding:0.2em 0.6em" title="この伝票の領収書を発行" onclick="openReceiptDoc(' + s[8] + ',\'' + esc(String(s[0] || "")) + ' ' + esc(String(s[1] || "")).replace(/'/g, "&#39;") + '\')">🧾</button> '
+            : '';
           // s[7]=line_id, s[8]=slip_id(サーバー経由時のみ)。取消(返品・訂正)ボタン
           var voidCell = (API && s[7] != null)
             ? '<button class="btn" style="color:var(--danger);padding:0.2em 0.6em" onclick="voidSaleLine(' + s[7] + ',' + (parseInt(s[3], 10) || 0) + ',\'' + esc(id) + '\',\'' + esc(String(s[1] || "")).replace(/'/g, "&#39;") + '\')">取消</button>'
@@ -3891,7 +3954,7 @@
           var thumb = s[9] ? '<img class="hist-thumb" loading="lazy" src="' + esc(prodImgUrl(s[9])) + '"' +
             (pno ? ' style="cursor:pointer" onclick="openProductByNo(\'' + esc(String(pno)) + '\')"' : '') +
             ' onerror="this.style.display=\'none\'">' : '';
-          return '<tr><td>' + thumb + '</td><td class="num">' + esc(s[0]) + '</td><td' + attr + '>' + nameCell + '</td><td>' + esc(dash(s[2])) + '</td><td class="r num">' + amount + '</td><td>' + esc(dash(s[4])) + '</td><td>' + esc(shortName(s[5])) + '</td><td>' + voidCell + '</td></tr>';
+          return '<tr><td>' + thumb + '</td><td class="num">' + esc(s[0]) + '</td><td' + attr + '>' + nameCell + '</td><td>' + esc(dash(s[2])) + '</td><td class="r num">' + amount + '</td><td>' + esc(dash(s[4])) + '</td><td>' + esc(shortName(s[5])) + '</td><td style="white-space:nowrap">' + docCell + voidCell + '</td></tr>';
         }).join("") +
         // 取消済み明細(監査ログ)。トグルON時のみ、グレー＋打ち消し線＋取消バッジで表示
         (histShowVoided ? voided.map(function (s) {
@@ -3965,6 +4028,96 @@
     });
   }
   // 購入明細の取消(返品・訂正。B-1)。取消すると集計・履歴から除外し、在庫品は在庫に戻す
+  /* ── 領収書の発行(レシートプリンタ / A4=財布サイズ×2枚) ── */
+  var RCPT_NOTES = ["お品代として", "宝飾品代として", "眼鏡代として", "時計代として", "修理代として"];
+  var rcptSlipId = null, rcptIssued = {};   // 伝票ごとの発行済みフラグ(2枚目以降は再発行と明記)
+  function openReceiptDoc(slipId, label) {
+    if (!API) return showToast("領収書はサーバー起動時に発行できます。");
+    rcptSlipId = slipId;
+    document.getElementById("rc-target").textContent = label ? "対象: " + label : "伝票 #" + slipId;
+    document.getElementById("rc-to").value = "";
+    document.getElementById("rc-note").value = "";
+    document.getElementById("rc-error").style.display = "none";
+    document.getElementById("rc-stamp-info").textContent = "";
+    document.getElementById("rc-note-bar").innerHTML = RCPT_NOTES.map(function (n) {
+      return '<button type="button" class="btn" style="padding:0.2em 0.7em;font-size:0.85em" onclick="document.getElementById(\'rc-note\').value=this.textContent">' + esc(n) + '</button>';
+    }).join("");
+    document.getElementById("rcpt-modal").classList.add("show");
+  }
+  function closeRcptModal() { document.getElementById("rcpt-modal").classList.remove("show"); rcptSlipId = null; }
+  /* 会計直後の「領収書を発行」ボタン(お客様に求められた時だけ押す。次の会計まで残る) */
+  var lastDocSlip = null;
+  function showLastReceiptDocBtn(slipId, label) {
+    lastDocSlip = { id: slipId, label: label };
+    var box = document.getElementById("pos-lastdoc");
+    if (!box) return;
+    document.getElementById("pos-lastdoc-label").textContent = label;
+    box.style.display = "";
+  }
+  function openLastReceiptDoc() {
+    if (lastDocSlip) openReceiptDoc(lastDocSlip.id, lastDocSlip.label);
+  }
+  function issueReceiptDoc(mode, btn) {
+    if (rcptSlipId == null) return;
+    var err = document.getElementById("rc-error");
+    err.style.display = "none";
+    btn.disabled = true;
+    var sid = rcptSlipId;
+    fetch(API + "/receipt_doc", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        slip_id: sid, mode: mode === "print" ? "print" : "data",
+        to_name: document.getElementById("rc-to").value,
+        note: document.getElementById("rc-note").value,
+        reissue: !!rcptIssued[sid]
+      })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      btn.disabled = false;
+      if (res.error) throw new Error(res.error);
+      var d = res.doc || {};
+      // 印紙の要否を画面にも出す(貼り忘れ・貼りすぎの防止)
+      document.getElementById("rc-stamp-info").innerHTML = d.stamp_required
+        ? '<span style="color:var(--warn)">⚠ 収入印紙が必要です(現金受領 ¥' + num(d.cash_amount) + ')。貼付して消印してください。</span>'
+        : '<span style="color:var(--ok)">✓ 収入印紙は不要です' + (d.credit_methods && d.credit_methods.length ? '(' + esc(d.credit_methods.join("・")) + '利用)' : '(5万円未満)') + '</span>';
+      rcptIssued[sid] = true;
+      if (mode === "print") {
+        if (res.skipped) return showToast(res.message);
+        showToast("🧾 領収書を発行しました(" + d.to_name + " 様 / ¥" + num(d.total) + ")。");
+        return;
+      }
+      showPrintPreview("doc", buildReceiptDocHtml(d));   // A4(財布サイズ×2枚)
+    }).catch(function (e) {
+      btn.disabled = false;
+      err.textContent = "領収書の発行に失敗: " + (e.message || e); err.style.display = "block";
+    });
+  }
+  /* A4に財布サイズ(170×80mm)で「お客様控」「店控」の2枚を組む */
+  function buildReceiptDocHtml(d) {
+    var st = d.store || {};
+    var head = window.TOKIWA_API
+      ? '<img src="/assets/logo.png" alt="' + esc(st.name || "") + '" onerror="this.replaceWith(this.alt)">'
+      : esc(st.name || "");
+    function one(kind) {
+      var stamp = d.stamp_required
+        ? '<div class="rc-stamp">収入印紙<br>貼付欄<br><span style="font-size:6.5pt">(消印を忘れずに)</span></div>'
+        : '<div class="rc-nostamp">' + (d.credit_methods && d.credit_methods.length
+            ? esc(d.credit_methods.join("・")) + '利用のため<br>収入印紙不要' : '5万円未満のため<br>収入印紙不要') + '</div>';
+      return '<div class="rcpt-cut">' +
+        '<div class="rc-kind">' + kind + '</div>' +
+        '<div class="rc-title">領 収 書</div>' +
+        (d.reissue ? '<div class="rc-reissue">※再発行</div>' : '') +
+        '<div class="rc-row"><div class="rc-to">' + esc(d.to_name) + ' 様</div>' +
+        '<div class="rc-date">発行日 ' + esc(d.issued_at) + '<br>伝票 #' + esc(String(d.slip_id)) + '</div></div>' +
+        '<div class="rc-amount">￥' + num(d.total) + '-</div>' +
+        '<div class="rc-note">但 ' + esc(d.note) + '　上記正に領収いたしました</div>' +
+        '<div class="rc-tax">10%対象 ￥' + num(d.total) + '(内消費税 ￥' + num(d.tax) + ')</div>' +
+        '<div class="rc-foot">' + stamp +
+        '<div class="rc-store">' + head + esc(st.name || "") + '<br>TEL ' + esc(st.tel || "") +
+        '<br>登録番号 ' + esc(st.invoice_no || "") + '</div></div>' +
+        '</div>';
+    }
+    return '<div class="rcpt-sheet">' + one("お客様控") + one("店控") + '</div>';
+  }
   /* 取消(返品・訂正): 担当者と理由を必ず記録する。
      ログインユーザーはサーバー側で自動記録されるため画面からは送らない(詐称防止)。 */
   var VOID_REASONS = ["サイズ違いのため返品", "商品不良のため返品", "お客様都合による返品",
@@ -7491,6 +7644,8 @@
     if (pm) pm.value = "1";  // ポイント倍率は会計ごとにリセット(倍デーを引きずらない)
     var rn = document.getElementById("pos-receipt-note");
     if (rn) rn.value = "";   // 個別の一言も会計ごとにリセット(次のお客様に残さない)
+    // 「直前の会計の領収書」ボタンは残す(会計直後に求められることが多いため)。
+    // 次の会計を確定した時点で新しい伝票に差し替わる
     updatePointPreview();
     refreshChange();
     // 「過去の日付で登録する」は解除しない: 店外イベント精算など同じ日付で連続入力する運用のため
@@ -7569,6 +7724,8 @@
         }).catch(function () { showToast("⚠ レシート印字の通信に失敗（会計は保存済み）"); });
         updateHeldCardFace(cid, nm);  // 保持中カードの券面(ポイント等)を書き換えて排出(案A)
       }
+      // 領収書は「ください」と言われた時だけ発行する(会計直後にすぐ出せるようにボタンを残す)
+      showLastReceiptDocBtn(data.slip_id, nm + " 様 / ¥" + num(data.total));
       resetPosAfterSale();
     }).catch(function (e) {
       checkedOut = false; btn.disabled = false; btn.textContent = "会計を確定";

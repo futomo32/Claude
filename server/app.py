@@ -568,6 +568,23 @@ class Handler(BaseHTTPRequestHandler):
                     con.close()
                 result = devices.print_receipt(receipt, drawer=payload.get("drawer", True))
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/receipt_doc":
+                # 領収書: data=データだけ返す(A4版を画面で組む) / print=レシートプリンタで印字
+                con = connect()
+                try:
+                    doc = db_query.receipt_doc_data(con, payload.get("slip_id"),
+                                                    payload.get("to_name"), payload.get("note"),
+                                                    payload.get("reissue"))
+                except ValueError as e:
+                    return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                finally:
+                    con.close()
+                doc["store"] = store_info.as_dict()
+                if payload.get("mode") == "print":
+                    result = devices.print_receipt_doc(doc)
+                    result["doc"] = doc
+                    return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+                return self._send(200, json.dumps({"ok": True, "doc": doc}, ensure_ascii=False).encode("utf-8"))
             if path == "/api/drawer_open":
                 result = devices.open_drawer()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))

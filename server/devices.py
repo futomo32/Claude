@@ -74,10 +74,11 @@ def _pad_line(left, right):
     return left + " " * max(1, space) + right
 
 
-def _center(s):
+def _center(s, width=None):
     """中央寄せの1行(手動スペース詰め)。ESC a の中央寄せはラスタ画像に効かない・
-    機種や漢字モードで挙動が揺れるため、印字桁数から自前で計算する(確実)。"""
-    return " " * max(0, (RECEIPT_WIDTH - _w(s)) // 2) + s
+    機種や漢字モードで挙動が揺れるため、印字桁数から自前で計算する(確実)。
+    width: 2倍角(GS ! 0x11)の行は1文字が2倍幅になるため RECEIPT_WIDTH//2 を渡す。"""
+    return " " * max(0, ((width or RECEIPT_WIDTH) - _w(s)) // 2) + s
 
 
 def _wrap(text, width=None):
@@ -244,6 +245,82 @@ def build_receipt_bytes(r):
     buf += b"\n\n\n\n\n\n"
     buf += GS + b"V" + b"\x00"   # フルカット
     return bytes(buf)
+
+
+def build_receipt_doc_bytes(r):
+    """領収書のESC/POSバイト列。r = db_query.receipt_doc_data() の dict。
+
+    記載事項: 宛名・金額・但し書き・日付・発行者(店名/TEL/登録番号)。
+    収入印紙は「金銭の受領」5万円以上で必要なため、判定結果に応じて
+    貼付欄またはクレジット利用の注記を印字する(貼り忘れ・貼りすぎの防止)。
+    登録番号と税率区分も入れており、適格簡易請求書としても使える。
+    """
+    def sj(text):
+        return text.encode("shift_jis", "replace")
+
+    buf = bytearray()
+    buf += ESC + b"@"
+    buf += FS + b"C" + b"\x01"
+    buf += FS + b"&"
+    logo = _logo_raster()
+    if logo:
+        buf += logo
+        buf += b"\n"
+    buf += GS + b"!" + b"\x11"          # 縦横2倍
+    buf += sj(_center("領 収 書", width=RECEIPT_WIDTH // 2) + "\n")
+    buf += GS + b"!" + b"\x00"
+    if r.get("reissue"):
+        buf += sj(_center("(再発行)") + "\n")
+    buf += sj("\n")
+    # 宛名(下線代わりに罫線を敷いて手書きの領収書らしく)
+    buf += sj(f"{r['to_name']} 様\n")
+    buf += sj("-" * RECEIPT_WIDTH + "\n")
+    # 金額(一番大きく。¥と桁区切りで改ざんしにくくする)
+    buf += GS + b"!" + b"\x11"
+    buf += sj(_center(f"\\{r['total']:,}-", width=RECEIPT_WIDTH // 2) + "\n")
+    buf += GS + b"!" + b"\x00"
+    buf += sj("-" * RECEIPT_WIDTH + "\n")
+    buf += sj(f"但 {r['note']}\n")
+    buf += sj("上記正に領収いたしました\n")
+    buf += sj("\n")
+    buf += sj(_pad_line("10%対象", f"\\{r['total']:,}") + "\n")
+    buf += sj(_pad_line("(内消費税)", f"\\{r['tax']:,}") + "\n")
+    for method, amount in r.get("payments", []):
+        label = f"{amount:,}pt" if method == "ポイント" else f"\\{amount:,}"
+        buf += sj(_pad_line(f"  {method}", label) + "\n")
+    buf += sj("\n")
+    # 収入印紙(印紙税法: 金銭の受領5万円以上。信用取引は対象外)
+    if r.get("stamp_required"):
+        buf += sj("+----------------+\n")
+        buf += sj("|  収入印紙貼付欄  |\n")
+        buf += sj("|                |\n")
+        buf += sj("|   (消印をする)   |\n")
+        buf += sj("+----------------+\n")
+    elif r.get("credit_methods"):
+        buf += sj("・".join(r["credit_methods"]) + "利用のため\n")
+        buf += sj("収入印紙は不要です\n")
+    buf += sj("\n")
+    buf += sj(f"発行日: {r['issued_at']}  伝票#{r['slip_id']}\n")
+    buf += sj("-" * RECEIPT_WIDTH + "\n")
+    buf += sj(store_info.STORE_NAME + "\n")
+    buf += sj(f"TEL {STORE_TEL}\n")
+    if STORE_REG_NO:
+        buf += sj(f"登録番号 {STORE_REG_NO}\n")
+    buf += FS + b"."
+    buf += b"\n\n\n\n\n\n"
+    buf += GS + b"V" + b"\x00"
+    return bytes(buf)
+
+
+def print_receipt_doc(doc):
+    """領収書を印字する(レシートプリンタ)。"""
+    if not ENABLED:
+        return _skip()
+    try:
+        via = _send_to_printer(build_receipt_doc_bytes(doc))
+        return {"ok": True, "via": via}
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"領収書の印字に失敗: {e}"}
 
 
 def _send_to_printer(data: bytes):

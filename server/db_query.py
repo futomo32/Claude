@@ -2624,6 +2624,49 @@ def receipt_data(con, slip_id, deposit=None):
             "message": point_settings(con).get("receipt_message", "")}  # 全レシート共通
 
 
+# 印紙税: 「金銭の受領」に当たる支払方法だけが課税対象。クレジット・分割(信販)・PayPay等の
+# 電子マネー・掛売(その場で受領なし)・ポイントは信用取引/非受領のため対象外。
+# 対象額が5万円以上のとき収入印紙が必要(記載金額5万円未満は非課税)。
+STAMP_CASH_METHODS = ("現金", "銀行振込", "振込")
+STAMP_THRESHOLD = 50000
+
+
+def receipt_doc_data(con, slip_id, to_name=None, note=None, reissue=False):
+    """領収書用のデータを伝票から組み立てる(レシートプリンタ版・A4版で共用)。
+
+    印紙の要否を支払方法から自動判定する(貼り忘れ・貼りすぎを防ぐ)。
+    宛名は未指定なら顧客名、顧客が無ければ「上様」。但し書きは未指定なら「お品代として」。
+    """
+    con.row_factory = sqlite3.Row
+    s = con.execute("""SELECT s.slip_id, s.sold_at, s.customer_id, s.voided, c.name cname
+                       FROM sales_slips s LEFT JOIN customers c ON c.customer_id = s.customer_id
+                       WHERE s.slip_id=?""", (int(slip_id),)).fetchone()
+    if not s:
+        raise ValueError("伝票が見つかりません")
+    if s["voided"]:
+        raise ValueError("取消済みの伝票の領収書は発行できません")
+    total = con.execute("""SELECT COALESCE(SUM(amount),0) FROM sale_lines
+                           WHERE slip_id=? AND COALESCE(voided,0)=0""", (s["slip_id"],)).fetchone()[0]
+    total = int(total or 0)
+    if total <= 0:
+        raise ValueError("金額が0円のため領収書を発行できません")
+    payments = [(r["method"] or "現金", int(r["amount"] or 0)) for r in con.execute(
+        "SELECT method, amount FROM sale_payments WHERE slip_id=? ORDER BY id", (s["slip_id"],))]
+    # 印紙の判定: 現金・振込の合計だけを対象額とする
+    cash_amount = sum(a for m, a in payments if m in STAMP_CASH_METHODS)
+    credit_methods = [m for m, a in payments if m not in STAMP_CASH_METHODS and a > 0]
+    stamp_required = cash_amount >= STAMP_THRESHOLD
+    tax = total * 10 // 110
+
+    name = str(to_name or "").strip() or (s["cname"] or "").strip() or "上様"
+    return {"slip_id": s["slip_id"], "issued_at": datetime.date.today().isoformat(),
+            "sold_at": s["sold_at"], "to_name": name,
+            "note": str(note or "").strip() or "お品代として",
+            "total": total, "tax": tax, "payments": payments,
+            "cash_amount": cash_amount, "stamp_required": stamp_required,
+            "credit_methods": credit_methods, "reissue": bool(reissue)}
+
+
 def card_face_data(con, customer_id):
     """カード券面リライト印字用のデータ(devices.card_face_print に渡す dict)。
     名前・有効期限(最終購入日+N年)・ポイント残高・券面メッセージ。会計直後に呼ぶ想定
