@@ -2696,18 +2696,30 @@ def void_receipt_data(con, line_id=None, slip_id=None):
             raise ValueError("取消済みの明細が見つかりません")
         kind = "伝票取消(返品)"
 
-    s = con.execute("""SELECT s.slip_id, s.sold_at, s.staff_name, c.name cname
+    s = con.execute("""SELECT s.slip_id, s.sold_at, s.staff_name, s.customer_id, c.name cname
                        FROM sales_slips s LEFT JOIN customers c ON c.customer_id = s.customer_id
                        WHERE s.slip_id=?""", (int(slip_id),)).fetchone()
     payments = [(r["method"] or "現金", int(r["amount"] or 0)) for r in con.execute(
         "SELECT method, amount FROM sale_payments WHERE slip_id=? ORDER BY id", (int(slip_id),))]
     total = sum(int(r["amount"] or 0) for r in rows)
     first = rows[0]
+    # この取消で動いたポイント(返品調整)と現在の残高。レシートに出して行き違いを防ぐ
+    pt = con.execute("""SELECT COALESCE(add_points,0), COALESCE(use_points,0), balance
+                        FROM point_transactions
+                        WHERE ref_slip_id=? AND tx_type='返品調整'
+                        ORDER BY id DESC LIMIT 1""", (int(slip_id),)).fetchone()
+    point_delta = (int(pt[0] or 0) - int(pt[1] or 0)) if pt else 0
+    point_balance = int(pt[2] or 0) if pt else None
+    if point_balance is None and s and s["customer_id"]:
+        bal = con.execute("SELECT balance FROM point_balances WHERE customer_id=?",
+                          (str(s["customer_id"]),)).fetchone()
+        point_balance = int(bal[0] or 0) if bal else None
     return {"kind": kind, "slip_id": int(slip_id), "sold_at": s["sold_at"] if s else "",
             "customer": (s["cname"] if s else "") or "", "staff": shorten_staff(s["staff_name"] if s else ""),
             "lines": [(r["nm"] or "お品物", int(r["amount"] or 0)) for r in rows],
             "total": total, "tax": total * 10 // 110, "payments": payments,
             "cash_refund": any(m == "現金" and a > 0 for m, a in payments),
+            "point_delta": point_delta, "point_balance": point_balance,
             "voided_at": first["voided_at"] or "", "voided_staff": first["voided_staff"] or "",
             "voided_reason": first["voided_reason"] or "", "voided_by": first["voided_by"] or ""}
 
@@ -2756,6 +2768,56 @@ def _restock_line(con, line_id):
                        VALUES (?,?,?,?)""", (pk, "返品", 1, row[1]))
 
 
+def _reverse_points_for_void(con, slip_id, voided_amount, reason):
+    """取消に伴うポイントの戻し。取り消した金額の割合で按分する。
+
+      付与ポイント … 取り消す(マイナス。返した商品の分は付けない)
+      使用ポイント … 戻す(プラス。お客様が払ったポイントを返す)
+
+    一部だけ取り消した場合も金額按分で同じ考え方になる(全額取消なら100%戻る)。
+    ★残高は0未満にしない: 付与分を既に使い切っている場合にマイナス残高が出ると、
+      以後の「残高不足」判定が分かりにくくなるため。実際に適用した値を履歴に残す。
+    戻り値: {earned_reversed, used_restored, delta, balance} / 対象なしなら None
+    """
+    s = con.execute("""SELECT customer_id, COALESCE(earned_points,0), COALESCE(used_points,0)
+                       FROM sales_slips WHERE slip_id=?""", (int(slip_id),)).fetchone()
+    if not s:
+        return None
+    cid, earned, used = str(s[0] or ""), int(s[1] or 0), int(s[2] or 0)
+    if not cid or (earned == 0 and used == 0):
+        return None
+    # 元の会計金額(明細は会計時にしか作られないため、取消済みも含めた合計が元の金額)
+    orig = con.execute("SELECT COALESCE(SUM(amount),0) FROM sale_lines WHERE slip_id=?",
+                       (int(slip_id),)).fetchone()[0]
+    orig = int(orig or 0)
+    if orig <= 0:
+        return None
+    ratio = min(1.0, max(0.0, int(voided_amount or 0) / orig))
+    earned_rev = int(round(earned * ratio))     # 取り消す付与pt
+    used_res = int(round(used * ratio))         # 戻す使用pt
+    if earned_rev == 0 and used_res == 0:
+        return None
+
+    bal_row = con.execute("SELECT balance FROM point_balances WHERE customer_id=?", (cid,)).fetchone()
+    bal = int(bal_row[0] or 0) if bal_row else 0
+    delta = used_res - earned_rev
+    newbal = max(0, bal + delta)                # 0未満にしない
+    applied = newbal - bal                      # 実際に動いた分(履歴と残高を食い違わせない)
+    today = datetime.date.today().isoformat()
+    con.execute("""INSERT INTO point_transactions
+                     (customer_id,tx_type,points,add_points,use_points,balance,product_name,
+                      ref_slip_id,occurred_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (cid, "返品調整", abs(applied),
+                 applied if applied > 0 else None, -applied if applied < 0 else None,
+                 newbal, f"返品調整: {reason}"[:100], int(slip_id), today))
+    con.execute("""INSERT INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)
+                   ON CONFLICT(customer_id) DO UPDATE SET balance=excluded.balance,
+                     updated_at=excluded.updated_at""", (cid, newbal, today))
+    return {"earned_reversed": earned_rev, "used_restored": used_res,
+            "delta": applied, "balance": newbal, "clamped": (bal + delta) < 0}
+
+
 def _void_record(operator, staff, reason):
     """取消の記録3点を検証して返す。担当者と理由は必須(監査で後から追えるようにするため)。"""
     staff = str(staff or "").strip()
@@ -2784,12 +2846,16 @@ def void_sale_line(con, line_id, operator=None, staff=None, reason=None):
     if row[0]:
         return {"line_id": line_id, "already": True}
     now, op, stf, rsn = _void_record(operator, staff, reason)
+    lr = con.execute("SELECT slip_id, COALESCE(amount,0) FROM sale_lines WHERE line_id=?",
+                     (line_id,)).fetchone()
     _restock_line(con, line_id)
     con.execute("""UPDATE sale_lines SET voided=1, voided_at=?, voided_by=?, voided_staff=?,
                           voided_reason=? WHERE line_id=?""", (now, op, stf, rsn, line_id))
+    # 付与ptを取り消し、使用ptを戻す(取り消した金額の割合で按分)
+    pts = _reverse_points_for_void(con, lr[0], lr[1], rsn) if lr else None
     con.commit()
     return {"line_id": line_id, "voided": True, "voided_at": now,
-            "voided_by": op, "voided_staff": stf, "voided_reason": rsn}
+            "voided_by": op, "voided_staff": stf, "voided_reason": rsn, "points": pts}
 
 
 def void_sale_slip(con, slip_id, operator=None, staff=None, reason=None):
@@ -2801,15 +2867,20 @@ def void_sale_slip(con, slip_id, operator=None, staff=None, reason=None):
     if not row:
         raise ValueError("対象の伝票が見つかりません")
     now, op, stf, rsn = _void_record(operator, staff, reason)
-    for lr in con.execute("SELECT line_id FROM sale_lines WHERE slip_id=? AND COALESCE(voided,0)=0", (slip_id,)):
+    # まだ取り消していない明細だけが今回の対象(既に取消済みの分はポイントも戻し済み)
+    live = con.execute("""SELECT line_id, COALESCE(amount,0) FROM sale_lines
+                          WHERE slip_id=? AND COALESCE(voided,0)=0""", (slip_id,)).fetchall()
+    for lr in live:
         _restock_line(con, lr[0])
     con.execute("""UPDATE sale_lines SET voided=1, voided_at=?, voided_by=?, voided_staff=?,
-                          voided_reason=? WHERE slip_id=?""", (now, op, stf, rsn, slip_id))
+                          voided_reason=? WHERE slip_id=? AND COALESCE(voided,0)=0""",
+                (now, op, stf, rsn, slip_id))
     con.execute("""UPDATE sales_slips SET voided=1, voided_at=?, voided_by=?, voided_staff=?,
                           voided_reason=? WHERE slip_id=?""", (now, op, stf, rsn, slip_id))
+    pts = _reverse_points_for_void(con, slip_id, sum(int(r[1] or 0) for r in live), rsn)
     con.commit()
     return {"slip_id": slip_id, "voided": True, "voided_at": now,
-            "voided_by": op, "voided_staff": stf, "voided_reason": rsn}
+            "voided_by": op, "voided_staff": stf, "voided_reason": rsn, "points": pts}
 
 
 # ── ログイン認証・ロール制御(アクセス制御④。docs/access-control.md) ──

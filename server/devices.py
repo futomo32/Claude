@@ -358,6 +358,12 @@ def build_void_receipt_bytes(r):
             if not r.get("cash_refund"):
                 buf += sj("※現金以外のお支払いのため\n")
                 buf += sj("  返金方法は店頭でご確認ください\n")
+        # ポイントの調整(付与分の取消・使用分の返還)。残高の行き違いを防ぐため必ず出す
+        if r.get("point_delta"):
+            d = int(r["point_delta"])
+            buf += sj(_pad_line("ポイント調整", f"{d:+,}pt") + "\n")
+        if r.get("point_balance") is not None:
+            buf += sj(_pad_line("ポイント残高", f"{int(r['point_balance']):,}pt") + "\n")
         buf += sj("-" * RECEIPT_WIDTH + "\n")
         if r.get("voided_at"):
             buf += sj(f"取消日時: {r['voided_at']}\n")
