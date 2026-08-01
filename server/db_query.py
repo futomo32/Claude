@@ -2,7 +2,37 @@
 
 UIの描画コードを変えずに済むよう、埋め込み版と同じ配列の並びで返す。
 """
-import hashlib, json, re, secrets, sqlite3, datetime, unicodedata
+import contextlib, hashlib, json, re, secrets, sqlite3, datetime, unicodedata
+
+
+@contextlib.contextmanager
+def write_lock(con):
+    """お金・在庫を動かす処理を排他する(BEGIN IMMEDIATE)。
+
+    SQLiteの既定(遅延トランザクション)では、書き込みロックは最初のINSERT/UPDATEまで
+    取られない。そのため「在庫を確認 → 伝票を作る」のような読んでから書く処理は、
+    店内共有で2台が同時に会計すると**両方が確認を通過して二重販売が成立し得る**。
+    BEGIN IMMEDIATE で最初から書き込みロックを取り、他方は busy_timeout の間待つ。
+
+    ・入れ子で呼ばれた場合(既にトランザクション中)は何もしない=外側のロックに任せる
+    ・例外時は ROLLBACK。途中まで書いた伝票が残らない
+    ・内側で con.commit() を呼ばないこと(ロックが切れて排他の意味がなくなる)
+    """
+    if con.in_transaction:
+        yield
+        return
+    prev = con.isolation_level
+    con.isolation_level = None          # トランザクションを自前で管理する
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+        except BaseException:
+            con.execute("ROLLBACK")
+            raise
+        con.execute("COMMIT")
+    finally:
+        con.isolation_level = prev
 
 GLASS_PAT = re.compile(r"メガネ|眼鏡|レンズ|フレーム|ﾒｶﾞﾈ|ﾚﾝｽﾞ|ﾌﾚｰﾑ")
 
@@ -1379,21 +1409,22 @@ def adjust_points(con, p):
     reason = str(p.get("reason") or "").strip()
     if not reason:
         raise ValueError("修正理由を入力してください(履歴に残ります)")
-    row = con.execute("SELECT balance FROM point_balances WHERE customer_id=?", (cid,)).fetchone()
-    bal = int(row[0] or 0) if row else 0
-    newbal = bal + delta
-    if newbal < 0:
-        raise ValueError(f"残高が0未満になります(現在 {bal:,} pt)")
-    today = datetime.date.today().isoformat()
-    con.execute("""INSERT INTO point_transactions
-        (customer_id,tx_type,points,add_points,use_points,balance,product_name,occurred_at)
-        VALUES (?,?,?,?,?,?,?,?)""",
-        (cid, "手動修正", abs(delta), delta if delta > 0 else None,
-         -delta if delta < 0 else None, newbal, f"手動修正: {reason}", today))
-    con.execute("""INSERT INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)
-                   ON CONFLICT(customer_id) DO UPDATE SET balance=excluded.balance, updated_at=excluded.updated_at""",
-                (cid, newbal, today))
-    con.commit()
+    # 残高の読み書きを排他する(別端末の会計・返品と同時に走ると残高が上書きし合うため)
+    with write_lock(con):
+        row = con.execute("SELECT balance FROM point_balances WHERE customer_id=?", (cid,)).fetchone()
+        bal = int(row[0] or 0) if row else 0
+        newbal = bal + delta
+        if newbal < 0:
+            raise ValueError(f"残高が0未満になります(現在 {bal:,} pt)")
+        today = datetime.date.today().isoformat()
+        con.execute("""INSERT INTO point_transactions
+            (customer_id,tx_type,points,add_points,use_points,balance,product_name,occurred_at)
+            VALUES (?,?,?,?,?,?,?,?)""",
+            (cid, "手動修正", abs(delta), delta if delta > 0 else None,
+             -delta if delta < 0 else None, newbal, f"手動修正: {reason}", today))
+        con.execute("""INSERT INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)
+                       ON CONFLICT(customer_id) DO UPDATE SET balance=excluded.balance, updated_at=excluded.updated_at""",
+                    (cid, newbal, today))
     return {"customer_id": cid, "balance": newbal, "delta": delta,
             "occurred_at": today, "reason": reason}
 
@@ -2453,7 +2484,16 @@ def checkout(con, payload):
     sold_at を渡すと当日以外の日付(過去)で登録できる(店外イベントの後日精算など)。
     未来日は不可。created_at(登録日時)は別途サーバー時刻で自動記録されるため、
     実際の入力日は後から追跡できる。
+
+    ★write_lock で排他する: 在庫の確認から伝票作成までを1つのトランザクションに入れないと、
+      店内共有で2台が同じ1点ものを同時に会計した時に二重販売が成立してしまう。
     """
+    with write_lock(con):
+        return _checkout_locked(con, payload)
+
+
+def _checkout_locked(con, payload):
+    """checkout の本体(呼び出し元が write_lock を保持している前提。自分ではcommitしない)。"""
     cur = con.cursor()
     today = datetime.date.today().isoformat()
     sold_at = payload.get("sold_at") or today
@@ -2579,7 +2619,7 @@ def checkout(con, payload):
                        ON CONFLICT(customer_id) DO UPDATE SET balance=excluded.balance, updated_at=excluded.updated_at""",
                     (cid, newbal, sold_at))
 
-    con.commit()
+    # commit は write_lock が行う(ここで commit するとロックが切れて排他が壊れる)
     return {"slip_id": slip_id, "earned": earned, "total": total, "lines": lines_out,
             "sold_at": sold_at, "pay_method": pay_label, "receivables": receivables_out,
             "points_used": points_used, "point_balance": newbal}
@@ -2840,20 +2880,20 @@ def void_sale_line(con, line_id, operator=None, staff=None, reason=None):
       reason   … 取消理由 ※必須
     """
     line_id = int(line_id)
-    row = con.execute("SELECT voided FROM sale_lines WHERE line_id=?", (line_id,)).fetchone()
-    if not row:
-        raise ValueError("対象の明細が見つかりません")
-    if row[0]:
-        return {"line_id": line_id, "already": True}
-    now, op, stf, rsn = _void_record(operator, staff, reason)
-    lr = con.execute("SELECT slip_id, COALESCE(amount,0) FROM sale_lines WHERE line_id=?",
-                     (line_id,)).fetchone()
-    _restock_line(con, line_id)
-    con.execute("""UPDATE sale_lines SET voided=1, voided_at=?, voided_by=?, voided_staff=?,
-                          voided_reason=? WHERE line_id=?""", (now, op, stf, rsn, line_id))
-    # 付与ptを取り消し、使用ptを戻す(取り消した金額の割合で按分)
-    pts = _reverse_points_for_void(con, lr[0], lr[1], rsn) if lr else None
-    con.commit()
+    now, op, stf, rsn = _void_record(operator, staff, reason)   # 先に検証(ロックを短くする)
+    with write_lock(con):   # 二重取消・在庫戻しとポイント調整の競合を防ぐ
+        row = con.execute("SELECT voided FROM sale_lines WHERE line_id=?", (line_id,)).fetchone()
+        if not row:
+            raise ValueError("対象の明細が見つかりません")
+        if row[0]:
+            return {"line_id": line_id, "already": True}
+        lr = con.execute("SELECT slip_id, COALESCE(amount,0) FROM sale_lines WHERE line_id=?",
+                         (line_id,)).fetchone()
+        _restock_line(con, line_id)
+        con.execute("""UPDATE sale_lines SET voided=1, voided_at=?, voided_by=?, voided_staff=?,
+                              voided_reason=? WHERE line_id=?""", (now, op, stf, rsn, line_id))
+        # 付与ptを取り消し、使用ptを戻す(取り消した金額の割合で按分)
+        pts = _reverse_points_for_void(con, lr[0], lr[1], rsn) if lr else None
     return {"line_id": line_id, "voided": True, "voided_at": now,
             "voided_by": op, "voided_staff": stf, "voided_reason": rsn, "points": pts}
 
@@ -2863,22 +2903,22 @@ def void_sale_slip(con, slip_id, operator=None, staff=None, reason=None):
     伝票のvoidedも立て、入金(sale_payments)も集計から外れる。
     記録内容は void_sale_line と同じ(明細・伝票の両方に残す)。"""
     slip_id = int(slip_id)
-    row = con.execute("SELECT voided FROM sales_slips WHERE slip_id=?", (slip_id,)).fetchone()
-    if not row:
-        raise ValueError("対象の伝票が見つかりません")
-    now, op, stf, rsn = _void_record(operator, staff, reason)
-    # まだ取り消していない明細だけが今回の対象(既に取消済みの分はポイントも戻し済み)
-    live = con.execute("""SELECT line_id, COALESCE(amount,0) FROM sale_lines
-                          WHERE slip_id=? AND COALESCE(voided,0)=0""", (slip_id,)).fetchall()
-    for lr in live:
-        _restock_line(con, lr[0])
-    con.execute("""UPDATE sale_lines SET voided=1, voided_at=?, voided_by=?, voided_staff=?,
-                          voided_reason=? WHERE slip_id=? AND COALESCE(voided,0)=0""",
-                (now, op, stf, rsn, slip_id))
-    con.execute("""UPDATE sales_slips SET voided=1, voided_at=?, voided_by=?, voided_staff=?,
-                          voided_reason=? WHERE slip_id=?""", (now, op, stf, rsn, slip_id))
-    pts = _reverse_points_for_void(con, slip_id, sum(int(r[1] or 0) for r in live), rsn)
-    con.commit()
+    now, op, stf, rsn = _void_record(operator, staff, reason)   # 先に検証(ロックを短くする)
+    with write_lock(con):
+        row = con.execute("SELECT voided FROM sales_slips WHERE slip_id=?", (slip_id,)).fetchone()
+        if not row:
+            raise ValueError("対象の伝票が見つかりません")
+        # まだ取り消していない明細だけが今回の対象(既に取消済みの分はポイントも戻し済み)
+        live = con.execute("""SELECT line_id, COALESCE(amount,0) FROM sale_lines
+                              WHERE slip_id=? AND COALESCE(voided,0)=0""", (slip_id,)).fetchall()
+        for lr in live:
+            _restock_line(con, lr[0])
+        con.execute("""UPDATE sale_lines SET voided=1, voided_at=?, voided_by=?, voided_staff=?,
+                              voided_reason=? WHERE slip_id=? AND COALESCE(voided,0)=0""",
+                    (now, op, stf, rsn, slip_id))
+        con.execute("""UPDATE sales_slips SET voided=1, voided_at=?, voided_by=?, voided_staff=?,
+                              voided_reason=? WHERE slip_id=?""", (now, op, stf, rsn, slip_id))
+        pts = _reverse_points_for_void(con, slip_id, sum(int(r[1] or 0) for r in live), rsn)
     return {"slip_id": slip_id, "voided": True, "voided_at": now,
             "voided_by": op, "voided_staff": stf, "voided_reason": rsn, "points": pts}
 
