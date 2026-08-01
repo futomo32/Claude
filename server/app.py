@@ -644,14 +644,17 @@ class Handler(BaseHTTPRequestHandler):
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/void_line":
-                # 取消の操作者はログインユーザーから取る(画面からの申告値は信用しない)
+                # operator(ログインユーザー)はサーバーが入れる=詐称できない。
+                # staff(取消した担当者)と reason(理由)は画面からの必須入力
                 con = connect()
-                result = db_query.void_sale_line(con, payload.get("line_id"), user.get("name"))
+                result = db_query.void_sale_line(con, payload.get("line_id"), user.get("name"),
+                                                 payload.get("staff"), payload.get("reason"))
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/void_slip":
                 con = connect()
-                result = db_query.void_sale_slip(con, payload.get("slip_id"), user.get("name"))
+                result = db_query.void_sale_slip(con, payload.get("slip_id"), user.get("name"),
+                                                 payload.get("staff"), payload.get("reason"))
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/rank_apply":

@@ -153,11 +153,18 @@ def ensure_schema(con):
         ("products", "ring_fingers", "TEXT"),  # はめる指(複数可。カンマ区切り)
         ("products", "ring_size", "TEXT"),     # リングサイズ(フリー入力。#10.5 や 12号 等)
         ("sales_slips", "receipt_note", "TEXT"),  # その会計だけのレシート一言(再印字でも同じ内容が出る)
-        # 取消(訂正・返品)の操作者。電子帳簿保存法の「訂正・削除の事実と内容を確認できること」
-        # に対応し、店舗運営上も「誰が取り消したか」を追えるようにする(2026-07-31)
+        # 取消(訂正・返品)の記録。電子帳簿保存法の「訂正・削除の事実と内容を確認できること」
+        # に対応し、店舗運営上も「誰が・なぜ取り消したか」を追えるようにする(2026-07-31)。
+        #   voided_by    … ログインユーザー(認証済み・詐称できない=監査の証拠)
+        #   voided_staff … 取消操作をした担当者(レジと同じワンタップ選択・実務の記録)
+        #   voided_reason… 取消理由(必須。「誰が」より「なぜ」が後から効く)
         ("sale_lines", "voided_by", "TEXT"),
+        ("sale_lines", "voided_staff", "TEXT"),
+        ("sale_lines", "voided_reason", "TEXT"),
         ("sales_slips", "voided_at", "TEXT"),
         ("sales_slips", "voided_by", "TEXT"),
+        ("sales_slips", "voided_staff", "TEXT"),
+        ("sales_slips", "voided_reason", "TEXT"),
     ]
     changed = False
     for table, col, decl in adds:
@@ -642,17 +649,21 @@ def customer_detail(con, cid):
         row[9] = row.pop(10)  # [9]=商品画像(サムネイル用)
 
     # 取消(返品)済みの明細。監査ログとして「取消済みも表示」トグルON時のみ画面に出す。
-    # 形状は sales と同じ並び＋[9]取消日時(voided_at)・[10]取消した人(voided_by)。
-    # 「誰が・いつ取り消したか」を残すのは電子帳簿保存法の訂正削除履歴への対応(2026-07-31)。
+    # 形状は sales と同じ並び＋[9]取消日時・[10]取消した担当者・[11]取消理由・[12]ログインユーザー。
+    # 「誰が・なぜ取り消したか」を残すのは電子帳簿保存法の訂正削除履歴への対応(2026-07-31)。
     sales_voided = [list(r) for r in cur.execute("""
         SELECT s.sold_at, COALESCE(l.free_name, p.name) AS disp_name,
                l.info, l.amount, s.pay_method, s.staff_name, p.product_no, l.line_id, s.slip_id,
-               l.voided_at, COALESCE(l.voided_by, s.voided_by, ''), s.credit_kind
+               l.voided_at,
+               COALESCE(l.voided_staff, s.voided_staff, ''),
+               COALESCE(l.voided_reason, s.voided_reason, ''),
+               COALESCE(l.voided_by, s.voided_by, ''),
+               s.credit_kind
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         WHERE s.customer_id = ? AND (COALESCE(l.voided,0)=1 OR COALESCE(s.voided,0)=1)
         ORDER BY s.sold_at DESC""", (cid,))]
-    for row in sales_voided:  # 取消済み一覧も支払の表示を揃える([9]取消日時・[10]取消者は維持)
+    for row in sales_voided:  # 取消済み一覧も支払の表示を揃える([9]〜[12]の取消情報は維持)
         row[4] = pay_texts.get(row[8]) or pay_fallback(row[4], row.pop())
 
     point_tx = [list(r) for r in cur.execute("""
@@ -2657,43 +2668,60 @@ def _restock_line(con, line_id):
                        VALUES (?,?,?,?)""", (pk, "返品", 1, row[1]))
 
 
-def void_sale_line(con, line_id, operator=None):
+def _void_record(operator, staff, reason):
+    """取消の記録3点を検証して返す。担当者と理由は必須(監査で後から追えるようにするため)。"""
+    staff = str(staff or "").strip()
+    reason = str(reason or "").strip()[:200]
+    if not staff:
+        raise ValueError("取消した担当者を選んでください")
+    if not reason:
+        raise ValueError("取消の理由を入力してください")
+    return (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            str(operator or ""), staff, reason)
+
+
+def void_sale_line(con, line_id, operator=None, staff=None, reason=None):
     """明細1行を取消(訂正/一部返品)。集計・履歴から除外し、在庫品なら在庫に戻す。
     最終正データのみ表示する方針のため、取消済み行は各画面に出さない。
-    operator(ログインユーザー名)を記録する: 電子帳簿保存法の「訂正・削除の事実と内容を
-    確認できること」への対応、および「誰が取り消したか」を追えるようにするため。"""
+
+    記録する3点(電子帳簿保存法の訂正削除履歴・店舗の内部統制):
+      operator … ログインユーザー(サーバーが認証情報から入れる。詐称できない)
+      staff    … 取消操作をした担当者(レジと同じワンタップ選択。実務の記録)※必須
+      reason   … 取消理由 ※必須
+    """
     line_id = int(line_id)
     row = con.execute("SELECT voided FROM sale_lines WHERE line_id=?", (line_id,)).fetchone()
     if not row:
         raise ValueError("対象の明細が見つかりません")
     if row[0]:
         return {"line_id": line_id, "already": True}
+    now, op, stf, rsn = _void_record(operator, staff, reason)
     _restock_line(con, line_id)
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")   # 時刻まで残す(監査のため)
-    con.execute("UPDATE sale_lines SET voided=1, voided_at=?, voided_by=? WHERE line_id=?",
-                (now, str(operator or ""), line_id))
+    con.execute("""UPDATE sale_lines SET voided=1, voided_at=?, voided_by=?, voided_staff=?,
+                          voided_reason=? WHERE line_id=?""", (now, op, stf, rsn, line_id))
     con.commit()
-    return {"line_id": line_id, "voided": True, "voided_at": now, "voided_by": operator or ""}
+    return {"line_id": line_id, "voided": True, "voided_at": now,
+            "voided_by": op, "voided_staff": stf, "voided_reason": rsn}
 
 
-def void_sale_slip(con, slip_id, operator=None):
+def void_sale_slip(con, slip_id, operator=None, staff=None, reason=None):
     """伝票ごと取消(返品)。伝票の全明細を無効化し、在庫品は在庫に戻す。
     伝票のvoidedも立て、入金(sale_payments)も集計から外れる。
-    operator(ログインユーザー名)を明細・伝票の両方に記録する(監査用)。"""
+    記録内容は void_sale_line と同じ(明細・伝票の両方に残す)。"""
     slip_id = int(slip_id)
     row = con.execute("SELECT voided FROM sales_slips WHERE slip_id=?", (slip_id,)).fetchone()
     if not row:
         raise ValueError("対象の伝票が見つかりません")
+    now, op, stf, rsn = _void_record(operator, staff, reason)
     for lr in con.execute("SELECT line_id FROM sale_lines WHERE slip_id=? AND COALESCE(voided,0)=0", (slip_id,)):
         _restock_line(con, lr[0])
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    op = str(operator or "")
-    con.execute("UPDATE sale_lines SET voided=1, voided_at=?, voided_by=? WHERE slip_id=?",
-                (now, op, slip_id))
-    con.execute("UPDATE sales_slips SET voided=1, voided_at=?, voided_by=? WHERE slip_id=?",
-                (now, op, slip_id))
+    con.execute("""UPDATE sale_lines SET voided=1, voided_at=?, voided_by=?, voided_staff=?,
+                          voided_reason=? WHERE slip_id=?""", (now, op, stf, rsn, slip_id))
+    con.execute("""UPDATE sales_slips SET voided=1, voided_at=?, voided_by=?, voided_staff=?,
+                          voided_reason=? WHERE slip_id=?""", (now, op, stf, rsn, slip_id))
     con.commit()
-    return {"slip_id": slip_id, "voided": True, "voided_at": now, "voided_by": op}
+    return {"slip_id": slip_id, "voided": True, "voided_at": now,
+            "voided_by": op, "voided_staff": stf, "voided_reason": rsn}
 
 
 # ── ログイン認証・ロール制御(アクセス制御④。docs/access-control.md) ──

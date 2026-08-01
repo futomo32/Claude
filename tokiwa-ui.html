@@ -2152,6 +2152,34 @@
   </div>
 </div>
 
+<!-- 購入明細の取消(担当者+理由を必ず記録する) -->
+<div class="modal-back" id="void-modal">
+  <div class="modal" style="width:min(520px,100%)" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h3>購入明細の取消(返品・訂正)</h3>
+      <button class="close" aria-label="閉じる" onclick="closeVoidModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="vd-target" style="margin:0 0 0.8rem;font-weight:700"></p>
+      <p style="margin:0 0 0.8rem;font-size:0.86em;color:var(--muted)">
+        取消すと購入履歴・売上集計から除外され、在庫商品は在庫に戻ります。
+        取消の記録(担当者・理由・日時)は監査用に残ります。</p>
+      <div class="field"><label>取消した担当者<span class="req">必須</span></label>
+        <div id="vd-staff-bar" class="op-bar"></div></div>
+      <div class="field"><label>取消の理由<span class="req">必須</span></label>
+        <div id="vd-reason-bar" style="display:flex;flex-wrap:wrap;gap:0.3em;margin-bottom:0.4em"></div>
+        <input id="vd-reason" maxlength="200" placeholder="例: サイズ違いのため返品">
+        <span style="font-size:0.8em;color:var(--muted)">よく使う理由はボタンで入ります。自由に書き換えられます。</span></div>
+      <p id="vd-error" style="color:var(--danger);font-size:0.85em;margin:0.6rem 0 0;display:none"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeVoidModal()">やめる</button>
+      <button class="btn btn-primary" style="background:var(--danger);border-color:var(--danger)"
+              onclick="submitVoid(this)">取消する</button>
+    </div>
+  </div>
+</div>
+
 <!-- バックアップ(管理者のみ) -->
 <div class="modal-back" id="backup-modal">
   <div class="modal" style="width:min(720px,100%)" role="dialog" aria-modal="true">
@@ -2883,6 +2911,7 @@
   bindBackdropClose("point-settings-modal", closePointSettings);
   bindBackdropClose("receipt-msg-modal", closeReceiptMsg);
   bindBackdropClose("backup-modal", closeBackup);
+  bindBackdropClose("void-modal", closeVoidModal);
   bindBackdropClose("repair-modal", closeRepairModal);
   renderPosLines();
 
@@ -3856,7 +3885,7 @@
                 : '');
           // s[7]=line_id, s[8]=slip_id(サーバー経由時のみ)。取消(返品・訂正)ボタン
           var voidCell = (API && s[7] != null)
-            ? '<button class="btn" style="color:var(--danger);padding:0.2em 0.6em" onclick="voidSaleLine(' + s[7] + ',' + (parseInt(s[3], 10) || 0) + ',\'' + esc(id) + '\')">取消</button>'
+            ? '<button class="btn" style="color:var(--danger);padding:0.2em 0.6em" onclick="voidSaleLine(' + s[7] + ',' + (parseInt(s[3], 10) || 0) + ',\'' + esc(id) + '\',\'' + esc(String(s[1] || "")).replace(/'/g, "&#39;") + '\')">取消</button>'
             : '';
           // s[9]=商品画像。買った品が一目で分かるようにサムネイルを出す(写真が無ければ空欄)
           var thumb = s[9] ? '<img class="hist-thumb" loading="lazy" src="' + esc(prodImgUrl(s[9])) + '"' +
@@ -3866,10 +3895,14 @@
         }).join("") +
         // 取消済み明細(監査ログ)。トグルON時のみ、グレー＋打ち消し線＋取消バッジで表示
         (histShowVoided ? voided.map(function (s) {
-          // s[9]=取消日時 / s[10]=取消した人。誰がいつ取り消したかを監査できるように出す
+          // s[9]=取消日時 / s[10]=取消した担当者 / s[11]=取消理由 / s[12]=ログインユーザー
+          // 誰が・なぜ取り消したかを監査できるように出す(理由は下に小さく)
+          var vinfo = (s[9] ? " " + esc(s[9]) : "") + (s[10] ? " / " + esc(shortName(s[10])) : "");
+          var vreason = s[11] ? '<br><span style="text-decoration:none;font-size:0.82em">理由: ' + esc(s[11]) +
+            (s[12] ? '(ログイン: ' + esc(shortName(s[12])) + ')' : '') + '</span>' : '';
           return '<tr style="color:var(--muted);text-decoration:line-through;background:#fafafa"><td></td><td class="num">' + esc(s[0]) +
             '</td><td>' + esc(dash(s[1])) + ' <span class="chip chip-danger" style="text-decoration:none">取消' +
-            (s[9] ? " " + esc(s[9]) : "") + (s[10] ? " / " + esc(shortName(s[10])) : "") + '</span></td><td>' + esc(dash(s[2])) +
+            vinfo + '</span>' + vreason + '</td><td>' + esc(dash(s[2])) +
             '</td><td class="r num">¥' + num(s[3]) + '</td><td>' + esc(dash(s[4])) + '</td><td>' + esc(shortName(s[5])) + '</td><td></td></tr>';
         }).join("") : "") +  /* 取消済みは列数を購入一覧に合わせる(先頭にサムネイル用の空セル) */
         '</tbody></table></div>';
@@ -3932,24 +3965,62 @@
     });
   }
   // 購入明細の取消(返品・訂正。B-1)。取消すると集計・履歴から除外し、在庫品は在庫に戻す
-  function voidSaleLine(lineId, amount, cid) {
+  /* 取消(返品・訂正): 担当者と理由を必ず記録する。
+     ログインユーザーはサーバー側で自動記録されるため画面からは送らない(詐称防止)。 */
+  var VOID_REASONS = ["サイズ違いのため返品", "商品不良のため返品", "お客様都合による返品",
+                      "打ち間違いの訂正", "二重登録の削除"];
+  var voidCtx = null, voidStaff = null;
+  function voidSaleLine(lineId, amount, cid, name) {
     if (!API) return;
-    alertPopup("この購入明細を取消(返品・訂正)しますか?\n取消すると購入履歴・売上集計から除外され、在庫商品は在庫に戻ります。", {
-      type: "warn", title: "購入明細の取消", okText: "取消する", cancelText: "やめる", confirm: true,
-      onOk: function () {
-        fetch(API + "/void_line", {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ line_id: lineId })
-        }).then(function (r) { return r.json(); }).then(function (res) {
-          if (res.error) throw new Error(res.error);
-          // 累計購入額(c[8])をローカルで減算し、詳細を取り直して再描画
-          var c = findCust(cid);
-          if (c) c[8] = Math.max(0, (c[8] || 0) - (amount || 0));
-          _loadedDetail[String(cid)] = false;
-          openCustomer(cid);
-          refreshStockStats();  // 在庫品が在庫に戻ったので在庫数タイルを最新化
-          showToast("取消しました。");
-        }).catch(function (e) { showToast("取消に失敗: " + (e.message || e)); });
-      }
+    voidCtx = { lineId: lineId, amount: amount, cid: cid };
+    voidStaff = null;
+    document.getElementById("vd-target").textContent = name ? "対象: " + name : "";
+    document.getElementById("vd-reason").value = "";
+    document.getElementById("vd-error").style.display = "none";
+    // 担当者バー(レジと同じ顔ぶれ・毎回選び直す)
+    document.getElementById("vd-staff-bar").innerHTML = (posOpNames && posOpNames.length ? posOpNames : (D.staff || []))
+      .map(function (n, i) { return '<button type="button" class="op-btn" onclick="selectVoidStaff(' + i + ')">' + esc(n) + '</button>'; }).join("")
+      || '<span style="color:var(--muted);font-size:0.85em">担当者マスタに登録がありません。</span>';
+    document.getElementById("vd-reason-bar").innerHTML = VOID_REASONS.map(function (r) {
+      return '<button type="button" class="btn" style="padding:0.2em 0.7em;font-size:0.85em" onclick="setVoidReason(this)">' + esc(r) + '</button>';
+    }).join("");
+    document.getElementById("void-modal").classList.add("show");
+  }
+  function closeVoidModal() { document.getElementById("void-modal").classList.remove("show"); voidCtx = null; }
+  function selectVoidStaff(i) {
+    var names = (posOpNames && posOpNames.length ? posOpNames : (D.staff || []));
+    voidStaff = names[i] || null;
+    document.getElementById("vd-staff-bar").querySelectorAll(".op-btn").forEach(function (el, j) {
+      el.classList.toggle("sel", j === i);
+    });
+  }
+  function setVoidReason(btn) { document.getElementById("vd-reason").value = btn.textContent; }
+  function submitVoid(btn) {
+    if (!voidCtx) return;
+    var err = document.getElementById("vd-error");
+    var reason = document.getElementById("vd-reason").value.trim();
+    if (!voidStaff) { err.textContent = "取消した担当者を選んでください。"; err.style.display = "block"; return; }
+    if (!reason) { err.textContent = "取消の理由を入力してください。"; err.style.display = "block"; return; }
+    err.style.display = "none";
+    btn.disabled = true;
+    var ctx = voidCtx;
+    fetch(API + "/void_line", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ line_id: ctx.lineId, staff: voidStaff, reason: reason })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      btn.disabled = false;
+      if (res.error) throw new Error(res.error);
+      closeVoidModal();
+      // 累計購入額(c[8])をローカルで減算し、詳細を取り直して再描画
+      var c = findCust(ctx.cid);
+      if (c) c[8] = Math.max(0, (c[8] || 0) - (ctx.amount || 0));
+      _loadedDetail[String(ctx.cid)] = false;
+      openCustomer(ctx.cid);
+      refreshStockStats();  // 在庫品が在庫に戻ったので在庫数タイルを最新化
+      showToast("取消しました(担当: " + shortName(res.voided_staff || "") + " / " + (res.voided_reason || "") + ")。");
+    }).catch(function (e) {
+      btn.disabled = false;
+      err.textContent = "取消に失敗: " + (e.message || e); err.style.display = "block";
     });
   }
   /* ── 顧客ランク更新(B-5) ── */
