@@ -536,7 +536,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Set-Cookie",
-                                 f"tokiwa_session={result['token']}; Path=/; HttpOnly; SameSite=Lax; Max-Age=5184000")
+                                 f"tokiwa_session={result['token']}; Path=/; HttpOnly; SameSite=Lax; "
+                                 f"Max-Age={db_query.SESSION_HOURS * 3600}")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)

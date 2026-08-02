@@ -2472,6 +2472,34 @@
      サーバー経由時は window.TOKIWA_USER が入る。埋め込み単体HTML(開発プレビュー)では
      未定義のため管理者相当として動く(サーバー側でも守っているため画面はあくまで補助)。 */
   var CUR_USER = window.TOKIWA_USER || null;
+  /* ログインの有効期限(12時間)が近づいたら予告する。
+     会計の途中で期限切れになると保存に失敗して売上を打ち直すことになるため、
+     残り30分を切ったら画面上部に出し続けて、区切りの良いところで入り直してもらう。 */
+  (function watchSession() {
+    if (!CUR_USER || !CUR_USER.expires_at) return;
+    var exp = new Date(String(CUR_USER.expires_at).replace(" ", "T"));
+    if (isNaN(exp.getTime())) return;
+    function tick() {
+      var min = Math.floor((exp.getTime() - Date.now()) / 60000);
+      var bar = document.getElementById("session-warn");
+      if (min > 30) { if (bar) bar.style.display = "none"; return; }
+      if (!bar) {
+        bar = document.createElement("div");
+        bar.id = "session-warn";
+        bar.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;padding:0.5em 1em;" +
+          "background:var(--warn-bg);color:var(--warn);border-bottom:1px solid var(--warn);" +
+          "font-size:0.9em;text-align:center";
+        document.body.appendChild(bar);
+      }
+      bar.style.display = "";
+      bar.innerHTML = min > 0
+        ? "⚠ ログインの有効期限まであと約" + min + "分です。会計中の場合は先に確定し、区切りの良いところで" +
+          '<a href="/api/logout" onclick="event.preventDefault();doLogout()" style="margin-left:0.4em">ログインし直して</a>ください。'
+        : "⚠ ログインの有効期限が切れました。ページを再読み込みしてログインし直してください。";
+    }
+    tick();
+    setInterval(tick, 60000);
+  })();
   var ROLE_LABELS = { admin: "管理者", staff: "社員", part: "パート" };
   function userRole() { return CUR_USER ? (CUR_USER.role || "staff") : "admin"; }
   function canCost() { return userRole() !== "part"; }      // 仕入額(下代)・粗利を見られるか

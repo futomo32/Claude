@@ -3129,6 +3129,12 @@ def void_sale_slip(con, slip_id, operator=None, staff=None, reason=None):
 # ── ログイン認証・ロール制御(アクセス制御④。docs/access-control.md) ──
 ROLE_LABELS = {"admin": "管理者", "staff": "社員", "part": "パート"}
 
+# ログインの有効時間(ログインしてからの経過時間)。2026-08-01 に60日→12時間へ短縮。
+# 理由: 店頭PCが常時ログインのままだと、権限(管理者/社員/パート)を分けても他人の
+# ログインをそのまま使えてしまい、取消の操作者記録も全部同じ人になってしまうため。
+# 開店から閉店までは持ち、翌日は必ずログインし直す長さとして12時間にしている。
+SESSION_HOURS = 12
+
 
 def _hash_pw(password, salt=None):
     """パスワードをPBKDF2でハッシュ化して 'salt$hash' 形式で返す(標準ライブラリのみ)。"""
@@ -3173,25 +3179,28 @@ def login_user(con, user_id, password):
     token = secrets.token_hex(32)
     con.execute("INSERT INTO app_sessions(token, user_id, created_at) VALUES (?,?,datetime('now','localtime'))",
                 (token, row[0]))
-    # 古いセッションの掃除(60日でログインし直し)
-    con.execute("DELETE FROM app_sessions WHERE created_at < datetime('now','-60 days','localtime')")
+    # 期限切れセッションの掃除(SESSION_HOURS でログインし直し)
+    con.execute(f"DELETE FROM app_sessions WHERE created_at < datetime('now','-{SESSION_HOURS} hours','localtime')")
     con.commit()
     return {"token": token, "first_time": first,
             "user": {"id": row[0], "name": row[1] or row[0], "role": row[2] or "staff"}}
 
 
 def session_user(con, token):
-    """セッショントークンからログインユーザーを引く。無効ならNone。"""
+    """セッショントークンからログインユーザーを引く。無効・期限切れならNone。"""
     if not token:
         return None
-    row = con.execute("""SELECT u.user_id, u.display_name, u.role
-                         FROM app_sessions s JOIN app_users u ON u.user_id = s.user_id
-                         WHERE s.token=? AND u.active=1
-                           AND s.created_at >= datetime('now','-60 days','localtime')""",
+    row = con.execute(f"""SELECT u.user_id, u.display_name, u.role,
+                                 datetime(s.created_at, '+{SESSION_HOURS} hours') expires_at
+                          FROM app_sessions s JOIN app_users u ON u.user_id = s.user_id
+                          WHERE s.token=? AND u.active=1
+                            AND s.created_at >= datetime('now','-{SESSION_HOURS} hours','localtime')""",
                       (token,)).fetchone()
     if not row:
         return None
-    return {"id": row[0], "name": row[1] or row[0], "role": row[2] or "staff"}
+    # expires_at は画面が「まもなく期限切れ」を予告するために使う(会計中の強制ログアウト防止)
+    return {"id": row[0], "name": row[1] or row[0], "role": row[2] or "staff",
+            "expires_at": row[3]}
 
 
 def logout_user(con, token):
