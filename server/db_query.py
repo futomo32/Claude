@@ -1908,6 +1908,209 @@ def upsert_customer(con, payload):
     return {"customer_id": cid, "new": is_new}
 
 
+# 顧客に紐づくテーブル(重複マージで付け替える対象)。列を増やしたらここも直すこと。
+# ★漏らすと「マージしたのに履歴が消えた」事故になるため、schema.sql の customer_id 参照を
+#   全て洗い出して列挙している(2026-08-01 時点で全12参照)。
+CUSTOMER_LINKED_TABLES = ("sales_slips", "receivables", "receivable_entries",
+                          "point_transactions", "approach_history", "prescriptions",
+                          "repairs", "customer_memos", "customer_families")
+
+
+def _digits(s):
+    return re.sub(r"[^0-9]", "", str(s or ""))
+
+
+def _last_purchase(con, cid):
+    """最終購入日(customers に列が無いため売上から求める)。"""
+    r = con.execute("""SELECT MAX(s.sold_at) FROM sales_slips s
+                       WHERE s.customer_id=? AND COALESCE(s.voided,0)=0""", (cid,)).fetchone()
+    return r[0] if r else None
+
+
+def find_duplicate_customers(con, limit=200):
+    """重複の疑いがある顧客を探す。判定は次の2通り(強い順)。
+
+      tel  … 電話番号(数字だけにして比較)が一致。最も確実
+      name … 氏名+カナ(記号・空白を除いて比較)が一致。同姓同名の別人もあるため要確認
+
+    ★自動では統合しない。同じ電話番号のご家族など「重複でない」ケースがあるため、
+      必ず画面で中身を見比べてから統合する運用にする。
+    """
+    con.row_factory = sqlite3.Row
+    # 累計購入額・最終購入日は customers に列が無く売上から集計する設計のため、ここで算出する
+    rows = con.execute("""SELECT c.customer_id, c.name, c.kana, c.tel, c.tel2, c.address, c.birthday,
+                                 COALESCE(t.total,0) total_amount, t.last_at last_purchase_at
+                          FROM customers c
+                          LEFT JOIN (SELECT s.customer_id cid, SUM(l.amount) total, MAX(s.sold_at) last_at
+                                     FROM sales_slips s JOIN sale_lines l ON l.slip_id = s.slip_id
+                                     WHERE COALESCE(s.voided,0)=0 AND COALESCE(l.voided,0)=0
+                                     GROUP BY s.customer_id) t ON t.cid = c.customer_id
+                          WHERE COALESCE(c.is_test,0)=0""").fetchall()
+    by_tel, by_name = {}, {}
+    for r in rows:
+        for t in (r["tel"], r["tel2"]):
+            d = _digits(t)
+            if len(d) >= 9:                     # 短すぎる番号は判定に使わない
+                by_tel.setdefault(d, []).append(r)
+        key = normjp(str(r["name"] or "")) + "|" + normjp(str(r["kana"] or ""))
+        if key.strip("|"):
+            by_name.setdefault(key, []).append(r)
+
+    def pack(r):
+        return {"customer_id": r["customer_id"], "name": r["name"], "kana": r["kana"],
+                "tel": r["tel"], "tel2": r["tel2"], "address": r["address"],
+                "birthday": r["birthday"], "total": int(r["total_amount"] or 0),
+                "last": r["last_purchase_at"]}
+
+    groups, seen = [], set()
+    for kind, table in (("tel", by_tel), ("name", by_name)):
+        for key, members in table.items():
+            if len(members) < 2:
+                continue
+            ids = tuple(sorted(m["customer_id"] for m in members))
+            if ids in seen:
+                continue
+            seen.add(ids)
+            groups.append({"kind": kind, "key": key,
+                           "members": [pack(m) for m in members]})
+    groups.sort(key=lambda g: (0 if g["kind"] == "tel" else 1, -len(g["members"])))
+    return {"groups": groups[:limit], "total": len(groups)}
+
+
+def customer_merge_preview(con, keep_id, merge_id):
+    """統合前の確認用データ。2件の顧客情報と「何がどれだけ移るか」を返す。
+    ★実行はしない(画面で中身を見比べてもらうための材料)。"""
+    keep_id, merge_id = str(keep_id or "").strip(), str(merge_id or "").strip()
+    if not keep_id or not merge_id:
+        raise ValueError("統合する顧客が指定されていません")
+    if keep_id == merge_id:
+        raise ValueError("同じ顧客は統合できません")
+    con.row_factory = sqlite3.Row
+    out = {"keep_id": keep_id, "merge_id": merge_id, "customers": {}, "moves": {}}
+    for cid in (keep_id, merge_id):
+        r = con.execute("SELECT * FROM customers WHERE customer_id=?", (cid,)).fetchone()
+        if not r:
+            raise ValueError(f"顧客({cid})が見つかりません")
+        bal = con.execute("SELECT balance FROM point_balances WHERE customer_id=?", (cid,)).fetchone()
+        d = {k: r[k] for k in r.keys()}
+        d["points"] = int(bal[0] or 0) if bal else 0
+        # 累計購入額・最終購入日は売上から集計(customers には列が無い)
+        t = con.execute("""SELECT COALESCE(SUM(l.amount),0), MAX(s.sold_at)
+                           FROM sales_slips s JOIN sale_lines l ON l.slip_id = s.slip_id
+                           WHERE s.customer_id=? AND COALESCE(s.voided,0)=0
+                             AND COALESCE(l.voided,0)=0""", (cid,)).fetchone()
+        d["total_amount"] = int(t[0] or 0)
+        d["last_purchase_at"] = t[1]
+        d["sales_count"] = con.execute(
+            "SELECT COUNT(*) FROM sales_slips WHERE customer_id=? AND COALESCE(voided,0)=0", (cid,)).fetchone()[0]
+        d["receivable_balance"] = con.execute(
+            "SELECT COALESCE(SUM(balance),0) FROM receivables WHERE customer_id=?", (cid,)).fetchone()[0]
+        d["repairs"] = con.execute("SELECT COUNT(*) FROM repairs WHERE customer_id=?", (cid,)).fetchone()[0]
+        d["prescriptions"] = con.execute(
+            "SELECT COUNT(*) FROM prescriptions WHERE customer_id=?", (cid,)).fetchone()[0]
+        out["customers"][cid] = d
+    # 移動する件数(統合される側)
+    for t in CUSTOMER_LINKED_TABLES:
+        try:
+            n = con.execute(f"SELECT COUNT(*) FROM {t} WHERE customer_id=?", (merge_id,)).fetchone()[0]
+        except sqlite3.Error:
+            n = 0
+        if n:
+            out["moves"][t] = n
+    out["moves_points"] = out["customers"][merge_id]["points"]
+    return out
+
+
+def merge_customers(con, keep_id, merge_id, operator=None):
+    """重複顧客を統合する。merge_id の履歴を全て keep_id へ付け替え、merge_id を削除する。
+
+    ★取り消せない操作なので、呼び出し側は必ず customer_merge_preview で
+      中身を確認してから実行すること。
+    ポイント残高は合算する(どちらのポイントも失わせない)。統合の記録は
+    ポイント履歴と統合される側の顧客名を残した形で customer_memos に残す。
+    """
+    prev = customer_merge_preview(con, keep_id, merge_id)   # 存在チェックも兼ねる
+    keep_id, merge_id = prev["keep_id"], prev["merge_id"]
+    keep_name = prev["customers"][keep_id].get("name") or keep_id
+    merge_name = prev["customers"][merge_id].get("name") or merge_id
+    moved = {}
+    with write_lock(con):
+        for t in CUSTOMER_LINKED_TABLES:
+            try:
+                cur = con.execute(f"UPDATE {t} SET customer_id=? WHERE customer_id=?", (keep_id, merge_id))
+                if cur.rowcount:
+                    moved[t] = cur.rowcount
+            except sqlite3.Error:
+                pass
+        # 家族リンクの相手側も付け替える(自分自身が家族になる行は消す)
+        try:
+            con.execute("UPDATE customer_families SET linked_customer_id=? WHERE linked_customer_id=?",
+                        (keep_id, merge_id))
+            con.execute("DELETE FROM customer_families WHERE customer_id=linked_customer_id")
+        except sqlite3.Error:
+            pass
+        # ポイント残高は合算(統合される側の残高を足す)
+        add = int(prev["customers"][merge_id]["points"] or 0)
+        keep_bal = int(prev["customers"][keep_id]["points"] or 0)
+        newbal = keep_bal + add
+        today = datetime.date.today().isoformat()
+        if add:
+            con.execute("""INSERT INTO point_transactions
+                             (customer_id,tx_type,points,add_points,balance,product_name,occurred_at)
+                           VALUES (?,?,?,?,?,?,?)""",
+                        (keep_id, "統合", add, add, newbal,
+                         f"顧客統合: {merge_name}({merge_id})から移管", today))
+        con.execute("""INSERT INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)
+                       ON CONFLICT(customer_id) DO UPDATE SET balance=excluded.balance,
+                         updated_at=excluded.updated_at""", (keep_id, newbal, today))
+        con.execute("DELETE FROM point_balances WHERE customer_id=?", (merge_id,))
+        # 統合の記録を残す(誰がいつ統合したか。元の顧客IDと氏名も残す)
+        try:
+            con.execute("""INSERT INTO customer_memos(customer_id, body, updated_at)
+                           VALUES (?,?,?)""",
+                        (keep_id,
+                         f"[顧客統合 {today}] {merge_name}(ID {merge_id})を統合しました"
+                         f"(操作: {operator or '不明'})。移動: "
+                         + "・".join(f"{k} {v}件" for k, v in moved.items()) or "なし",
+                         today))
+        except sqlite3.Error:
+            pass
+        con.execute("DELETE FROM customers WHERE customer_id=?", (merge_id,))
+    return {"ok": True, "keep_id": keep_id, "merge_id": merge_id,
+            "keep_name": keep_name, "merge_name": merge_name,
+            "moved": moved, "points_added": add, "point_balance": newbal}
+
+
+def check_customer_duplicate(con, tel=None, name=None, kana=None, exclude_id=None):
+    """登録前の重複チェック。同じ電話番号・同じ氏名の既存顧客を返す(警告用)。
+    ★登録は止めない(同じ電話番号のご家族など正当なケースがあるため)。"""
+    con.row_factory = sqlite3.Row
+    hits, seen = [], set()
+    d = _digits(tel)
+    ex = str(exclude_id or "")
+    if len(d) >= 9:
+        for r in con.execute("""SELECT customer_id, name, kana, tel, tel2, address
+                                FROM customers WHERE COALESCE(is_test,0)=0"""):
+            if r["customer_id"] == ex:
+                continue
+            if d in (_digits(r["tel"]), _digits(r["tel2"])):
+                hits.append({"customer_id": r["customer_id"], "name": r["name"], "kana": r["kana"],
+                             "tel": r["tel"], "address": r["address"],
+                             "last": _last_purchase(con, r["customer_id"]), "why": "電話番号が同じ"})
+                seen.add(r["customer_id"])
+    nk = normjp(str(name or ""))
+    if nk:
+        for r in con.execute("""SELECT customer_id, name, kana, tel, address
+                                FROM customers WHERE COALESCE(is_test,0)=0"""):
+            if r["customer_id"] == ex or r["customer_id"] in seen:
+                continue
+            if normjp(str(r["name"] or "")) == nk:
+                hits.append({"customer_id": r["customer_id"], "name": r["name"], "kana": r["kana"],
+                             "tel": r["tel"], "address": r["address"],
+                             "last": _last_purchase(con, r["customer_id"]), "why": "氏名が同じ"})
+    return {"hits": hits[:10]}
+
+
 def add_family(con, p):
     """家族を追加する。
     A(自由入力): {customer_id, name, relation, gender, birthday}

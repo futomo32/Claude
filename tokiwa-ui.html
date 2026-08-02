@@ -942,6 +942,7 @@
             <option value="none">購入履歴なし</option>
           </select></div>
           <button class="btn" id="test-cust-btn" style="display:none" onclick="showTestCustomers()">🧪 テスト顧客</button>
+          <button class="btn" id="cust-dup-btn" onclick="openDupCheck()" title="電話番号・氏名が同じ顧客を探して統合する">👥 重複チェック</button>
           <button class="btn btn-primary" onclick="openCustModal()">+ 新規顧客登録</button>
         </div>
         <p id="cust-count" style="margin:0 0 0.5rem;color:var(--muted);font-size:0.82em"></p>
@@ -2182,6 +2183,35 @@
   </div>
 </div>
 
+<!-- 顧客の重複チェックと統合(必ず中身を見比べてから統合する) -->
+<div class="modal-back" id="dup-modal">
+  <div class="modal" style="width:min(1000px,100%)" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h3>顧客の重複チェック</h3>
+      <button class="close" aria-label="閉じる" onclick="closeDupModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin:0 0 0.8rem;font-size:0.88em;color:var(--muted)">
+        電話番号または氏名が同じ顧客を探します。<b>同じ電話番号のご家族など「重複でない」場合もある</b>ため、
+        自動では統合しません。「内容を確認」で中身を見比べてから統合してください。</p>
+      <div id="dup-list"></div>
+      <!-- 統合の確認(左右に並べて中身を見比べる) -->
+      <div id="dup-compare" style="display:none;margin-top:1rem;border-top:2px solid var(--line);padding-top:1rem">
+        <div class="section-title">統合前の確認</div>
+        <div id="dup-compare-body"></div>
+        <p id="dup-error" style="color:var(--danger);font-size:0.85em;margin:0.6rem 0 0;display:none"></p>
+        <div style="margin-top:0.8rem;display:flex;gap:0.5em;flex-wrap:wrap">
+          <button class="btn" onclick="cancelDupCompare()">戻る</button>
+          <button class="btn" onclick="swapDupKeep()">残す側を入れ替える</button>
+          <button class="btn btn-primary" style="background:var(--danger);border-color:var(--danger)"
+                  onclick="doCustomerMerge(this)">この内容で統合する(取り消せません)</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="closeDupModal()">閉じる</button></div>
+  </div>
+</div>
+
 <!-- 領収書の発行(レシートプリンタ / A4を選べる) -->
 <div class="modal-back" id="rcpt-modal">
   <div class="modal" style="width:min(520px,100%)" role="dialog" aria-modal="true">
@@ -2478,6 +2508,8 @@
       if (ua) ua.style.display = "none";
       var bk = document.getElementById("card-backup");
       if (bk) bk.style.display = "none";   // バックアップ操作は管理者のみ(サーバー側でも拒否)
+      var dp = document.getElementById("cust-dup-btn");
+      if (dp) dp.style.display = "none";   // 顧客統合は取り消せないため管理者のみ(サーバー側でも拒否)
     }
   }
   function showScreen(name) {
@@ -2971,6 +3003,7 @@
   bindBackdropClose("backup-modal", closeBackup);
   bindBackdropClose("void-modal", closeVoidModal);
   bindBackdropClose("rcpt-modal", closeRcptModal);
+  bindBackdropClose("dup-modal", closeDupModal);
   bindBackdropClose("repair-modal", closeRepairModal);
   renderPosLines();
 
@@ -3221,6 +3254,37 @@
     };
     var btn = document.getElementById("cm-save");
     btn.disabled = true; btn.textContent = "保存中…";
+    // 重複警告: 同じ電話番号・氏名の既存顧客があれば確認する。
+    // ★登録は止めない(同じ電話番号のご家族など正当なケースがあるため。二重登録は
+    //   購入履歴とポイントが分散して顧客ランクやクレームの原因になるので、気づける形にする)
+    function proceed() { btn.disabled = true; btn.textContent = "保存中…"; save(); }
+    if (API) {
+      fetch(API + "/customer_dup_check", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tel: payload.tel, name: payload.name, kana: payload.kana,
+                               customer_id: payload.customer_id })
+      }).then(function (r) { return r.json(); }).then(function (res) {
+        var hits = (res && res.hits) || [];
+        if (!hits.length) return save();
+        btn.disabled = false; btn.textContent = "保存";
+        alertPopup("同じお客様が既に登録されている可能性があります。\n\n" +
+          hits.map(function (h) {
+            return "・" + h.name + "(ID " + h.customer_id + " / " + (h.tel || "電話なし") + ")" +
+              " — " + h.why + (h.last ? " / 最終購入 " + h.last : "");
+          }).join("\n") +
+          "\n\n二重登録すると購入履歴とポイントが分かれてしまいます。\n" +
+          "同じ方なら「やめる」を押して既存の顧客を編集してください。\n" +
+          "ご家族など別の方であれば、このまま登録して問題ありません。", {
+          type: "warn", title: "重複の可能性があります", confirm: true,
+          okText: "別の方なので登録する", cancelText: "やめる(既存を使う)",
+          onOk: proceed
+        });
+      }).catch(function () { save(); });   // 判定できなくても登録は通す
+      return;
+    }
+    save();
+
+    function save() {
     function done(cid) {
       var row = [cid, payload.name, payload.kana, payload.tel, payload.staff_name, payload.address,
                  payload.birthday, payload.gender, 0, 0, payload.wedding_day,
@@ -3263,6 +3327,7 @@
       D.customers.forEach(function (c) { var v = parseInt(c[0], 10) || 0; if (v > maxid) maxid = v; });
       done(payload.customer_id || String(maxid + 1));
     }
+    }   // end save()
   }
 
   var posCustomer = null;
@@ -4028,6 +4093,125 @@
     });
   }
   // 購入明細の取消(返品・訂正。B-1)。取消すると集計・履歴から除外し、在庫品は在庫に戻す
+  /* ── 顧客の重複チェックと統合 ──
+     ★自動では統合しない。必ず2件を左右に並べて中身を確認してから実行する。 */
+  var dupKeep = null, dupMerge = null;
+  function openDupCheck() {
+    if (!API) return showToast("重複チェックはサーバー起動時に使えます。");
+    document.getElementById("dup-compare").style.display = "none";
+    document.getElementById("dup-list").innerHTML = '<p style="color:var(--muted)">確認中…</p>';
+    document.getElementById("dup-modal").classList.add("show");
+    fetch(API + "/customer_duplicates").then(function (r) { return r.json(); }).then(function (res) {
+      var gs = res.groups || [];
+      if (!gs.length) {
+        document.getElementById("dup-list").innerHTML =
+          '<p style="color:var(--ok)">✓ 重複の疑いがある顧客は見つかりませんでした。</p>';
+        return;
+      }
+      document.getElementById("dup-list").innerHTML =
+        '<p style="margin:0 0 0.5rem">' + res.total + '組の候補が見つかりました' +
+        (res.total > gs.length ? '(上位' + gs.length + '組を表示)' : '') + '。</p>' +
+        gs.map(function (g) {
+          var badge = g.kind === "tel"
+            ? '<span class="chip chip-warn">電話番号が同じ</span>'
+            : '<span class="chip chip-plain">氏名が同じ</span>';
+          var rows = g.members.map(function (m) {
+            return '<tr><td>' + esc(m.customer_id) + '</td><td>' + esc(dash(m.name)) +
+              '</td><td>' + esc(dash(m.kana)) + '</td><td>' + esc(dash(m.tel)) +
+              '</td><td>' + esc(dash(m.address)) + '</td><td class="r num">¥' + num(m.total) +
+              '</td><td>' + esc(dash(m.last)) + '</td></tr>';
+          }).join("");
+          // 3件以上の組は、先頭2件から順に確認していく
+          var pairs = [];
+          for (var i = 0; i < g.members.length - 1; i++) {
+            var a = g.members[i], b = g.members[i + 1];
+            pairs.push('<button class="btn" onclick="openDupCompare(\'' + esc(a.customer_id) + '\',\'' +
+              esc(b.customer_id) + '\')">' + esc(a.customer_id) + ' と ' + esc(b.customer_id) + ' の内容を確認</button>');
+          }
+          return '<div class="card" style="margin-bottom:0.7rem">' + badge +
+            '<div class="table-scroll" style="margin-top:0.4rem"><table class="data"><thead><tr>' +
+            '<th>ID</th><th>氏名</th><th>カナ</th><th>電話</th><th>住所</th><th class="r">累計</th><th>最終購入</th>' +
+            '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+            '<div style="margin-top:0.5rem;display:flex;gap:0.4em;flex-wrap:wrap">' + pairs.join("") + '</div></div>';
+        }).join("");
+    }).catch(function (e) {
+      document.getElementById("dup-list").innerHTML =
+        '<p style="color:var(--danger)">取得に失敗: ' + esc(fetchErrMsg(e)) + '</p>';
+    });
+  }
+  function closeDupModal() { document.getElementById("dup-modal").classList.remove("show"); }
+  function cancelDupCompare() { document.getElementById("dup-compare").style.display = "none"; }
+  function swapDupKeep() { if (dupKeep && dupMerge) openDupCompare(dupMerge, dupKeep); }
+  /* 2件を左右に並べて表示。左=残す顧客 / 右=統合されて消える顧客 */
+  function openDupCompare(keepId, mergeId) {
+    dupKeep = keepId; dupMerge = mergeId;
+    document.getElementById("dup-error").style.display = "none";
+    document.getElementById("dup-compare").style.display = "";
+    document.getElementById("dup-compare-body").innerHTML = '<p style="color:var(--muted)">読み込み中…</p>';
+    fetch(API + "/customer_merge_preview?keep=" + encodeURIComponent(keepId) + "&merge=" + encodeURIComponent(mergeId))
+      .then(function (r) { return r.json(); }).then(function (res) {
+        if (res.error) throw new Error(res.error);
+        var k = res.customers[res.keep_id], m = res.customers[res.merge_id];
+        var FIELDS = [["customer_id", "顧客ID"], ["name", "氏名"], ["kana", "カナ"], ["tel", "電話"],
+          ["tel2", "携帯"], ["email", "メール"], ["birthday", "生年月日"], ["gender", "性別"],
+          ["postal", "郵便番号"], ["address", "住所1"], ["address2", "住所2"],
+          ["staff_name", "担当"], ["rank", "ランク"], ["note", "備考"],
+          ["total_amount", "累計購入額"], ["last_purchase_at", "最終購入日"],
+          ["points", "ポイント残高"], ["sales_count", "売上件数"],
+          ["receivable_balance", "売掛残高"], ["repairs", "修理"], ["prescriptions", "処方箋"]];
+        var rows = FIELDS.map(function (f) {
+          var a = k[f[0]], b = m[f[0]];
+          var diff = String(a == null ? "" : a) !== String(b == null ? "" : b);
+          return '<tr' + (diff ? ' style="background:var(--warn-bg)"' : '') + '><th style="text-align:left;white-space:nowrap">' +
+            esc(f[1]) + '</th><td>' + esc(dash(a)) + '</td><td>' + esc(dash(b)) + '</td></tr>';
+        }).join("");
+        var moves = Object.keys(res.moves || {}).map(function (t) {
+          return esc(t) + ' ' + res.moves[t] + '件';
+        }).join(" / ") || "移動するデータはありません";
+        document.getElementById("dup-compare-body").innerHTML =
+          '<div class="table-scroll"><table class="data"><thead><tr><th></th>' +
+          '<th style="color:var(--ok)">残す(' + esc(res.keep_id) + ')</th>' +
+          '<th style="color:var(--danger)">統合されて消える(' + esc(res.merge_id) + ')</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody></table></div>' +
+          '<p style="margin:0.7rem 0 0;font-size:0.88em">' +
+          '⚠ 右の顧客は<b>削除</b>され、以下が左へ移ります: ' + moves +
+          '<br>ポイントは<b>合算</b>されます(' + num(k.points) + ' + ' + num(m.points) + ' = ' +
+          num((k.points || 0) + (m.points || 0)) + ' pt)。' +
+          '<br><span style="color:var(--muted)">背景色つきの行は内容が違う項目です。残す側の値が採用されます' +
+          '(必要なら統合後に顧客編集で直してください)。</span></p>';
+      }).catch(function (e) {
+        document.getElementById("dup-compare-body").innerHTML =
+          '<p style="color:var(--danger)">確認データの取得に失敗: ' + esc(e.message || e) + '</p>';
+      });
+  }
+  function doCustomerMerge(btn) {
+    if (!dupKeep || !dupMerge) return;
+    var err = document.getElementById("dup-error");
+    err.style.display = "none";
+    alertPopup("顧客 " + dupMerge + " を " + dupKeep + " に統合します。\n\n" +
+      "・統合される側の顧客は削除されます\n・購入履歴・ポイント・売掛・修理・処方箋は残す側へ移ります\n" +
+      "・この操作は取り消せません(念のため事前にバックアップを取ることを推奨します)", {
+      type: "warn", title: "顧客を統合します", confirm: true, okText: "統合する",
+      onOk: function () {
+        btn.disabled = true;
+        fetch(API + "/customer_merge", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ keep_id: dupKeep, merge_id: dupMerge })
+        }).then(function (r) { return r.json(); }).then(function (res) {
+          btn.disabled = false;
+          if (res.error) throw new Error(res.error);
+          showToast("✅ " + res.merge_name + " を " + res.keep_name + " に統合しました" +
+            (res.points_added ? "(ポイント " + num(res.points_added) + "pt を合算)" : "") + "。");
+          dupKeep = dupMerge = null;
+          openDupCheck();       // 一覧を取り直す
+          if (typeof reloadData === "function") reloadData();
+        }).catch(function (e) {
+          btn.disabled = false;
+          err.textContent = "統合に失敗: " + (e.message || e); err.style.display = "block";
+        });
+      }
+    });
+  }
   /* ── 領収書の発行(レシートプリンタ / A4=財布サイズ×2枚) ── */
   var RCPT_NOTES = ["お品代として", "宝飾品代として", "眼鏡代として", "時計代として", "修理代として"];
   var rcptSlipId = null, rcptIssued = {};   // 伝票ごとの発行済みフラグ(2枚目以降は再発行と明記)

@@ -332,6 +332,23 @@ class Handler(BaseHTTPRequestHandler):
                     result = {"users": db_query.list_app_users(con)}
                     con.close()
                     return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+                if path == "/api/customer_duplicates":
+                    # 重複の疑いがある顧客の一覧(自動統合はしない。画面で見比べる材料)
+                    con = connect()
+                    result = db_query.find_duplicate_customers(con)
+                    con.close()
+                    return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+                if path == "/api/customer_merge_preview":
+                    qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+                    con = connect()
+                    try:
+                        result = db_query.customer_merge_preview(
+                            con, (qs.get("keep") or [""])[0], (qs.get("merge") or [""])[0])
+                    except ValueError as e:
+                        return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                    finally:
+                        con.close()
+                    return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
                 if path == "/api/backup_status":
                     if role != "admin":
                         return self._deny()
@@ -497,7 +514,8 @@ class Handler(BaseHTTPRequestHandler):
     }
     # 管理者のみの操作(担当者マスタ・ログインユーザー管理)
     ADMIN_ONLY_POSTS = {"/api/staff", "/api/app_user", "/api/app_user_logout",
-                        "/api/backup_now", "/api/backup_settings", "/api/integrity_check"}
+                        "/api/backup_now", "/api/backup_settings", "/api/integrity_check",
+                        "/api/customer_merge"}
 
     def do_POST(self):
         try:
@@ -567,6 +585,25 @@ class Handler(BaseHTTPRequestHandler):
                 finally:
                     con.close()
                 result = devices.print_receipt(receipt, drawer=payload.get("drawer", True))
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/customer_dup_check":
+                # 登録前の重複警告(登録は止めない。同じ電話番号のご家族もあるため)
+                con = connect()
+                result = db_query.check_customer_duplicate(
+                    con, payload.get("tel"), payload.get("name"),
+                    payload.get("kana"), payload.get("customer_id"))
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/customer_merge":
+                # 顧客統合(取り消せない)。管理者のみ
+                con = connect()
+                try:
+                    result = db_query.merge_customers(con, payload.get("keep_id"),
+                                                      payload.get("merge_id"), user.get("name"))
+                except ValueError as e:
+                    return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                finally:
+                    con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/void_receipt_print":
                 # 返品レシート(お客様控+店控)。現金売上の返品ならドロワーも開ける
