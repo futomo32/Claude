@@ -1136,10 +1136,17 @@
         <div class="tiles report-tiles" id="rcv-tiles"></div>
         <div style="display:flex;gap:0.6em;align-items:center;margin:0.4rem 0 0.6rem">
           <input id="rcv-search" placeholder="🔍 顧客名で絞り込み" style="flex:1;max-width:20em" oninput="renderReceivables()">
+          <label style="font-size:0.85em;color:var(--ink-2);white-space:nowrap">滞留
+            <select id="rcv-aging" onchange="renderReceivables()" style="margin-left:0.3em">
+              <option value="">すべて</option>
+              <option value="3">3ヶ月以上</option>
+              <option value="6">6ヶ月以上</option>
+              <option value="12">1年以上</option>
+            </select></label>
           <button class="btn" onclick="loadReceivables()">再読込</button>
           <button class="btn" onclick="exportReceivablesCsv()">CSV出力</button>
         </div>
-        <p style="margin:0 0 0.5rem;color:var(--muted);font-size:0.8em">売掛残高のある顧客の一覧です。行をクリックすると顧客の入金管理を開きます(そこで入金・請求書印刷ができます)。列見出しで並び替え。</p>
+        <p style="margin:0 0 0.5rem;color:var(--muted);font-size:0.8em">売掛残高のある顧客の一覧です。行をクリックすると顧客の入金管理を開きます(そこで入金・請求書印刷ができます)。列見出しで並び替え。<b>経過</b>=最終入金(入金が無ければ買上)からの月数。<span style="color:var(--warn)">3ヶ月以上=黄</span> / <span style="color:var(--danger)">6ヶ月以上=赤</span>。</p>
         <div class="table-scroll">
           <table class="data">
             <thead><tr>
@@ -1149,9 +1156,10 @@
               <th class="r sortable" onclick="sortReceivables('count')">売掛件数<span class="ar" data-rar="count"></span></th>
               <th class="num sortable" onclick="sortReceivables('oldest')">最古買上日<span class="ar" data-rar="oldest"></span></th>
               <th class="num">最終入金</th>
+              <th class="r sortable" onclick="sortReceivables('aging')">経過<span class="ar" data-rar="aging"></span></th>
               <th class="r sortable" onclick="sortReceivables('balance')">売掛残高<span class="ar" data-rar="balance"></span></th>
             </tr></thead>
-            <tbody id="rcv-tbody"><tr><td colspan="7" style="color:var(--muted)">読み込み中…</td></tr></tbody>
+            <tbody id="rcv-tbody"><tr><td colspan="8" style="color:var(--muted)">読み込み中…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -3617,17 +3625,47 @@
   }
   /* ══ 売掛管理 ══ */
   var rcvRows = [], rcvSort = { key: "balance", dir: "desc" };
+  /* 滞留月数: 最終入金日から今日までの月数。入金がまだ無い場合は最古の買上日から数える
+     (「一度も入金が無いまま長期化している」ケースを見逃さないため)。 */
+  function agingMonths(r) {
+    var base = r.last_paid || r.oldest;
+    if (!base) return null;
+    var d = new Date(String(base).replace(/\//g, "-") + "T00:00:00");
+    if (isNaN(d.getTime())) return null;
+    var now = new Date();
+    var m = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
+    if (now.getDate() < d.getDate()) m -= 1;      // 月末の端数は切り捨て
+    return Math.max(0, m);
+  }
+  function agingColor(m) {
+    if (m == null) return "";
+    if (m >= 6) return "var(--danger)";
+    if (m >= 3) return "var(--warn)";
+    return "";
+  }
   function loadReceivables() {
     var tb = document.getElementById("rcv-tbody");
-    if (!API) { tb.innerHTML = '<tr><td colspan="7" style="color:var(--muted)">売掛管理はサーバー起動時に利用できます。</td></tr>'; document.getElementById("rcv-tiles").innerHTML = ""; return; }
-    tb.innerHTML = '<tr><td colspan="7" style="color:var(--muted)">読み込み中…</td></tr>';
+    if (!API) { tb.innerHTML = '<tr><td colspan="8" style="color:var(--muted)">売掛管理はサーバー起動時に利用できます。</td></tr>'; document.getElementById("rcv-tiles").innerHTML = ""; return; }
+    tb.innerHTML = '<tr><td colspan="8" style="color:var(--muted)">読み込み中…</td></tr>';
     fetch(API + "/receivables_summary").then(function (r) { return r.json(); }).then(function (res) {
-      rcvRows = res.rows || [];
+      rcvRows = (res.rows || []).map(function (r) { r.aging = agingMonths(r); return r; });
+      // 滞留タイル: 長期化している売掛を金額で把握できるようにする(督促の優先順位づけ)
+      var long6 = rcvRows.filter(function (r) { return r.aging != null && r.aging >= 6; });
+      var long3 = rcvRows.filter(function (r) { return r.aging != null && r.aging >= 3 && r.aging < 6; });
+      var sum = function (a) { return a.reduce(function (t, r) { return t + (r.balance || 0); }, 0); };
       document.getElementById("rcv-tiles").innerHTML =
         '<div class="tile"><div class="t-label">総売掛残高</div><div class="t-value num"' + (res.total > 0 ? ' style="color:var(--danger)"' : "") + '>¥' + num(res.total || 0) + '</div></div>' +
-        '<div class="tile"><div class="t-label">売掛のある顧客</div><div class="t-value num">' + (res.count || 0) + '<small>名</small></div></div>';
+        '<div class="tile"><div class="t-label">売掛のある顧客</div><div class="t-value num">' + (res.count || 0) + '<small>名</small></div></div>' +
+        '<div class="tile" style="cursor:pointer" onclick="filterAging(3)" title="クリックで3ヶ月以上に絞り込み"><div class="t-label">3〜6ヶ月経過</div><div class="t-value num"' +
+        (long3.length ? ' style="color:var(--warn)"' : "") + '>¥' + num(sum(long3)) + '<small> / ' + long3.length + '名</small></div></div>' +
+        '<div class="tile" style="cursor:pointer" onclick="filterAging(6)" title="クリックで6ヶ月以上に絞り込み"><div class="t-label">6ヶ月以上経過</div><div class="t-value num"' +
+        (long6.length ? ' style="color:var(--danger)"' : "") + '>¥' + num(sum(long6)) + '<small> / ' + long6.length + '名</small></div></div>';
       renderReceivables();
-    }).catch(function () { tb.innerHTML = '<tr><td colspan="7" style="color:var(--muted)">読み込みに失敗しました。</td></tr>'; });
+    }).catch(function () { tb.innerHTML = '<tr><td colspan="8" style="color:var(--muted)">読み込みに失敗しました。</td></tr>'; });
+  }
+  function filterAging(m) {
+    var sel = document.getElementById("rcv-aging");
+    if (sel) { sel.value = String(m); renderReceivables(); }
   }
   function sortReceivables(key) {
     if (rcvSort.key === key) rcvSort.dir = (rcvSort.dir === "asc") ? "desc" : "asc";
@@ -3636,8 +3674,13 @@
   }
   function renderReceivables() {
     var q = ((document.getElementById("rcv-search") || {}).value || "").trim();
+    var minAge = parseInt((document.getElementById("rcv-aging") || {}).value || "", 10);
     var nq = normKana(q);
-    var list = rcvRows.filter(function (r) { return !q || normKana(r.name).indexOf(nq) >= 0; });
+    var list = rcvRows.filter(function (r) {
+      if (q && normKana(r.name).indexOf(nq) < 0) return false;
+      if (minAge && (r.aging == null || r.aging < minAge)) return false;
+      return true;
+    });
     var dir = (rcvSort.dir === "desc") ? -1 : 1, k = rcvSort.key;
     list.sort(function (a, b) {
       var av = a[k], bv = b[k];
@@ -3646,11 +3689,18 @@
     });
     var tb = document.getElementById("rcv-tbody");
     tb.innerHTML = list.length ? list.map(function (r) {
-      return '<tr style="cursor:pointer" onclick="openReceivableCustomer(\'' + esc(String(r.customer_id)) + '\')" title="クリックで入金管理を開く">' +
+      var col = agingColor(r.aging);
+      // 滞留が長い行は行全体をうっすら着色し、経過月数も同じ色で強調する
+      var rowStyle = "cursor:pointer" + (r.aging >= 6 ? ";background:var(--danger-bg)" : (r.aging >= 3 ? ";background:var(--warn-bg)" : ""));
+      var ageCell = r.aging == null ? "—"
+        : (r.aging === 0 ? "今月" : r.aging + "ヶ月");
+      return '<tr style="' + rowStyle + '" onclick="openReceivableCustomer(\'' + esc(String(r.customer_id)) + '\')" title="クリックで入金管理を開く">' +
         '<td>' + esc(dash(r.name)) + '</td><td>' + esc(shortName(r.staff)) + '</td><td class="num">' + esc(dash(r.tel)) +
         '</td><td class="r num">' + num(r.count) + '</td><td class="num">' + esc(dash(r.oldest)) + '</td><td class="num">' + esc(dash(r.last_paid)) +
+        '</td><td class="r num"' + (col ? ' style="color:' + col + ';font-weight:700"' : '') + '>' + ageCell +
         '</td><td class="r num" style="color:var(--danger)">¥' + num(r.balance) + '</td></tr>';
-    }).join("") : '<tr><td colspan="7" style="color:var(--muted)">' + (q ? "該当する顧客がいません。" : "売掛残高のある顧客はいません。") + '</td></tr>';
+    }).join("") : '<tr><td colspan="8" style="color:var(--muted)">' +
+      (q || minAge ? "該当する顧客がいません。" : "売掛残高のある顧客はいません。") + '</td></tr>';
     document.querySelectorAll('[data-rar]').forEach(function (el) {
       el.textContent = (el.getAttribute("data-rar") === rcvSort.key) ? (rcvSort.dir === "asc" ? " ▲" : " ▼") : "";
     });
@@ -3661,8 +3711,11 @@
   }
   function exportReceivablesCsv() {
     if (!rcvRows.length) return showToast("出力する売掛データがありません。");
-    var rows = [["顧客名", "担当", "電話", "売掛件数", "最古買上日", "最終入金日", "売掛残高"]];
-    rcvRows.forEach(function (r) { rows.push([r.name, shortName(r.staff) || "", r.tel || "", r.count, r.oldest || "", r.last_paid || "", r.balance]); });
+    var rows = [["顧客名", "担当", "電話", "売掛件数", "最古買上日", "最終入金日", "経過月数", "売掛残高"]];
+    rcvRows.forEach(function (r) {
+      rows.push([r.name, shortName(r.staff) || "", r.tel || "", r.count, r.oldest || "",
+                 r.last_paid || "", (r.aging == null ? "" : r.aging), r.balance]);
+    });
     downloadCsv("売掛一覧_" + TODAY_ISO + ".csv", rows);
   }
   function renderCustomers() {
