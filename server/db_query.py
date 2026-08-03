@@ -463,7 +463,8 @@ def build_blob(con):
                 pointTx=point_tx, urikake=urikake, urikakeHist=urikake_hist,
                 approach=approach, rx=rx, rxCandidates=rx_candidates, products=products,
                 repairs=repairs, tenders=tenders, stockStats=stock_summary,
-                pointSettings=point_settings(con))
+                pointSettings=point_settings(con),
+                tagSettings=tag_settings(con))
 
 
 def build_blob_light(con):
@@ -575,6 +576,7 @@ def build_blob_light(con):
                 registerStaff=register_staff, staffCodes=staff_codes,
                 cashMovements=list_cash_movements(con),
                 pointSettings=point_settings(con),
+                tagSettings=tag_settings(con),
                 lite=True)  # lite=True で「明細は遅延取得」とUIに知らせる
 
 
@@ -1284,6 +1286,57 @@ def save_point_settings(con, p):
         _set_setting(con, k, str(v))
     con.commit()
     return vals
+
+
+# ── 値札(タグ)の印字位置(app_settings に保存) ──
+#   tag_offset_x / tag_offset_y … 印字位置をmm単位でずらす補正(右・下が＋)。
+# プリンタの給紙のクセを吸収するための値。端末(ブラウザ)ではなくDBに置くのは、
+#   ・レジPCから開いても他のPCから店内共有で開いてもURLが変わるため、ブラウザ保存だと
+#     保存領域が分かれて「昨日合わせたのにズレる」が起きる
+#   ・バックアップに含まれるので、PCの入れ替えや故障で設定が消えない
+# ため。値札プリンタは1台なので、店で1つ持てば足りる(2台になったら要見直し)。
+TAG_SETTING_DEFAULTS = {
+    "tag_offset_x": 0.0,
+    "tag_offset_y": 0.0,
+}
+TAG_OFFSET_MAX = 10.0   # ±10mm。これを超えると用紙から外れるので受け付けない
+
+
+def tag_settings(con):
+    """値札の印字位置の補正を返す(未設定は0)。"""
+    out = dict(TAG_SETTING_DEFAULTS)
+    for k in out:
+        row = con.execute("SELECT value FROM app_settings WHERE key=?", (k,)).fetchone()
+        if row is not None and str(row[0]).strip() != "":
+            try:
+                out[k] = _clamp_tag_offset(row[0])
+            except (ValueError, TypeError):
+                pass
+    return out
+
+
+def _clamp_tag_offset(v):
+    """mmの補正値を数値にして±TAG_OFFSET_MAXに収める。不正値は例外にする。"""
+    f = float(str(v).strip())
+    if f != f or f in (float("inf"), float("-inf")):   # NaN / Inf を弾く
+        raise ValueError("数値ではありません")
+    return max(-TAG_OFFSET_MAX, min(TAG_OFFSET_MAX, round(f, 2)))
+
+
+def save_tag_settings(con, p):
+    """値札の印字位置の補正を保存する。不正値は現行値のまま(黙って壊さない)。"""
+    cur = tag_settings(con)
+    for k in TAG_SETTING_DEFAULTS:
+        if k not in p:
+            continue
+        try:
+            cur[k] = _clamp_tag_offset(p.get(k))
+        except (ValueError, TypeError):
+            pass    # 数値でなければ現行値を維持
+    for k, v in cur.items():
+        _set_setting(con, k, str(v))
+    con.commit()
+    return tag_settings(con)
 
 
 # ── バックアップ設定(app_settings に保存。実処理は server/backup.py) ──

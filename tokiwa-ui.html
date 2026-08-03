@@ -2081,8 +2081,9 @@
             <input id="tt-offy" class="num han-num" inputmode="decimal" style="width:5em;text-align:right" value="0">mm</span>
         </div>
         <span style="font-size:0.8em;color:var(--muted)">
-          マイナスで左・上へ動きます(±10mmまで)。この端末に記憶され、次から自動で適用されます。
-          レシートのロゴ調整と同じ考え方です。</span>
+          マイナスで左・上へ動きます(±10mmまで)。レシートのロゴ調整と同じ考え方です。
+          <b>設定はトキワ本体に保存される</b>ので、どのPCから開いても同じ値が使われ、
+          バックアップにも含まれます(PCを入れ替えても消えません)。</span>
       </div>
 
       <p id="tt-info" style="margin:0.8rem 0 0;font-size:0.82em;color:var(--muted)"></p>
@@ -7703,9 +7704,16 @@
   var TAG_BC_H = 5;                        // バーコード高さ(mm)
   var tagTestPaper = "tag";         // 印刷確定時に @page をどちらにするか("tag" / "a4")
 
-  // 印字位置のオフセットはこの端末に覚える(プリンタごとのクセなので端末ごとで良い)。
-  // サーバー無しの単体プレビューでも使えるように localStorage を使う。
+  /* 印字位置のオフセットは DB(app_settings)に持つ。ブラウザ保存にしないのは、
+     localhost で開いた時と店内共有(192.168.x.x)で開いた時で保存領域が分かれてしまい、
+     「昨日合わせたのにズレる」が起きるため。DBならどのPC・どのURLでも同じ値になり、
+     バックアップにも含まれるのでPCを入れ替えても消えない。
+     サーバー無しの単体プレビュー(開発機でファイルを直接開いた時)だけ localStorage に退避する。 */
   function tagOffset() {
+    var d = (typeof D !== "undefined" && D) ? D : {};
+    if (API && d.tagSettings) {
+      return { x: clampOffset(d.tagSettings.tag_offset_x), y: clampOffset(d.tagSettings.tag_offset_y) };
+    }
     try {
       var o = JSON.parse(localStorage.getItem("tokiwa.tagOffset") || "{}");
       return { x: clampOffset(o.x), y: clampOffset(o.y) };
@@ -7716,8 +7724,20 @@
     if (!isFinite(n)) return 0;
     return Math.max(-TAG_OFFSET_MAX, Math.min(TAG_OFFSET_MAX, n));
   }
+  // 保存はサーバーが正。失敗しても印刷は続けられるよう、成否を呼び出し元へ返す
   function saveTagOffset(x, y) {
-    try { localStorage.setItem("tokiwa.tagOffset", JSON.stringify({ x: x, y: y })); } catch (e) {}
+    if (!API) {
+      try { localStorage.setItem("tokiwa.tagOffset", JSON.stringify({ x: x, y: y })); } catch (e) {}
+      return Promise.resolve(true);
+    }
+    return fetch(API + "/tag_settings", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tag_offset_x: x, tag_offset_y: y })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (res && res.error) throw new Error(res.error);
+      if (typeof D !== "undefined" && D) D.tagSettings = res;   // 次に開いた時も同じ値になる
+      return true;
+    }).catch(function () { return false; });
   }
 
   /* ── EAN-13 の生成 ──
@@ -7847,7 +7867,11 @@
     var y = clampOffset(document.getElementById("tt-offy").value);
     document.getElementById("tt-offx").value = x;
     document.getElementById("tt-offy").value = y;
-    saveTagOffset(x, y);
+    // 保存の成否に関わらず印刷は進める(この場で刷りたいのに保存失敗で止まると困る)。
+    // ただし保存できなかったことは黙らず知らせる。
+    saveTagOffset(x, y).then(function (ok) {
+      if (!ok) showToast("印字位置は保存できませんでした(サーバーに繋がりません)。今回の印刷には反映されています。");
+    });
     var paperEl = document.querySelector('input[name="tt-paper"]:checked');
     tagTestPaper = paperEl ? paperEl.value : "tag";
     var sheet = tagSheetHtml(tagTestMode(), { x: x, y: y });

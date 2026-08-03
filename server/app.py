@@ -510,7 +510,7 @@ class Handler(BaseHTTPRequestHandler):
         "/api/photo_pool", "/api/photo_pool_assign", "/api/photo_pool_delete",
         "/api/supplier_genre", "/api/supplier_fucho", "/api/master_item", "/api/rank_apply", "/api/rank_rules",
         "/api/stocktake_scan", "/api/stocktake_reset", "/api/settle_consignment",
-        "/api/point_settings", "/api/point_adjust",
+        "/api/point_settings", "/api/point_adjust", "/api/tag_settings",
     }
     # 管理者のみの操作(担当者マスタ・ログインユーザー管理)
     ADMIN_ONLY_POSTS = {"/api/staff", "/api/app_user", "/api/app_user_logout",
@@ -685,6 +685,12 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/point_settings":
                 con = connect()
                 result = db_query.save_point_settings(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/tag_settings":
+                # 値札の印字位置の補正(mm)。端末ではなくDBに置くので全PCで同じ値になる
+                con = connect()
+                result = db_query.save_tag_settings(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/backup_now":
