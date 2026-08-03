@@ -677,6 +677,12 @@
   .tag-front .tag-half-in { padding-top: var(--tag-band, 6mm); }
   .tag-num { font-size: 11pt; font-weight: 700; text-align: center; line-height: 1.1; }
   .tag-side { font-size: 5.5pt; color: #444; text-align: center; letter-spacing: 0.05em; }
+  /* 実測用の目盛り(位置合わせモードのみ)。プリンタが全体を縮小して刷っていないかを
+     定規で測って確かめる。10mmごとに目盛り、端に長さを表示する。 */
+  .tag-ruler { position: absolute; }
+  .tag-ruler .rl-line { position: absolute; background: #000; }
+  .tag-ruler .rl-tick { position: absolute; background: #000; }
+  .tag-ruler .rl-cap { position: absolute; font-size: 5.5pt; white-space: nowrap; background: #fff; padding: 0 0.4mm; }
   /* 四隅の見当(トンボ)。台紙の角から5mmの位置に十字を打ち、ズレをmmで読み取る */
   .tag-reg { position: absolute; width: 4mm; height: 4mm; }
   .tag-reg::before, .tag-reg::after { content: ""; position: absolute; background: #000; }
@@ -2088,6 +2094,21 @@
           マイナスで左・上へ動きます(±10mmまで)。レシートのロゴ調整と同じ考え方です。
           <b>設定はトキワ本体に保存される</b>ので、どのPCから開いても同じ値が使われ、
           バックアップにも含まれます(PCを入れ替えても消えません)。</span>
+      </div>
+
+      <div class="section-title">印字倍率の補正(プリンタが縮めて刷る場合)</div>
+      <div class="field">
+        <div style="display:flex;align-items:center;gap:0.8em;flex-wrap:wrap">
+          <span style="display:flex;align-items:center;gap:0.3em">横
+            <input id="tt-scalex" class="num han-num" inputmode="decimal" style="width:5.5em;text-align:right" value="100">%</span>
+          <span style="display:flex;align-items:center;gap:0.3em">縦
+            <input id="tt-scaley" class="num han-num" inputmode="decimal" style="width:5.5em;text-align:right" value="100">%</span>
+        </div>
+        <span style="font-size:0.8em;color:var(--muted)">
+          <b>まず印刷ダイアログの倍率を100%にしてください。</b>ここは、それでも縮んで刷られる機種のための逃げ道です(90〜110%)。<br>
+          使い方: 「位置合わせ」で刷ると<b>横90mm・縦130mmの目盛り線</b>が出ます。定規で実測し、
+          <b>90 ÷ 実測値 × 100</b> を横に、<b>130 ÷ 実測値 × 100</b> を縦に入れてください。
+          (例: 横が88mmなら 90÷88×100 = 102.3%)</span>
       </div>
 
       <p id="tt-info" style="margin:0.8rem 0 0;font-size:0.82em;color:var(--muted)"></p>
@@ -7730,6 +7751,9 @@
   var TAG_W = 29, TAG_H = 32, TAG_FOLD = 16, TAG_COLS = 3, TAG_ROWS = 4;
   var TAG_PER_SHEET = TAG_COLS * TAG_ROWS;
   var TAG_OFFSET_MAX = 10;          // オフセットの上限(mm)。これ以上は用紙から外れる
+  // 倍率補正の範囲(%)。server/db_query.py の TAG_SCALE_MIN/MAX と合わせること。
+  // これ以上ズレるならプリンタ設定の問題なので、補正で押し切らせない
+  var TAG_SCALE_MIN = 90, TAG_SCALE_MAX = 110;
   // 印字はタグ幅29mmいっぱいには広げず、左右にこれだけ内側へ寄せる(2026-08-03)。
   // 給紙が左右にズレても印字が隣の面へ食い込まないようにするため。上下はズレにくいので寄せない。
   // CSS へは .tag-sheet の --tag-inset で流し込むので、余白を変える時はここだけ直す。
@@ -7748,28 +7772,37 @@
      サーバー無しの単体プレビュー(開発機でファイルを直接開いた時)だけ localStorage に退避する。 */
   function tagOffset() {
     var d = (typeof D !== "undefined" && D) ? D : {};
-    if (API && d.tagSettings) {
-      return { x: clampOffset(d.tagSettings.tag_offset_x), y: clampOffset(d.tagSettings.tag_offset_y) };
+    var t = (API && d.tagSettings) ? d.tagSettings : null;
+    if (!t) {
+      try { t = JSON.parse(localStorage.getItem("tokiwa.tagOffset") || "{}"); } catch (e) { t = {}; }
     }
-    try {
-      var o = JSON.parse(localStorage.getItem("tokiwa.tagOffset") || "{}");
-      return { x: clampOffset(o.x), y: clampOffset(o.y) };
-    } catch (e) { return { x: 0, y: 0 }; }
+    return {
+      x: clampOffset(t.tag_offset_x !== undefined ? t.tag_offset_x : t.x),
+      y: clampOffset(t.tag_offset_y !== undefined ? t.tag_offset_y : t.y),
+      sx: clampScale(t.tag_scale_x !== undefined ? t.tag_scale_x : t.sx),
+      sy: clampScale(t.tag_scale_y !== undefined ? t.tag_scale_y : t.sy)
+    };
   }
   function clampOffset(v) {
     var n = Number(v);
     if (!isFinite(n)) return 0;
     return Math.max(-TAG_OFFSET_MAX, Math.min(TAG_OFFSET_MAX, n));
   }
+  function clampScale(v) {
+    var n = Number(v);
+    if (!isFinite(n) || !n) return 100;          // 未設定・不正値は等倍
+    return Math.max(TAG_SCALE_MIN, Math.min(TAG_SCALE_MAX, n));
+  }
   // 保存はサーバーが正。失敗しても印刷は続けられるよう、成否を呼び出し元へ返す
-  function saveTagOffset(x, y) {
+  function saveTagOffset(v) {
+    var body = { tag_offset_x: v.x, tag_offset_y: v.y, tag_scale_x: v.sx, tag_scale_y: v.sy };
     if (!API) {
-      try { localStorage.setItem("tokiwa.tagOffset", JSON.stringify({ x: x, y: y })); } catch (e) {}
+      try { localStorage.setItem("tokiwa.tagOffset", JSON.stringify(body)); } catch (e) {}
       return Promise.resolve(true);
     }
     return fetch(API + "/tag_settings", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tag_offset_x: x, tag_offset_y: y })
+      body: JSON.stringify(body)
     }).then(function (r) { return r.json(); }).then(function (res) {
       if (res && res.error) throw new Error(res.error);
       if (typeof D !== "undefined" && D) D.tagSettings = res;   // 次に開いた時も同じ値になる
@@ -7840,6 +7873,28 @@
       '<div class="tag-reg" style="left:3mm;top:' + far + '"></div>' +
       '<div class="tag-reg" style="left:' + far + ';top:' + far + '"></div>';
   }
+  /* 実測用の目盛り。台紙の角から5mmの位置を起点に、横90mm・縦130mmの直線を引く。
+     定規で測った実寸を入れれば、プリンタがどれだけ縮小して刷っているかが分かる
+     (例: 90mmが88mmなら 90/88 = 約102% を倍率補正に入れる)。 */
+  function tagRulerHtml() {
+    var H_LEN = 90, V_LEN = 130, STEP = 10, i, pos;
+    var h = '<div class="tag-ruler" style="left:5mm;top:5mm">' +
+      '<div class="rl-line" style="left:0;top:0;width:' + H_LEN + 'mm;height:0.2mm"></div>';
+    for (i = 0; i <= H_LEN; i += STEP) {
+      pos = (i === 0 || i === H_LEN) ? 2 : 1.2;    // 両端の目盛りだけ長くする
+      h += '<div class="rl-tick" style="left:' + i + 'mm;top:0;width:0.2mm;height:' + pos + 'mm"></div>';
+    }
+    h += '<div class="rl-cap" style="left:' + (H_LEN / 2 - 8) + 'mm;top:0.4mm">横 ' + H_LEN + 'mm</div></div>';
+
+    var v = '<div class="tag-ruler" style="left:5mm;top:5mm">' +
+      '<div class="rl-line" style="left:0;top:0;width:0.2mm;height:' + V_LEN + 'mm"></div>';
+    for (i = 0; i <= V_LEN; i += STEP) {
+      pos = (i === 0 || i === V_LEN) ? 2 : 1.2;
+      v += '<div class="rl-tick" style="top:' + i + 'mm;left:0;height:0.2mm;width:' + pos + 'mm"></div>';
+    }
+    v += '<div class="rl-cap" style="top:' + (V_LEN / 2) + 'mm;left:0.4mm">縦 ' + V_LEN + 'mm</div></div>';
+    return h + v;
+  }
   function tagGuideCell(n) {
     return '<div class="tag-cell guide">' +
       '<div class="tag-back"><div class="tag-half-in">' +
@@ -7876,8 +7931,14 @@
     var cells = "";
     for (var i = 1; i <= TAG_PER_SHEET; i++) cells += (mode === "sample" ? tagSampleCell(i) : tagGuideCell(i));
     var css = "--tag-inset:" + TAG_INSET_X + "mm;--tag-band:" + TAG_BAND_H + "mm";
-    if (off.x || off.y) css += ";transform:translate(" + off.x + "mm," + off.y + "mm)";
-    return '<div class="tag-sheet" style="' + css + '">' + tagRegMarksHtml() + cells + '</div>';
+    // 補正は「倍率 → 位置」の順に効かせる。CSSのtransformは右から適用されるので
+    // translate を先に書く。基準は用紙の左上角(transform-origin:0 0)にそろえる。
+    var tf = [];
+    if (off.x || off.y) tf.push("translate(" + off.x + "mm," + off.y + "mm)");
+    if (off.sx !== 100 || off.sy !== 100) tf.push("scale(" + (off.sx / 100) + "," + (off.sy / 100) + ")");
+    if (tf.length) css += ";transform-origin:0 0;transform:" + tf.join(" ");
+    return '<div class="tag-sheet" style="' + css + '">' +
+      tagRegMarksHtml() + (mode === "sample" ? "" : tagRulerHtml()) + cells + '</div>';
   }
 
   /* ── モーダル ── */
@@ -7885,6 +7946,8 @@
     var off = tagOffset();
     document.getElementById("tt-offx").value = off.x;
     document.getElementById("tt-offy").value = off.y;
+    document.getElementById("tt-scalex").value = off.sx;
+    document.getElementById("tt-scaley").value = off.sy;
     document.getElementById("tt-error").style.display = "none";
     var scale = tagBarcodeScale();
     document.getElementById("tt-info").innerHTML =
@@ -7900,18 +7963,24 @@
     return el ? el.value : "guide";
   }
   function doTagTestPrint() {
-    var x = clampOffset(document.getElementById("tt-offx").value);
-    var y = clampOffset(document.getElementById("tt-offy").value);
-    document.getElementById("tt-offx").value = x;
-    document.getElementById("tt-offy").value = y;
+    var v = {
+      x: clampOffset(document.getElementById("tt-offx").value),
+      y: clampOffset(document.getElementById("tt-offy").value),
+      sx: clampScale(document.getElementById("tt-scalex").value),
+      sy: clampScale(document.getElementById("tt-scaley").value)
+    };
+    document.getElementById("tt-offx").value = v.x;
+    document.getElementById("tt-offy").value = v.y;
+    document.getElementById("tt-scalex").value = v.sx;
+    document.getElementById("tt-scaley").value = v.sy;
     // 保存の成否に関わらず印刷は進める(この場で刷りたいのに保存失敗で止まると困る)。
     // ただし保存できなかったことは黙らず知らせる。
-    saveTagOffset(x, y).then(function (ok) {
+    saveTagOffset(v).then(function (ok) {
       if (!ok) showToast("印字位置は保存できませんでした(サーバーに繋がりません)。今回の印刷には反映されています。");
     });
     var paperEl = document.querySelector('input[name="tt-paper"]:checked');
     tagTestPaper = paperEl ? paperEl.value : "tag";
-    var sheet = tagSheetHtml(tagTestMode(), { x: x, y: y });
+    var sheet = tagSheetHtml(tagTestMode(), v);
     var html = sheet;
     if (tagTestPaper === "a4") {
       // 普通紙のA4に原寸で出す。刷った紙に現物の台紙を重ねて寸法を確かめる

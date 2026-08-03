@@ -1298,42 +1298,56 @@ def save_point_settings(con, p):
 #     保存領域が分かれて「昨日合わせたのにズレる」が起きる
 #   ・バックアップに含まれるので、PCの入れ替えや故障で設定が消えない
 # ため。値札プリンタは1台なので、店で1つ持てば足りる(2台になったら要見直し)。
+#   tag_scale_x / tag_scale_y  … 印字倍率の補正(%)。プリンタが全体を縮小/拡大して刷る分を戻す。
+#     実機(Apeos C3530)で、4行ぶん128mmが3mm以上詰まる=約2%縮む事象が出たため用意した
+#     (2026-08-03)。印刷ダイアログの倍率100%で直るのが本筋だが、機種によっては
+#     ドライバが余白ぶん自動縮小するため、その分をこちらで戻せるようにしておく。
 TAG_SETTING_DEFAULTS = {
     "tag_offset_x": 0.0,
     "tag_offset_y": 0.0,
+    "tag_scale_x": 100.0,
+    "tag_scale_y": 100.0,
 }
-TAG_OFFSET_MAX = 10.0   # ±10mm。これを超えると用紙から外れるので受け付けない
+TAG_OFFSET_MAX = 10.0            # ±10mm。これを超えると用紙から外れるので受け付けない
+TAG_SCALE_MIN, TAG_SCALE_MAX = 90.0, 110.0   # ±10%。これ以上ズレるなら設定側の問題
+
+
+def _clamp_num(v, lo, hi):
+    """数値にして lo〜hi に収める。数値でない・NaN・Inf は例外にする。"""
+    f = float(str(v).strip())
+    if f != f or f in (float("inf"), float("-inf")):
+        raise ValueError("数値ではありません")
+    return max(lo, min(hi, round(f, 2)))
+
+
+def _clamp_tag_setting(key, v):
+    """項目に応じた範囲で丸める(位置はmm・倍率は%)。"""
+    if key.startswith("tag_scale"):
+        return _clamp_num(v, TAG_SCALE_MIN, TAG_SCALE_MAX)
+    return _clamp_num(v, -TAG_OFFSET_MAX, TAG_OFFSET_MAX)
 
 
 def tag_settings(con):
-    """値札の印字位置の補正を返す(未設定は0)。"""
+    """値札の印字位置・倍率の補正を返す(未設定は既定値)。"""
     out = dict(TAG_SETTING_DEFAULTS)
     for k in out:
         row = con.execute("SELECT value FROM app_settings WHERE key=?", (k,)).fetchone()
         if row is not None and str(row[0]).strip() != "":
             try:
-                out[k] = _clamp_tag_offset(row[0])
+                out[k] = _clamp_tag_setting(k, row[0])
             except (ValueError, TypeError):
                 pass
     return out
 
 
-def _clamp_tag_offset(v):
-    """mmの補正値を数値にして±TAG_OFFSET_MAXに収める。不正値は例外にする。"""
-    f = float(str(v).strip())
-    if f != f or f in (float("inf"), float("-inf")):   # NaN / Inf を弾く
-        raise ValueError("数値ではありません")
-    return max(-TAG_OFFSET_MAX, min(TAG_OFFSET_MAX, round(f, 2)))
-
-
 def save_tag_settings(con, p):
-    """値札の印字位置の補正を保存する。不正値は現行値のまま(黙って壊さない)。"""
+    """値札の補正を保存する。不正値は現行値のまま(黙って壊さない)。"""
     cur = tag_settings(con)
     for k in TAG_SETTING_DEFAULTS:
         if k not in p:
             continue
         try:
-            cur[k] = _clamp_tag_offset(p.get(k))
+            cur[k] = _clamp_tag_setting(k, p.get(k))
         except (ValueError, TypeError):
             pass    # 数値でなければ現行値を維持
     for k, v in cur.items():
