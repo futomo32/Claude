@@ -175,6 +175,9 @@ def ensure_schema(con):
         ("receivable_entries", "method", "TEXT"),  # 売掛入金の支払方法(現金/銀行振込/カード/その他。空=現金扱い)
         ("repairs", "photo_files", "TEXT"),  # 修理お預かり品の写真ファイル名(カンマ区切り。B-6)
         ("products", "fucho", "TEXT"),  # 符丁(下代を隠す店内符牒。仕入先頭文字＋数字部)。パートには送らない
+        # 値札(タグ)に刷る2項目。宝飾ナビから引き継ぐ(2026-08-03 実データで所在を特定)
+        ("products", "maker_no", "TEXT"),  # 品番(仕入先の商品コード)。宝飾ナビ d_siire.strsirsycode
+        ("products", "tag_name", "TEXT"),  # タグ用の短い品名。宝飾ナビ d_item.strtaghinname
         ("supplier_master", "fucho_head", "TEXT"),  # 仕入先ごとの符丁頭カナ(漢字名対策)
         ("products", "is_consignment", "INTEGER DEFAULT 0"),  # 受託品フラグ(売上になっても残す。後日精算の識別用)
         ("products", "consign_settled", "INTEGER DEFAULT 0"),  # 受託の後日精算(原価入力)が済んだか
@@ -2248,7 +2251,7 @@ def delete_family(con, family_id):
 PRODUCT_FIELDS = ("product_no", "name", "category", "brand", "metal", "supplier", "cost_price",
                   "list_price", "location", "center_stone", "center_carat",
                   "color", "clarity", "cut", "cert_no", "info", "fucho",
-                  "ring_fingers", "ring_size")
+                  "maker_no", "tag_name", "ring_fingers", "ring_size")
 
 # 符丁(下代を隠す店内符牒)。数字→カナ「エビスアキナイカミ」対応表。
 _FUCHO_DIGITS = {"1": "ｴ", "2": "ﾋ", "3": "ｽ", "4": "ｱ", "5": "ｷ",
@@ -2396,7 +2399,7 @@ def get_product(con, product_key):
     r = con.execute(
         "SELECT product_key,product_no,name,category,brand,metal,supplier,cost_price,list_price,location,"
         "center_stone,center_carat,color,clarity,cut,cert_no,info,fucho,state,image_file,"
-        "ring_fingers,ring_size "
+        "maker_no,tag_name,ring_fingers,ring_size "
         "FROM products WHERE product_key=?", (pk,)).fetchone()
     if not r:
         raise ValueError("商品が見つかりません")

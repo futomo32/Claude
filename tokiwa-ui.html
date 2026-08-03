@@ -1310,6 +1310,8 @@
             <div class="field"><label>折数</label><input class="num" id="np-ori" readonly></div>
             <div class="field"><label>店舗</label><select id="np-loc"><option>本店</option></select></div>
             <div class="field"><label>符丁(下代・自動)</label><input id="np-fucho" placeholder="仕入先と仕入単価から自動" title="仕入先の頭文字＋下代(上3桁)の符牒。仕入単価と仕入先を入れると自動入力。手直しも可。"></div>
+            <div class="field"><label>品番(仕入先の商品コード)</label><input id="np-maker-no" placeholder="例: UA-3602 9 44" title="仕入先が付けている商品コード。値札タグの裏に印字します。"></div>
+            <div class="field"><label>タグ品名(値札の表に出す短い名前)</label><input id="np-tag-name" maxlength="20" placeholder="空欄なら商品名の先頭を使います" title="値札タグの表に印字する短い品名。タグは幅29mmしかないため、長い商品名とは別に短い名前を持たせます。"></div>
           </div>
           <div class="field" style="margin-top:0.6rem"><label>商品写真(任意)</label>
             <div style="display:flex;align-items:center;gap:0.6em;flex-wrap:wrap">
@@ -1641,7 +1643,9 @@
           <div class="field"><label>地金</label><input id="pe-metal" list="metal-datalist"></div>
           <div class="field"><label>仕入先</label><select id="pe-supplier"><option value="">選択…</option></select></div>
           <div class="field"><label>仕入単価(下代)</label><input class="num han-num" id="pe-cost" inputmode="numeric"></div>
-          <div class="field"><label>符丁(下代・自動)</label><input id="pe-fucho" title="仕入先の頭文字＋下代(上3桁)の符牒。仕入単価と仕入先を変えると自動更新。手直しも可。"></div>
+          <div class="field"><label>符丁(下代・自動)</label><input id="pe-fucho" title="仕入先の頭文字＋下代(上3桁)の符牒。手入力の符丁が入っている場合、仕入単価や仕入先を変えても確認なしには書き換えません。"></div>
+          <div class="field"><label>品番(仕入先の商品コード)</label><input id="pe-maker-no" placeholder="例: UA-3602 9 44" title="仕入先が付けている商品コード。値札タグの裏に印字します。"></div>
+          <div class="field"><label>タグ品名(値札の表に出す短い名前)</label><input id="pe-tag-name" maxlength="20" placeholder="空欄なら商品名の先頭を使います" title="値札タグの表に印字する短い品名。"></div>
           <div class="field"><label>上代(定価)</label><input class="num han-num" id="pe-list" inputmode="numeric"></div>
           <div class="field"><label>店舗</label><select id="pe-loc"><option value="">—</option><option>本店</option></select></div>
           <div class="field"><label>中石(石種)</label><input id="pe-stone"></div>
@@ -5806,6 +5810,9 @@
       _setSelectPreserving("pe-supplier", pr.supplier);
       document.getElementById("pe-cost").value = pr.cost_price || "";
       document.getElementById("pe-fucho").value = pr.fucho || "";
+      document.getElementById("pe-maker-no").value = pr.maker_no || "";
+      document.getElementById("pe-tag-name").value = pr.tag_name || "";
+      peFuchoChoice = null;   // 商品を開き直すたびに「符丁を再計算するか」の確認をやり直す
       document.getElementById("pe-list").value = pr.list_price || "";
       _setSelectPreserving("pe-loc", pr.location);
       document.getElementById("pe-stone").value = pr.center_stone || "";
@@ -5848,6 +5855,8 @@
       cost_price: numval("pe-cost"),
       list_price: numval("pe-list"),
       fucho: document.getElementById("pe-fucho").value.trim(),
+      maker_no: document.getElementById("pe-maker-no").value.trim(),
+      tag_name: document.getElementById("pe-tag-name").value.trim(),
       location: document.getElementById("pe-loc").value.trim(),
       center_stone: document.getElementById("pe-stone").value.trim(),
       center_carat: zen2han(document.getElementById("pe-carat").value).trim(),
@@ -6614,9 +6623,33 @@
     document.getElementById("np-fucho").value =
       makeFucho(document.getElementById("np-cost").value, fuchoHeadFor(document.getElementById("np-supplier").value));
   }
-  function updatePeFucho() {
-    document.getElementById("pe-fucho").value =
-      makeFucho(document.getElementById("pe-cost").value, fuchoHeadFor(document.getElementById("pe-supplier").value));
+  /* 商品編集での符丁の自動更新。
+     昔の符丁は手入力で、桁数が多いものや誤りも混じっている。仕入単価や仕入先を直しただけで
+     黙って書き換えると、現物のタグに貼ってある符丁とDBの符丁がズレる(2026-08-03 指摘)。
+     そこで【すでに符丁が入っている商品では、必ず確認してから書き換える】。
+     一度答えたら、その商品を開いている間は同じ判断を使い回す(何度も聞かない)。 */
+  var peFuchoChoice = null;   // null=未確認 / true=再計算する / false=手入力を保つ
+  // ask=false は入力中(1文字ごと)の呼び出し。打っている途中に確認を出すと邪魔なので、
+  // 確認が要る場面では何もしない。確認は入力欄から離れた時(change)に一度だけ出す。
+  function updatePeFucho(ask) {
+    var el = document.getElementById("pe-fucho");
+    var auto = makeFucho(document.getElementById("pe-cost").value,
+                         fuchoHeadFor(document.getElementById("pe-supplier").value));
+    var cur = (el.value || "").trim();
+    if (!cur || cur === auto) { el.value = auto; return; }   // 空欄・同じ値なら黙って入れてよい
+    if (peFuchoChoice === true) { el.value = auto; return; }
+    if (peFuchoChoice === false) return;                     // 「保つ」と答え済み
+    if (!ask) return;                                        // 入力中は確認を出さない
+    alertPopup(
+      "この商品には符丁「" + cur + "」が入っています。\n" +
+      "仕入単価・仕入先から計算すると「" + (auto || "(計算できません)") + "」になります。\n\n" +
+      "現物のタグに貼ってある符丁と合わなくなる場合があります。書き換えますか?",
+      {
+        type: "warn", title: "符丁の再計算",
+        okText: "書き換える", cancelText: "手入力のまま",
+        onOk: function () { peFuchoChoice = true; el.value = auto; },
+        onCancel: function () { peFuchoChoice = false; }
+      });
   }
   // 仕入登録の種別切替(宝石 / 宝石以外)。宝石以外は宝飾専用の入力欄(宝飾情報・地金)を隠す
   var npType = "gem";
@@ -6669,7 +6702,7 @@
     });
   })();
   function resetProductForm() {
-    ["np-no", "np-name", "np-brand", "np-metal", "np-stone", "np-carat", "np-side", "np-cert", "np-cost", "np-list", "np-rate", "np-ori", "np-fucho", "np-ring-size"].forEach(function (id) {
+    ["np-no", "np-name", "np-brand", "np-metal", "np-stone", "np-carat", "np-side", "np-cert", "np-cost", "np-list", "np-rate", "np-ori", "np-fucho", "np-maker-no", "np-tag-name", "np-ring-size"].forEach(function (id) {
       document.getElementById(id).value = "";
     });
     buildFingerChecks("np-fingers", "");  // はめる指のチェックも初期化(前の登録を引きずらない)
@@ -6713,6 +6746,8 @@
       cost_price: numval("np-cost"),
       list_price: numval("np-list"),
       fucho: document.getElementById("np-fucho").value.trim(),
+      maker_no: document.getElementById("np-maker-no").value.trim(),
+      tag_name: document.getElementById("np-tag-name").value.trim(),
       location: document.getElementById("np-loc").value,
       center_stone: gem ? document.getElementById("np-stone").value.trim() : "",
       center_carat: gem ? zen2han(document.getElementById("np-carat").value).trim() : "",
@@ -7233,8 +7268,10 @@
     // 符丁の自動入力(下代・仕入先が変わるたびに生成。手直しも可)
     document.getElementById("np-cost").addEventListener("input", updateNpFucho);
     document.getElementById("np-supplier").addEventListener("change", updateNpFucho);
-    document.getElementById("pe-cost").addEventListener("input", updatePeFucho);
-    document.getElementById("pe-supplier").addEventListener("change", updatePeFucho);
+    // 入力中(input)は確認を出さずに自動入力だけ。欄を離れた時(change)に一度だけ確認する
+    document.getElementById("pe-cost").addEventListener("input", function () { updatePeFucho(false); });
+    document.getElementById("pe-cost").addEventListener("change", function () { updatePeFucho(true); });
+    document.getElementById("pe-supplier").addEventListener("change", function () { updatePeFucho(true); });
     // ログインユーザーのロールに合わせてUIを出し分け(サーバー側の制御の補助)
     applyRoleUI();
     // サーバーで既にログイン済みなら、埋め込みのモックログイン画面は出さず直接アプリへ
