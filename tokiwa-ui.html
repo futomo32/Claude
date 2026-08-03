@@ -665,10 +665,16 @@
   .tag-cell { width: 29mm; height: 32mm; box-sizing: border-box; position: relative; overflow: hidden; }
   .tag-cell.guide { outline: 0.2mm dashed #999; outline-offset: -0.1mm; }
   .tag-fold { position: absolute; left: 0; right: 0; top: 16mm; border-top: 0.2mm dashed #666; }
+  /* 台紙のロゴ帯の下端(=表の印字が始まる位置)。位置合わせのときだけ出す目安線 */
+  .tag-bandline { position: absolute; left: 0; right: 0; border-top: 0.2mm dotted #aaa; }
   /* 上半分=裏(180°回転して印字) / 下半分=表 */
   .tag-back { position: absolute; left: 0; right: 0; top: 0; height: 16mm; transform: rotate(180deg); }
   .tag-front { position: absolute; left: 0; right: 0; bottom: 0; height: 16mm; }
-  .tag-half-in { box-sizing: border-box; height: 100%; padding: 0.8mm 1.2mm; display: flex; flex-direction: column; }
+  /* 左右の余白は JS の TAG_INSET_X が唯一の正(--tag-inset で流し込む)。
+     給紙が左右にズレても印字が隣の面に食い込まないよう、タグ幅より内側に寄せる。 */
+  .tag-half-in { box-sizing: border-box; height: 100%; padding: 0.8mm var(--tag-inset, 2.2mm); display: flex; flex-direction: column; }
+  /* 表の上端は台紙のロゴ帯(印刷済み)。その高さぶんを空けてから品名を刷る */
+  .tag-front .tag-half-in { padding-top: var(--tag-band, 6mm); }
   .tag-num { font-size: 11pt; font-weight: 700; text-align: center; line-height: 1.1; }
   .tag-side { font-size: 5.5pt; color: #444; text-align: center; letter-spacing: 0.05em; }
   /* 四隅の見当(トンボ)。台紙の角から5mmの位置に十字を打ち、ズレをmmで読み取る */
@@ -7686,7 +7692,15 @@
   var TAG_W = 29, TAG_H = 32, TAG_FOLD = 16, TAG_COLS = 3, TAG_ROWS = 4;
   var TAG_PER_SHEET = TAG_COLS * TAG_ROWS;
   var TAG_OFFSET_MAX = 10;          // オフセットの上限(mm)。これ以上は用紙から外れる
-  var TAG_BC_W = 26, TAG_BC_H = 5;  // バーコードの幅・高さ(mm)
+  // 印字はタグ幅29mmいっぱいには広げず、左右にこれだけ内側へ寄せる(2026-08-03)。
+  // 給紙が左右にズレても印字が隣の面へ食い込まないようにするため。上下はズレにくいので寄せない。
+  // CSS へは .tag-sheet の --tag-inset で流し込むので、余白を変える時はここだけ直す。
+  var TAG_INSET_X = 2.2;
+  // 表(下半分)の上端は台紙に赤帯・黒帯・yanaseロゴが印刷済み。その高さぶんを空けてから
+  // 品名を刷る(2026-08-03 指示)。CSS へは --tag-band で流し込む。
+  var TAG_BAND_H = 6;
+  var TAG_BC_W = TAG_W - TAG_INSET_X * 2;  // バーコード幅=印字できる幅いっぱい(24.6mm)
+  var TAG_BC_H = 5;                        // バーコード高さ(mm)
   var tagTestPaper = "tag";         // 印刷確定時に @page をどちらにするか("tag" / "a4")
 
   // 印字位置のオフセットはこの端末に覚える(プリンタごとのクセなので端末ごとで良い)。
@@ -7774,8 +7788,10 @@
       '<div class="tag-back"><div class="tag-half-in">' +
         '<div class="tag-side">裏 (180°回転)</div><div class="tag-num">' + n + '</div></div></div>' +
       '<div class="tag-fold"></div>' +
+      // ロゴ帯の下端の目安線。現物の帯とこの線が合っているかを見る
+      '<div class="tag-bandline" style="top:calc(' + TAG_FOLD + 'mm + ' + TAG_BAND_H + 'mm)"></div>' +
       '<div class="tag-front"><div class="tag-half-in">' +
-        '<div class="tag-num">' + n + '</div><div class="tag-side">表 &nbsp;折り線↑16mm</div></div></div>' +
+        '<div class="tag-num">' + n + '</div><div class="tag-side">表 &nbsp;帯' + TAG_BAND_H + 'mm下から</div></div></div>' +
       '</div>';
   }
   function tagSampleCell(n) {
@@ -7783,7 +7799,6 @@
     var pno = ("0000" + (17540 + n)).slice(-5);
     var mgmt = pno + "-1-01-20-130";
     var bc = tagBarcodeHtml(pno + "1" + "01" + "20" + "00", TAG_BC_W, TAG_BC_H);
-    // 表(下半分)は価格だけ。品名は裏に入れる(表の上部は台紙のロゴ帯なので使えない)
     var name = "テスト品名 " + n, price = "¥96,800", fucho = "ウスケカ", sub = "8104108756";
     return '<div class="tag-cell guide">' +
       '<div class="tag-back"><div class="tag-half-in">' +
@@ -7793,9 +7808,9 @@
         '<div class="tg-bcnum">' + mgmt + '</div>' +
       '</div></div>' +
       '<div class="tag-fold"></div>' +
-      // 表は価格だけ。折り線のすぐ下は台紙に赤帯・黒帯・ロゴが印刷済みなので、
-      // ここに品名を置くとロゴに重なる。価格は下寄せにして帯を確実に避ける。
+      // 表は「ロゴ帯ぶんを空ける → 品名 → 価格(下寄せ)」の順。帯の高さは TAG_BAND_H。
       '<div class="tag-front"><div class="tag-half-in">' +
+        '<div class="tg-name">' + esc(name) + '</div>' +
         '<div class="tg-price">' + price + '</div>' +
       '</div></div>' +
       '</div>';
@@ -7803,9 +7818,9 @@
   function tagSheetHtml(mode, off) {
     var cells = "";
     for (var i = 1; i <= TAG_PER_SHEET; i++) cells += (mode === "sample" ? tagSampleCell(i) : tagGuideCell(i));
-    var shift = (off.x || off.y)
-      ? ' style="transform:translate(' + off.x + 'mm,' + off.y + 'mm)"' : "";
-    return '<div class="tag-sheet"' + shift + '>' + tagRegMarksHtml() + cells + '</div>';
+    var css = "--tag-inset:" + TAG_INSET_X + "mm;--tag-band:" + TAG_BAND_H + "mm";
+    if (off.x || off.y) css += ";transform:translate(" + off.x + "mm," + off.y + "mm)";
+    return '<div class="tag-sheet" style="' + css + '">' + tagRegMarksHtml() + cells + '</div>';
   }
 
   /* ── モーダル ── */
