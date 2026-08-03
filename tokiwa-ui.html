@@ -679,6 +679,7 @@
   /* 見本印字(現物と同じ並び) */
   .tg-line { display: flex; justify-content: space-between; gap: 1mm; font-size: 5.5pt; line-height: 1.3; }
   .tg-name { font-size: 6pt; line-height: 1.3; white-space: nowrap; overflow: hidden; }
+  /* 表の価格。折り線のすぐ下は台紙のロゴ帯なので、下寄せにして重ならないようにする */
   .tg-price { font-size: 12pt; font-weight: 700; text-align: center; margin-top: auto; letter-spacing: 0.02em; }
   /* バーコードはSVG(前景)で描く。背景色は印刷時に落とされるため background は使わない */
   .tg-bc { display: block; margin: 0.4mm auto 0; }
@@ -7782,6 +7783,7 @@
     var pno = ("0000" + (17540 + n)).slice(-5);
     var mgmt = pno + "-1-01-20-130";
     var bc = tagBarcodeHtml(pno + "1" + "01" + "20" + "00", TAG_BC_W, TAG_BC_H);
+    // 表(下半分)は価格だけ。品名は裏に入れる(表の上部は台紙のロゴ帯なので使えない)
     var name = "テスト品名 " + n, price = "¥96,800", fucho = "ウスケカ", sub = "8104108756";
     return '<div class="tag-cell guide">' +
       '<div class="tag-back"><div class="tag-half-in">' +
@@ -7791,8 +7793,9 @@
         '<div class="tg-bcnum">' + mgmt + '</div>' +
       '</div></div>' +
       '<div class="tag-fold"></div>' +
+      // 表は価格だけ。折り線のすぐ下は台紙に赤帯・黒帯・ロゴが印刷済みなので、
+      // ここに品名を置くとロゴに重なる。価格は下寄せにして帯を確実に避ける。
       '<div class="tag-front"><div class="tag-half-in">' +
-        '<div class="tg-name">' + esc(name) + '</div>' +
         '<div class="tg-price">' + price + '</div>' +
       '</div></div>' +
       '</div>';
