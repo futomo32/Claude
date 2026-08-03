@@ -8036,7 +8036,13 @@
     });
     var paperEl = document.querySelector('input[name="tt-paper"]:checked');
     tagTestPaper = paperEl ? paperEl.value : "tag";
-    var sheet = tagSheetHtml(tagTestMode(), v);
+    // ★A4モードには専用台紙用のオフセット・倍率補正を適用しない(2026-08-03 バグ修正)。
+    //   A4モードは値札プリンタとは別の紙・別の目的(補正前の生の寸法を確認する)なので、
+    //   専用台紙用に合わせた倍率をそのまま使うと矛盾する。実際に、倍率>100%を適用した
+    //   状態でA4に刷ると、左上基準で拡大した中身の白い背景が外枠の右・下辺を覆い隠して
+    //   消えて見える、という不具合が起きていた(プリンタ側の裁ち落としではなかった)。
+    var sheetV = (tagTestPaper === "a4") ? { x: 0, y: 0, sx: 100, sy: 100, reverse: v.reverse } : v;
+    var sheet = tagSheetHtml(tagTestMode(), sheetV);
     var html = sheet;
     if (tagTestPaper === "a4") {
       // 普通紙のA4に原寸で出す。刷った紙に現物の台紙を重ねて寸法を確かめる
