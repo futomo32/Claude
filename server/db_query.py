@@ -1302,11 +1302,15 @@ def save_point_settings(con, p):
 #     実機(Apeos C3530)で、4行ぶん128mmが3mm以上詰まる=約2%縮む事象が出たため用意した
 #     (2026-08-03)。印刷ダイアログの倍率100%で直るのが本筋だが、機種によっては
 #     ドライバが余白ぶん自動縮小するため、その分をこちらで戻せるようにしておく。
+#   tag_reverse … 1=表と裏が逆に出る場合の補正。値札プリンタの給紙の向きは店で固定
+#     (紙を都度入れ替えることはしない方針。2026-08-03)なので、これも店に1つだけ持てば足りる。
+#     並び順(1〜12)と各面の表裏をまとめて180°回転させて直す。
 TAG_SETTING_DEFAULTS = {
     "tag_offset_x": 0.0,
     "tag_offset_y": 0.0,
     "tag_scale_x": 100.0,
     "tag_scale_y": 100.0,
+    "tag_reverse": 0,
 }
 TAG_OFFSET_MAX = 20.0            # ±20mm。実機で約10mm下へずれる事象があったため10→20に拡げた
                                  # (2026-08-03)。これを超えるなら用紙設定側の問題
@@ -1322,7 +1326,14 @@ def _clamp_num(v, lo, hi):
 
 
 def _clamp_tag_setting(key, v):
-    """項目に応じた範囲で丸める(位置はmm・倍率は%)。"""
+    """項目に応じた範囲で丸める(位置はmm・倍率は%・反転は0/1)。"""
+    if key == "tag_reverse":
+        s = str(v).strip()
+        if s in ("1", "true", "True"):
+            return 1
+        if s in ("0", "false", "False"):
+            return 0
+        raise ValueError("0/1で指定してください")   # 不正値は例外にして現行値を維持させる
     if key.startswith("tag_scale"):
         return _clamp_num(v, TAG_SCALE_MIN, TAG_SCALE_MAX)
     return _clamp_num(v, -TAG_OFFSET_MAX, TAG_OFFSET_MAX)

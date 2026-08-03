@@ -648,14 +648,21 @@
   .tag-sheet {
     width: 103mm; height: 147mm; box-sizing: border-box;
     padding: var(--tag-my) var(--tag-mx);
-    display: grid;
-    grid-template-columns: repeat(3, var(--tag-w)); grid-template-rows: repeat(4, var(--tag-h));
-    column-gap: var(--tag-gx); row-gap: var(--tag-gy);
     position: relative; background: #fff; color: #000;
     font-family: "游ゴシック", "Yu Gothic", sans-serif;
     /* 濃度を勝手に落とされるとバーコードが読めなくなるので、色をそのまま出させる */
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
+  /* 12面の入れ物。見当(トンボ)・目盛りは実際の紙の角が基準なのでここには含めない。
+     「表と裏が逆に出る」場合は、この入れ物だけを180°回転させて解決する
+     (紙の物理的な向きは常に一定のまま。CSS transform で組み立て順を丸ごと反転させる)。 */
+  .tag-grid {
+    width: 100%; height: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, var(--tag-w)); grid-template-rows: repeat(4, var(--tag-h));
+    column-gap: var(--tag-gx); row-gap: var(--tag-gy);
+  }
+  .tag-grid.reversed { transform: rotate(180deg); transform-origin: 50% 50%; }
   /* 印刷時は高さ指定を外す: ちょうど147mmだと丸め誤差で白紙の2ページ目が出るため
      (タグ位置は上・左からのグリッドで決まるので影響しない) */
   @media print { .tag-sheet { height: auto; padding-bottom: 0; } }
@@ -2096,6 +2103,16 @@
           マイナスで左・上へ動きます(±20mmまで)。レシートのロゴ調整と同じ考え方です。
           <b>設定はトキワ本体に保存される</b>ので、どのPCから開いても同じ値が使われ、
           バックアップにも含まれます(PCを入れ替えても消えません)。</span>
+      </div>
+
+      <div class="section-title">向きの補正</div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:0.5em;cursor:pointer;font-weight:400">
+          <input type="checkbox" id="tt-reverse" style="width:1.1em;height:1.1em">
+          このプリンタでは表と裏が逆に出る場合、チェックを入れてください</label>
+        <span style="font-size:0.8em;color:var(--muted)">
+          面の並び順(1〜12)と、各タグの表・裏をまとめて入れ替えます。紙の向きは変えず、
+          いつも通り入れたままで大丈夫です。一度設定すれば、以後は意識する必要はありません。</span>
       </div>
 
       <div class="section-title">印字倍率の補正(プリンタが縮めて刷る場合)</div>
@@ -7794,7 +7811,8 @@
       x: clampOffset(t.tag_offset_x !== undefined ? t.tag_offset_x : t.x),
       y: clampOffset(t.tag_offset_y !== undefined ? t.tag_offset_y : t.y),
       sx: clampScale(t.tag_scale_x !== undefined ? t.tag_scale_x : t.sx),
-      sy: clampScale(t.tag_scale_y !== undefined ? t.tag_scale_y : t.sy)
+      sy: clampScale(t.tag_scale_y !== undefined ? t.tag_scale_y : t.sy),
+      reverse: !!(t.tag_reverse !== undefined ? Number(t.tag_reverse) : t.reverse)
     };
   }
   function clampOffset(v) {
@@ -7809,7 +7827,8 @@
   }
   // 保存はサーバーが正。失敗しても印刷は続けられるよう、成否を呼び出し元へ返す
   function saveTagOffset(v) {
-    var body = { tag_offset_x: v.x, tag_offset_y: v.y, tag_scale_x: v.sx, tag_scale_y: v.sy };
+    var body = { tag_offset_x: v.x, tag_offset_y: v.y, tag_scale_x: v.sx, tag_scale_y: v.sy,
+                 tag_reverse: v.reverse ? 1 : 0 };
     if (!API) {
       try { localStorage.setItem("tokiwa.tagOffset", JSON.stringify(body)); } catch (e) {}
       return Promise.resolve(true);
@@ -7958,8 +7977,10 @@
     if (off.x || off.y) tf.push("translate(" + off.x + "mm," + off.y + "mm)");
     if (off.sx !== 100 || off.sy !== 100) tf.push("scale(" + (off.sx / 100) + "," + (off.sy / 100) + ")");
     if (tf.length) css += ";transform-origin:0 0;transform:" + tf.join(" ");
+    var gridCls = "tag-grid" + (off.reverse ? " reversed" : "");
     return '<div class="tag-sheet" style="' + css + '">' +
-      tagRegMarksHtml() + (mode === "sample" ? "" : tagRulerHtml()) + cells + '</div>';
+      tagRegMarksHtml() + (mode === "sample" ? "" : tagRulerHtml()) +
+      '<div class="' + gridCls + '">' + cells + '</div></div>';
   }
 
   /* ── モーダル ── */
@@ -7969,6 +7990,7 @@
     document.getElementById("tt-offy").value = off.y;
     document.getElementById("tt-scalex").value = off.sx;
     document.getElementById("tt-scaley").value = off.sy;
+    document.getElementById("tt-reverse").checked = !!off.reverse;
     document.getElementById("tt-error").style.display = "none";
     var scale = tagBarcodeScale();
     document.getElementById("tt-info").innerHTML =
@@ -7988,7 +8010,8 @@
       x: clampOffset(document.getElementById("tt-offx").value),
       y: clampOffset(document.getElementById("tt-offy").value),
       sx: clampScale(document.getElementById("tt-scalex").value),
-      sy: clampScale(document.getElementById("tt-scaley").value)
+      sy: clampScale(document.getElementById("tt-scaley").value),
+      reverse: document.getElementById("tt-reverse").checked
     };
     document.getElementById("tt-offx").value = v.x;
     document.getElementById("tt-offy").value = v.y;
