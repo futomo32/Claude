@@ -8059,8 +8059,13 @@
     //   印刷する、という大前提が崩れていたのはこれが原因。
     //   HTML自体に高さ+overflow:hiddenを持たせれば、プレビューでも印刷でも
     //   常に同一のDOM・同一の見た目になり、この種の乖離は原理的に起きなくなる。
+    //   ★切り取るのは「縦」だけにする(2026-08-03 バグ修正)。
+    //     2ページ目は縦のはみ出しでしか発生しないのに overflow:hidden で横も切っていたため、
+    //     倍率補正で右へ伸びた分が削られ、右側の見当十字が半分欠けていた。
+    //     overflow-y だけを hidden にし、横は切らない(はみ出しても用紙の外に出るだけで
+    //     ページは増えない)。
     var rootH = (tagTestPaper === "a4" ? 297 : TAG_SHEET_H) - 1;
-    html = '<div style="height:' + rootH + 'mm;overflow:hidden">' + html + '</div>';
+    html = '<div style="height:' + rootH + 'mm;overflow-y:hidden">' + html + '</div>';
     closeTagTest();
     showPrintPreview("tags", html);
   }
