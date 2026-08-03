@@ -670,6 +670,9 @@
      余白は15mm→20mmに拡げた(2026-08-03)。実機で外枠の右・下辺だけ印刷から消える事象が
      出たため、プリンタの印字不可領域(用紙端の非対称なクセ)にかからないよう安全側に寄せた。 */
   .tag-a4-wrap { width: 210mm; height: 297mm; box-sizing: border-box; padding: 20mm; background: #fff; }
+  /* 印刷時は高さ指定を外す: ちょうどA4の高さ(297mm)だと丸め誤差で白紙の2ページ目が出るため
+     (.tag-sheet で先に直したのと同じ不具合。2026-08-03、A4モード側は対策漏れだった) */
+  @media print { .tag-a4-wrap { height: auto; } }
   .tag-a4-frame { width: 103mm; height: 147mm; box-sizing: border-box; outline: 0.3mm solid #000; }
   .tag-a4-note { font: 9pt/1.6 "游ゴシック", "Yu Gothic", sans-serif; color: #000; margin-top: 6mm; max-width: 150mm; }
 
