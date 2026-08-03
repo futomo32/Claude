@@ -2675,6 +2675,22 @@
     tick();
     setInterval(tick, 60000);
   })();
+
+  /* ── 「戻る/進む」で復元された画面を残さない(2026-08-03) ──
+     ブラウザは直前の画面をそのまま保存しており、戻る/進むで復元することがある
+     (bfcache)。復元だとページの処理が動き直さないため、ログアウト済みでも
+     顧客名や売上が表示されたまま見えてしまう。データはサーバーが401で守るが、
+     画面の残像が残るのは望ましくない。
+     復元(persisted)を検知したら読み込み直す。読み込み直せばサーバーがログイン状態を
+     確認し、切れていればログイン画面が出る。
+     ※サーバー経由(window.TOKIWA_USER あり)のときだけ。単体HTMLの開発プレビューでは
+       ログインの概念が無く、再読み込みで入力中の内容を失うだけなので何もしない。 */
+  if (window.TOKIWA_USER) {
+    window.addEventListener("pageshow", function (e) {
+      if (e.persisted) location.reload();
+    });
+  }
+
   var ROLE_LABELS = { admin: "管理者", staff: "社員", part: "パート" };
   function userRole() { return CUR_USER ? (CUR_USER.role || "staff") : "admin"; }
   function canCost() { return userRole() !== "part"; }      // 仕入額(下代)・粗利を見られるか
@@ -8059,13 +8075,13 @@
     //   印刷する、という大前提が崩れていたのはこれが原因。
     //   HTML自体に高さ+overflow:hiddenを持たせれば、プレビューでも印刷でも
     //   常に同一のDOM・同一の見た目になり、この種の乖離は原理的に起きなくなる。
-    //   ★切り取るのは「縦」だけにする(2026-08-03 バグ修正)。
-    //     2ページ目は縦のはみ出しでしか発生しないのに overflow:hidden で横も切っていたため、
-    //     倍率補正で右へ伸びた分が削られ、右側の見当十字が半分欠けていた。
-    //     overflow-y だけを hidden にし、横は切らない(はみ出しても用紙の外に出るだけで
-    //     ページは増えない)。
-    var rootH = (tagTestPaper === "a4" ? 297 : TAG_SHEET_H) - 1;
-    html = '<div style="height:' + rootH + 'mm;overflow-y:hidden">' + html + '</div>';
+    // ★2026-08-03: 白紙2ページ目対策として入れていた「切り取り用の囲い」を撤去した。
+    //   経緯: overflow:hidden で囲ったところ、倍率補正で右へ伸びた分まで切られて
+    //   右側の見当十字が欠けた。そこで overflow-y:hidden に変えたが、CSSの仕様で
+    //   「片方を hidden にすると、もう片方の visible は auto になる」ため、今度は
+    //   横スクロールバーが出てプレビューが操作不能になった。
+    //   印刷のための細工を、画面プレビューと共通のHTMLに入れたこと自体が誤り。
+    //   2ページ目が再発する場合は、プレビューを壊さない別の方法で対処する。
     closeTagTest();
     showPrintPreview("tags", html);
   }

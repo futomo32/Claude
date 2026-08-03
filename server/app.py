@@ -277,6 +277,14 @@ class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype="application/json; charset=utf-8"):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
+        # ★ブラウザに画面を保存させない(2026-08-03)。
+        #   これが無いと、ログアウト後でも「戻る/進む」ボタンでブラウザ内の保存画面が
+        #   復元され、顧客名や売上がそのまま見えてしまう(データは401で守られるが、
+        #   表示の残像が残る)。no-store で保存自体を禁止する。
+        #   画像などの大きい静的ファイルは _send を通さないので、この指定の対象外。
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")   # 古いブラウザ・プロキシ向け
+        self.send_header("Expires", "0")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -535,6 +543,8 @@ class Handler(BaseHTTPRequestHandler):
                                    "user": result["user"]}, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
+                # Cookieを配る応答は _send を通らないので、保存禁止をここでも明示する
+                self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
                 self.send_header("Set-Cookie",
                                  f"tokiwa_session={result['token']}; Path=/; HttpOnly; SameSite=Lax; "
                                  f"Max-Age={db_query.SESSION_HOURS * 3600}")
@@ -549,6 +559,8 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.dumps({"ok": True}).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
+                # 同上。ログアウト応答が保存されると「戻る」で古い状態が戻りかねない
+                self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
                 self.send_header("Set-Cookie", "tokiwa_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
