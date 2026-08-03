@@ -32,10 +32,23 @@ REAL_DIR = "data/real"
 MAX_ROWS_PER_FILE = 5      # 1ファイルから出す行数の上限(取り違えて大量に出さないため)
 MAX_VALUE_LEN = 80         # 1つの値の表示上限
 
-# 値を伏せる列(個人情報)。列名にこの語が含まれたら中身を出さない
+# 値を伏せる列(個人情報)。列名にこの語が含まれたら中身を出さない。
+# ★宝飾ナビの生CSVは列名がローマ字(strkoname=顧客名, strkojyu1=住所 など)なので、
+#   日本語だけ見ていると素通りする(2026-08-03 実際に顧客名と住所を出してしまった)。
+#   ko=顧客 / hon=本人 / tan=担当者 の接頭辞ごと拾う。
+#   ※商品名 strsyname・タグ品名 strtaghinname を巻き込まないよう、語を絞って指定する。
 SECRET_COL = re.compile(
-    r"(氏名|名前|顧客名|カナ|かな|フリガナ|ふりがな|住所|番地|建物|電話|TEL|ﾃﾚ|携帯|"
-    r"郵便|〒|生年月日|誕生|メール|mail|勤務先|世帯|続柄)", re.IGNORECASE)
+    # 日本語の列名(xlsx側)
+    r"(氏名|名前|顧客名|担当者名|カナ|かな|フリガナ|ふりがな|住所|番地|建物|電話|携帯|"
+    r"郵便|〒|生年月日|誕生|メール|勤務先|世帯|続柄|性別"
+    # 宝飾ナビのローマ字列名(生CSV側)
+    r"|koname|kokname|kokana|kojyu|kopos|kotel|honname|hontel|tanname|tanmei"
+    r"|birthday|jusho|address|zipcode|sexkbn|zokukbn"
+    # 共通
+    r"|TEL|ﾃﾚ|mail)", re.IGNORECASE)
+
+# 念のための二重の網: 列名で拾えなくても、値そのものが電話番号・郵便番号に見えたら伏せる
+SECRET_VALUE = re.compile(r"^(0\d{1,4}-\d{1,4}-\d{3,4}|0\d{9,10}|\d{3}-\d{4})$")
 
 
 def norm(v):
@@ -51,8 +64,8 @@ def show(col, val):
     s = "" if val is None else str(val).strip()
     if not s:
         return None
-    if SECRET_COL.search(str(col or "")):
-        return f"    {col} = (伏せ字: 個人情報らしい列のため表示しません)"
+    if SECRET_COL.search(str(col or "")) or SECRET_VALUE.match(s):
+        return f"    {col} = (伏せ字: 個人情報らしいため表示しません)"
     if len(s) > MAX_VALUE_LEN:
         s = s[:MAX_VALUE_LEN] + "…"
     return f"    {col} = {s}"
