@@ -8049,24 +8049,28 @@
         '印刷ダイアログでは<b>倍率100%(実際のサイズ)・余白なし</b>を選ぶこと。' +
         '「用紙に合わせる」だと数mm縮んで確認になりません。</div></div>';
     }
+    // ★白紙の2ページ目を防ぐ「囲い」は、@media print(印刷時だけ有効なCSS)ではなく
+    //   HTMLそのものに埋め込む(2026-08-03 バグ修正)。
+    //   以前は @media print 側にだけ this の overflow:hidden を仕込んでいたため、
+    //   画面の「印刷プレビュー」(このモーダル。@media print の対象外)には反映されず、
+    //   実際に紙に出す瞬間だけ違う見た目になっていた。プレビューと同じ物を必ず
+    //   印刷する、という大前提が崩れていたのはこれが原因。
+    //   HTML自体に高さ+overflow:hiddenを持たせれば、プレビューでも印刷でも
+    //   常に同一のDOM・同一の見た目になり、この種の乖離は原理的に起きなくなる。
+    var rootH = (tagTestPaper === "a4" ? 297 : TAG_SHEET_H) - 1;
+    html = '<div style="height:' + rootH + 'mm;overflow:hidden">' + html + '</div>';
     closeTagTest();
     showPrintPreview("tags", html);
   }
-  // 印刷の間だけ @page を差し替える(通常はA4指定なので、値札の時だけ上書きして元に戻す)
+  // 印刷の間だけ @page を差し替える(通常はA4指定なので、値札の時だけ上書きして元に戻す)。
+  // ここは用紙の物理サイズの指定だけ。中身のクリッピングはHTML側に持たせてあるので
+  // (doTagTestPrint 参照)、ここでは触らない。
   function applyTagPageStyle(paper) {
     var el = document.getElementById("tag-page-css");
     if (!el) { el = document.createElement("style"); el.id = "tag-page-css"; document.head.appendChild(el); }
     if (!paper) { el.textContent = ""; return; }
     var size = paper === "a4" ? "A4" : TAG_SHEET_W + "mm " + TAG_SHEET_H + "mm";
-    // ★白紙の2ページ目を根本から出さないための囲い(2026-08-03)。
-    //   オフセット・倍率の transform は「描かれる範囲」を広げるため、1ページ目から
-    //   はみ出した瞬間にブラウザが2ページ目を作ってしまう(height:auto の対策だけでは
-    //   補正値しだいで再発する)。印刷ルートを用紙より1mmだけ低い高さで overflow:hidden
-    //   にして、何がはみ出しても文書全体が1ページに収まるようにする。削られる最下端の
-    //   1mmは余白地帯で、そもそも用紙の外に出る部分なので印字内容は失われない。
-    var rootH = (paper === "a4" ? 297 : TAG_SHEET_H) - 1;
-    el.textContent = "@media print{@page{size:" + size + ";margin:0}" +
-      "body.printing-tags .tag-print-root{height:" + rootH + "mm;overflow:hidden}}";
+    el.textContent = "@media print{@page{size:" + size + ";margin:0}}";
   }
 
   /* ── 汎用帳票印刷(見積書・請求書・修理伝票): 保存はせずその場で印刷するだけ ── */
