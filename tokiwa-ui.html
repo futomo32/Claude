@@ -2110,16 +2110,6 @@
           バックアップにも含まれます(PCを入れ替えても消えません)。</span>
       </div>
 
-      <div class="section-title">向きの補正</div>
-      <div class="field">
-        <label style="display:flex;align-items:center;gap:0.5em;cursor:pointer;font-weight:400">
-          <input type="checkbox" id="tt-reverse" style="width:1.1em;height:1.1em">
-          このプリンタでは表と裏が逆に出る場合、チェックを入れてください</label>
-        <span style="font-size:0.8em;color:var(--muted)">
-          面の並び順(1〜12)と、各タグの表・裏をまとめて入れ替えます。紙の向きは変えず、
-          いつも通り入れたままで大丈夫です。一度設定すれば、以後は意識する必要はありません。</span>
-      </div>
-
       <div class="section-title">印字倍率の補正(プリンタが縮めて刷る場合)</div>
       <div class="field">
         <div style="display:flex;align-items:center;gap:0.8em;flex-wrap:wrap">
@@ -7784,6 +7774,14 @@
   // (高さを直せば折り位置も自動で追随する。数値を二重に持たない)
   var TAG_FOLD = TAG_H / 2;
   var TAG_PER_SHEET = TAG_COLS * TAG_ROWS;
+  // ★面の並び順と各タグの表裏を180°回転して刷るか(2026-08-03 固定値にした)。
+  //   台紙の帯は赤線が上という向きを持ち、給紙の向きは宝飾ナビと共通のトレイで固定。
+  //   この組み合わせでは回転して刷るのが唯一の正解で、店で選ぶ余地がない。
+  //   当初は設定画面のチェックボックスにしたが「使う人に意識させたくない」との指示で
+  //   画面から外し、コード側の固定値にした。
+  //   ※宝飾ナビを止めた後(9月以降)に台紙の向きを180°変える運用にする場合は、
+  //     紙の入れ替えと同時にここを false にする(排出時の見た目がプレビューと揃う)。
+  var TAG_REVERSE = true;
   // オフセットの上限(mm)。server/db_query.py の TAG_OFFSET_MAX と合わせること。
   // 実機で約10mm下へずれる事象があったため 10→20 に拡げた(2026-08-03)
   var TAG_OFFSET_MAX = 20;
@@ -7822,7 +7820,7 @@
       y: clampOffset(t.tag_offset_y !== undefined ? t.tag_offset_y : t.y),
       sx: clampScale(t.tag_scale_x !== undefined ? t.tag_scale_x : t.sx),
       sy: clampScale(t.tag_scale_y !== undefined ? t.tag_scale_y : t.sy),
-      reverse: !!(t.tag_reverse !== undefined ? Number(t.tag_reverse) : t.reverse)
+      reverse: TAG_REVERSE   // 設定ではなく固定値(理由は TAG_REVERSE のコメント参照)
     };
   }
   function clampOffset(v) {
@@ -7837,8 +7835,7 @@
   }
   // 保存はサーバーが正。失敗しても印刷は続けられるよう、成否を呼び出し元へ返す
   function saveTagOffset(v) {
-    var body = { tag_offset_x: v.x, tag_offset_y: v.y, tag_scale_x: v.sx, tag_scale_y: v.sy,
-                 tag_reverse: v.reverse ? 1 : 0 };
+    var body = { tag_offset_x: v.x, tag_offset_y: v.y, tag_scale_x: v.sx, tag_scale_y: v.sy };
     if (!API) {
       try { localStorage.setItem("tokiwa.tagOffset", JSON.stringify(body)); } catch (e) {}
       return Promise.resolve(true);
@@ -8005,7 +8002,6 @@
     document.getElementById("tt-offy").value = off.y;
     document.getElementById("tt-scalex").value = off.sx;
     document.getElementById("tt-scaley").value = off.sy;
-    document.getElementById("tt-reverse").checked = !!off.reverse;
     document.getElementById("tt-error").style.display = "none";
     var scale = tagBarcodeScale();
     document.getElementById("tt-info").innerHTML =
@@ -8026,7 +8022,7 @@
       y: clampOffset(document.getElementById("tt-offy").value),
       sx: clampScale(document.getElementById("tt-scalex").value),
       sy: clampScale(document.getElementById("tt-scaley").value),
-      reverse: document.getElementById("tt-reverse").checked
+      reverse: TAG_REVERSE
     };
     document.getElementById("tt-offx").value = v.x;
     document.getElementById("tt-offy").value = v.y;
