@@ -666,8 +666,10 @@
   /* 印刷時は高さ指定を外す: ちょうど147mmだと丸め誤差で白紙の2ページ目が出るため
      (タグ位置は上・左からのグリッドで決まるので影響しない) */
   @media print { .tag-sheet { height: auto; padding-bottom: 0; } }
-  /* A4に原寸で出すモード(専用台紙が無い開発機での確認用)。枠を現物に重ねて寸法を確かめる */
-  .tag-a4-wrap { width: 210mm; height: 297mm; box-sizing: border-box; padding: 15mm; background: #fff; }
+  /* A4に原寸で出すモード(専用台紙が無い開発機での確認用)。枠を現物に重ねて寸法を確かめる。
+     余白は15mm→20mmに拡げた(2026-08-03)。実機で外枠の右・下辺だけ印刷から消える事象が
+     出たため、プリンタの印字不可領域(用紙端の非対称なクセ)にかからないよう安全側に寄せた。 */
+  .tag-a4-wrap { width: 210mm; height: 297mm; box-sizing: border-box; padding: 20mm; background: #fff; }
   .tag-a4-frame { width: 103mm; height: 147mm; box-sizing: border-box; outline: 0.3mm solid #000; }
   .tag-a4-note { font: 9pt/1.6 "游ゴシック", "Yu Gothic", sans-serif; color: #000; margin-top: 6mm; max-width: 150mm; }
 
@@ -7792,7 +7794,12 @@
   // 表(下半分)の上端は台紙に赤帯・黒帯・yanaseロゴが印刷済み。その高さぶんを空けてから
   // 品名を刷る(2026-08-03 指示)。CSS へは --tag-band で流し込む。
   var TAG_BAND_H = 6;
-  var TAG_BC_W = TAG_W - TAG_INSET_X * 2;  // バーコード幅=印字できる幅いっぱい(24.6mm)
+  // バーコードとその下の管理番号だけは、他の文字より内側寄せを緩める(2026-08-03)。
+  // 実機スキャンで倍率66%だと12枚中3枚しかきれいに読めず(残りは桁化けや読み取り不能)、
+  // 読み取り精度の実害が確認できたため。給紙ズレでの隣接面への食い込みを避ける最低限
+  // として左右1mmだけは必ず確保し、それ以外は使い切る(29-2=27mm、倍率は約74%まで改善)。
+  var TAG_BC_INSET_X = 1;
+  var TAG_BC_W = TAG_W - TAG_BC_INSET_X * 2;
   var TAG_BC_H = 5;                        // バーコード高さ(mm)
   var tagTestPaper = "tag";         // 印刷確定時に @page をどちらにするか("tag" / "a4")
 
@@ -7952,8 +7959,13 @@
       '<div class="tag-back"><div class="tag-half-in">' +
         '<div class="tg-line"><span>' + price + '</span><span class="tg-name">' + esc(name) + '</span></div>' +
         '<div class="tg-line"><span>' + fucho + '</span><span>' + sub + '</span></div>' +
-        bc.html +
-        '<div class="tg-bcnum">' + mgmt + '</div>' +
+        // バーコードと管理番号だけ、親のtag-half-inより内側寄せを緩める(TAG_BC_INSET_X)。
+        // 負のマージンを付けるとwidth:autoのブロックが自動でその分だけ広がるので、
+        // widthを別途計算しなくて済む(margin分だけ左右にはみ出して1mm残しになる)。
+        '<div style="margin:0 ' + (TAG_BC_INSET_X - TAG_INSET_X) + 'mm">' +
+          bc.html +
+          '<div class="tg-bcnum">' + mgmt + '</div>' +
+        '</div>' +
       '</div></div>' +
       '<div class="tag-fold"></div>' +
       // 表は「ロゴ帯ぶんを空ける → 品名 → 価格(下寄せ)」の順。帯の高さは TAG_BAND_H。
