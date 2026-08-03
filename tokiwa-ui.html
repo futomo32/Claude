@@ -646,9 +646,11 @@
     body.printing-tags .tag-print-root { display: block !important; }
   }
   .tag-sheet {
-    width: 103mm; height: 147mm; box-sizing: border-box; padding: 5mm;
-    display: grid; grid-template-columns: repeat(3, 29mm); grid-template-rows: repeat(4, 32mm);
-    column-gap: 3mm; row-gap: 3mm;
+    width: 103mm; height: 147mm; box-sizing: border-box;
+    padding: var(--tag-my) var(--tag-mx);
+    display: grid;
+    grid-template-columns: repeat(3, var(--tag-w)); grid-template-rows: repeat(4, var(--tag-h));
+    column-gap: var(--tag-gx); row-gap: var(--tag-gy);
     position: relative; background: #fff; color: #000;
     font-family: "游ゴシック", "Yu Gothic", sans-serif;
     /* 濃度を勝手に落とされるとバーコードが読めなくなるので、色をそのまま出させる */
@@ -662,14 +664,14 @@
   .tag-a4-frame { width: 103mm; height: 147mm; box-sizing: border-box; outline: 0.3mm solid #000; }
   .tag-a4-note { font: 9pt/1.6 "游ゴシック", "Yu Gothic", sans-serif; color: #000; margin-top: 6mm; max-width: 150mm; }
 
-  .tag-cell { width: 29mm; height: 32mm; box-sizing: border-box; position: relative; overflow: hidden; }
+  .tag-cell { width: var(--tag-w); height: var(--tag-h); box-sizing: border-box; position: relative; overflow: hidden; }
   .tag-cell.guide { outline: 0.2mm dashed #999; outline-offset: -0.1mm; }
-  .tag-fold { position: absolute; left: 0; right: 0; top: 16mm; border-top: 0.2mm dashed #666; }
+  .tag-fold { position: absolute; left: 0; right: 0; top: var(--tag-fold); border-top: 0.2mm dashed #666; }
   /* 台紙のロゴ帯の下端(=表の印字が始まる位置)。位置合わせのときだけ出す目安線 */
   .tag-bandline { position: absolute; left: 0; right: 0; border-top: 0.2mm dotted #aaa; }
   /* 上半分=裏(180°回転して印字) / 下半分=表 */
-  .tag-back { position: absolute; left: 0; right: 0; top: 0; height: 16mm; transform: rotate(180deg); }
-  .tag-front { position: absolute; left: 0; right: 0; bottom: 0; height: 16mm; }
+  .tag-back { position: absolute; left: 0; right: 0; top: 0; height: var(--tag-fold); transform: rotate(180deg); }
+  .tag-front { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--tag-h) - var(--tag-fold)); }
   /* 左右の余白は JS の TAG_INSET_X が唯一の正(--tag-inset で流し込む)。
      給紙が左右にズレても印字が隣の面に食い込まないよう、タグ幅より内側に寄せる。 */
   .tag-half-in { box-sizing: border-box; height: 100%; padding: 0.8mm var(--tag-inset, 2.2mm); display: flex; flex-direction: column; }
@@ -7748,7 +7750,17 @@
      赤帯・黒帯・yanaseロゴは台紙に印刷済みなので、こちらは黒文字とバーコードだけを刷る。
      ★A6(105×148mm)ではない。プリンタには「ユーザー定義 103×147mm」を登録すること。 */
   var TAG_SHEET_W = 103, TAG_SHEET_H = 147;
-  var TAG_W = 29, TAG_H = 32, TAG_FOLD = 16, TAG_COLS = 3, TAG_ROWS = 4;
+  // ★台紙の寸法。ここだけ直せば枠・折り位置・余白・見当・目盛りが全部追随する
+  //   (CSSへは --tag-* で流し込むので、数値を二重に持たない)。
+  //   28.5×31.8mm・隙間 横3.5/縦3.0 という実測値も出たが、トキワが刷った点線を
+  //   測った可能性があり未確定。白紙の台紙で測り直すまでは確認済みの値を使う。
+  var TAG_W = 29, TAG_H = 32, TAG_COLS = 3, TAG_ROWS = 4;
+  var TAG_GAP_X = 3, TAG_GAP_Y = 3;
+  var TAG_MARGIN_X = (TAG_SHEET_W - (TAG_W * TAG_COLS + TAG_GAP_X * (TAG_COLS - 1))) / 2;   // 5.25mm
+  var TAG_MARGIN_Y = (TAG_SHEET_H - (TAG_H * TAG_ROWS + TAG_GAP_Y * (TAG_ROWS - 1))) / 2;   // 5.4mm
+  // 折り位置=帯の位置。帯はタグの上下中央にあるので高さの半分から求める
+  // (高さを直せば折り位置も自動で追随する。数値を二重に持たない)
+  var TAG_FOLD = TAG_H / 2;
   var TAG_PER_SHEET = TAG_COLS * TAG_ROWS;
   var TAG_OFFSET_MAX = 10;          // オフセットの上限(mm)。これ以上は用紙から外れる
   // 倍率補正の範囲(%)。server/db_query.py の TAG_SCALE_MIN/MAX と合わせること。
@@ -7867,18 +7879,21 @@
   /* ── 台紙1枚ぶんのHTMLを組み立てる ── */
   function tagRegMarksHtml() {
     // 印字領域の四隅(台紙の角から5mm)に十字。ズレをmmで読み取るための基準
-    var far = "calc(100% - 3mm)";
-    return '<div class="tag-reg" style="left:3mm;top:3mm"></div>' +
-      '<div class="tag-reg" style="left:' + far + ';top:3mm"></div>' +
-      '<div class="tag-reg" style="left:3mm;top:' + far + '"></div>' +
-      '<div class="tag-reg" style="left:' + far + ';top:' + far + '"></div>';
+    // 十字の中心を印字領域の角(左右余白・上下余白の位置)に置く。4mm角なので2mm手前から描く
+    var x = (TAG_MARGIN_X - 2) + "mm", y = (TAG_MARGIN_Y - 2) + "mm";
+    var fx = "calc(100% - " + x + ")", fy = "calc(100% - " + y + ")";
+    return '<div class="tag-reg" style="left:' + x + ';top:' + y + '"></div>' +
+      '<div class="tag-reg" style="left:' + fx + ';top:' + y + '"></div>' +
+      '<div class="tag-reg" style="left:' + x + ';top:' + fy + '"></div>' +
+      '<div class="tag-reg" style="left:' + fx + ';top:' + fy + '"></div>';
   }
   /* 実測用の目盛り。台紙の角から5mmの位置を起点に、横90mm・縦130mmの直線を引く。
      定規で測った実寸を入れれば、プリンタがどれだけ縮小して刷っているかが分かる
      (例: 90mmが88mmなら 90/88 = 約102% を倍率補正に入れる)。 */
   function tagRulerHtml() {
     var H_LEN = 90, V_LEN = 130, STEP = 10, i, pos;
-    var h = '<div class="tag-ruler" style="left:5mm;top:5mm">' +
+    var org = 'left:' + TAG_MARGIN_X + 'mm;top:' + TAG_MARGIN_Y + 'mm';
+    var h = '<div class="tag-ruler" style="' + org + '">' +
       '<div class="rl-line" style="left:0;top:0;width:' + H_LEN + 'mm;height:0.2mm"></div>';
     for (i = 0; i <= H_LEN; i += STEP) {
       pos = (i === 0 || i === H_LEN) ? 2 : 1.2;    // 両端の目盛りだけ長くする
@@ -7886,7 +7901,7 @@
     }
     h += '<div class="rl-cap" style="left:' + (H_LEN / 2 - 8) + 'mm;top:0.4mm">横 ' + H_LEN + 'mm</div></div>';
 
-    var v = '<div class="tag-ruler" style="left:5mm;top:5mm">' +
+    var v = '<div class="tag-ruler" style="' + org + '">' +
       '<div class="rl-line" style="left:0;top:0;width:0.2mm;height:' + V_LEN + 'mm"></div>';
     for (i = 0; i <= V_LEN; i += STEP) {
       pos = (i === 0 || i === V_LEN) ? 2 : 1.2;
@@ -7930,7 +7945,11 @@
   function tagSheetHtml(mode, off) {
     var cells = "";
     for (var i = 1; i <= TAG_PER_SHEET; i++) cells += (mode === "sample" ? tagSampleCell(i) : tagGuideCell(i));
-    var css = "--tag-inset:" + TAG_INSET_X + "mm;--tag-band:" + TAG_BAND_H + "mm";
+    var css = "--tag-w:" + TAG_W + "mm;--tag-h:" + TAG_H + "mm" +
+      ";--tag-gx:" + TAG_GAP_X + "mm;--tag-gy:" + TAG_GAP_Y + "mm" +
+      ";--tag-mx:" + TAG_MARGIN_X + "mm;--tag-my:" + TAG_MARGIN_Y + "mm" +
+      ";--tag-fold:" + TAG_FOLD + "mm" +
+      ";--tag-inset:" + TAG_INSET_X + "mm;--tag-band:" + TAG_BAND_H + "mm";
     // 補正は「倍率 → 位置」の順に効かせる。CSSのtransformは右から適用されるので
     // translate を先に書く。基準は用紙の左上角(transform-origin:0 0)にそろえる。
     var tf = [];
