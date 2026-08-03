@@ -651,6 +651,8 @@
     column-gap: 3mm; row-gap: 3mm;
     position: relative; background: #fff; color: #000;
     font-family: "游ゴシック", "Yu Gothic", sans-serif;
+    /* 濃度を勝手に落とされるとバーコードが読めなくなるので、色をそのまま出させる */
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
   /* 印刷時は高さ指定を外す: ちょうど147mmだと丸め誤差で白紙の2ページ目が出るため
      (タグ位置は上・左からのグリッドで決まるので影響しない) */
@@ -678,8 +680,8 @@
   .tg-line { display: flex; justify-content: space-between; gap: 1mm; font-size: 5.5pt; line-height: 1.3; }
   .tg-name { font-size: 6pt; line-height: 1.3; white-space: nowrap; overflow: hidden; }
   .tg-price { font-size: 12pt; font-weight: 700; text-align: center; margin-top: auto; letter-spacing: 0.02em; }
-  .tg-bc { display: flex; align-items: stretch; margin-top: 0.4mm; }
-  .tg-bc i { display: block; height: 100%; }
+  /* バーコードはSVG(前景)で描く。背景色は印刷時に落とされるため background は使わない */
+  .tg-bc { display: block; margin: 0.4mm auto 0; }
   .tg-bcnum { font-size: 5pt; text-align: center; letter-spacing: 0.08em; line-height: 1.2; }
 
   /* ── 汎用帳票印刷(見積書・請求書・修理伝票。A4・保存なしのその場印刷) ── */
@@ -7728,23 +7730,29 @@
     bits += "101";                                      // 右ガード
     return { bits: bits, text: full };                  // bits は 95モジュール
   }
-  // バーの本数を減らすため同じ色は1要素にまとめる(要素が多いと印刷で滲みやすい)
+  // ★バーは必ずSVGで描く(2026-08-03 実機で確認)。
+  //   div+background で描くとブラウザが印刷時に背景色を落とすため、バーだけ消える
+  //   (「背景のグラフィックを印刷する」が既定でOFF)。SVGの図形は前景扱いなので必ず出る。
+  //   viewBoxをモジュール数と同じにして、どの大きさで刷ってもモジュール幅が均等になるようにする。
+  //   隣り合う同色は1つの矩形にまとめる(要素が増えると印刷で滲みやすい)。
   function tagBarcodeHtml(code12, widthMm, heightMm) {
     var e = ean13Bits(code12);
     var modules = 11 + 95 + 7;                          // 左クワイエット11 + 本体95 + 右クワイエット7
-    var mw = widthMm / modules;
-    var html = '<div class="tg-bc" style="height:' + heightMm + 'mm">' +
-      '<i style="width:' + (mw * 11).toFixed(4) + 'mm"></i>';
+    var rects = "";
     var i = 0;
     while (i < e.bits.length) {
       var j = i;
       while (j < e.bits.length && e.bits.charAt(j) === e.bits.charAt(i)) j++;
-      html += '<i style="width:' + (mw * (j - i)).toFixed(4) + 'mm' +
-        (e.bits.charAt(i) === "1" ? ';background:#000' : '') + '"></i>';
+      if (e.bits.charAt(i) === "1") {
+        // 左クワイエットゾーン(11モジュール)ぶんずらして配置する
+        rects += '<rect x="' + (11 + i) + '" y="0" width="' + (j - i) + '" height="10"/>';
+      }
       i = j;
     }
-    html += '<i style="width:' + (mw * 7).toFixed(4) + 'mm"></i></div>';
-    return { html: html, text: e.text, moduleMm: mw };
+    var html = '<svg class="tg-bc" width="' + widthMm + 'mm" height="' + heightMm + 'mm"' +
+      ' viewBox="0 0 ' + modules + ' 10" preserveAspectRatio="none"' +
+      ' shape-rendering="crispEdges" fill="#000">' + rects + '</svg>';
+    return { html: html, text: e.text, moduleMm: widthMm / modules };
   }
   // EAN-13の規格上の最小は倍率80%(1モジュール0.264mm)。29mm幅では下回るので事前に知らせる
   function tagBarcodeScale() {
