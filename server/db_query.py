@@ -1308,7 +1308,8 @@ TAG_SETTING_DEFAULTS = {
     "tag_scale_x": 100.0,
     "tag_scale_y": 100.0,
 }
-TAG_OFFSET_MAX = 10.0            # ±10mm。これを超えると用紙から外れるので受け付けない
+TAG_OFFSET_MAX = 20.0            # ±20mm。実機で約10mm下へずれる事象があったため10→20に拡げた
+                                 # (2026-08-03)。これを超えるなら用紙設定側の問題
 TAG_SCALE_MIN, TAG_SCALE_MAX = 90.0, 110.0   # ±10%。これ以上ズレるなら設定側の問題
 
 

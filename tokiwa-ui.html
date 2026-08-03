@@ -2093,7 +2093,7 @@
             <input id="tt-offy" class="num han-num" inputmode="decimal" style="width:5em;text-align:right" value="0">mm</span>
         </div>
         <span style="font-size:0.8em;color:var(--muted)">
-          マイナスで左・上へ動きます(±10mmまで)。レシートのロゴ調整と同じ考え方です。
+          マイナスで左・上へ動きます(±20mmまで)。レシートのロゴ調整と同じ考え方です。
           <b>設定はトキワ本体に保存される</b>ので、どのPCから開いても同じ値が使われ、
           バックアップにも含まれます(PCを入れ替えても消えません)。</span>
       </div>
@@ -7762,7 +7762,9 @@
   // (高さを直せば折り位置も自動で追随する。数値を二重に持たない)
   var TAG_FOLD = TAG_H / 2;
   var TAG_PER_SHEET = TAG_COLS * TAG_ROWS;
-  var TAG_OFFSET_MAX = 10;          // オフセットの上限(mm)。これ以上は用紙から外れる
+  // オフセットの上限(mm)。server/db_query.py の TAG_OFFSET_MAX と合わせること。
+  // 実機で約10mm下へずれる事象があったため 10→20 に拡げた(2026-08-03)
+  var TAG_OFFSET_MAX = 20;
   // 倍率補正の範囲(%)。server/db_query.py の TAG_SCALE_MIN/MAX と合わせること。
   // これ以上ズレるならプリンタ設定の問題なので、補正で押し切らせない
   var TAG_SCALE_MIN = 90, TAG_SCALE_MAX = 110;
