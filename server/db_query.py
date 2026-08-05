@@ -252,6 +252,18 @@ def stocktake_scan(con, product_no):
         f"SELECT product_key, product_no, name, state, location, list_price "
         f"FROM products WHERE {where}", wargs).fetchall()
     if not rows:
+        # ★桁数不足・チェックデジット不一致など「バーコードの読み取り失敗」らしい入力は、
+        #   「商品が台帳にない」とは別のメッセージにする(2026-08-03)。
+        #   実機テストで、値札のバーコードが規格(80%)未満の縮小率のため読み取りエラーが
+        #   一定数出ることを確認した。読み取り失敗を「商品が登録されていない」と誤解されると
+        #   現場が混乱するため、数字だけで8桁以上(=手入力の5桁品番より明らかに長い、
+        #   スキャンらしい入力)なのに一致しない場合は、専用のメッセージで案内する。
+        #   ※13桁ちょうどでチェックデジットも正しい「正常なEAN-13」は _resolve_code_conditions
+        #     の時点で候補条件に入るため、ここに来る13桁はほぼ誤読(桁抜け・桁化け)。
+        digits_only = norm_code(no)
+        if digits_only.isdigit() and len(digits_only) >= 8:
+            return {"result": "scan_failed", "product_no": no,
+                    "message": "バーコードの読み取りに失敗しました(桁数不足や誤読の可能性)"}
         return {"result": "not_found", "product_no": no, "message": "その商品番号は台帳にありません"}
     instock = [r for r in rows if r["state"] == "在庫"]
     if not instock:
