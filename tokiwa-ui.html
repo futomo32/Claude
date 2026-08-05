@@ -7923,9 +7923,16 @@
   /* ── 台紙1枚ぶんのHTMLを組み立てる ── */
   function tagRegMarksHtml() {
     // 印字領域の四隅(台紙の角から5mm)に十字。ズレをmmで読み取るための基準
-    // 十字の中心を印字領域の角(左右余白・上下余白の位置)に置く。4mm角なので2mm手前から描く
+    // 十字の中心を印字領域の角(台紙の角から余白ぶん内側)に置く。十字は4mm角なので、
+    // 左上は「余白-2mm」から描き始める。
+    // ★右下側は "calc(100% - (余白-2)mm)" ではなく "calc(100% - (余白+2)mm)"。
+    //   100%は台紙の右端・下端なので、そこから中心までの余白を引き、さらに十字の
+    //   半分(2mm)を戻して描き始める必要がある。ここを (余白-2) にしていたため、
+    //   右上・左下・右下の3つが用紙の外(148mm/104mm)へはみ出して見えなくなっていた
+    //   (2026-08-03 修正。中心も98/142mmであるべきところ102/146mmとズレていた)。
     var x = (TAG_MARGIN_X - 2) + "mm", y = (TAG_MARGIN_Y - 2) + "mm";
-    var fx = "calc(100% - " + x + ")", fy = "calc(100% - " + y + ")";
+    var fx = "calc(100% - " + (TAG_MARGIN_X + 2) + "mm)";
+    var fy = "calc(100% - " + (TAG_MARGIN_Y + 2) + "mm)";
     return '<div class="tag-reg" style="left:' + x + ';top:' + y + '"></div>' +
       '<div class="tag-reg" style="left:' + fx + ';top:' + y + '"></div>' +
       '<div class="tag-reg" style="left:' + x + ';top:' + fy + '"></div>' +
