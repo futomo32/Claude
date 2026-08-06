@@ -826,7 +826,7 @@ def customer_detail(con, cid):
                          FROM prescriptions rx WHERE rx.sale_line_id = l.line_id LIMIT 1),
                         l.free_name, p.name) AS disp_name,
                l.info, l.amount, s.pay_method, s.staff_name, p.product_no, l.line_id, s.slip_id,
-               s.credit_kind, p.image_file
+               s.credit_kind, p.image_file, l.product_key
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         WHERE s.customer_id = ?
@@ -835,12 +835,14 @@ def customer_detail(con, cid):
 
     # 支払表示を埋める(移行データの空欄対策＋現金/クレジット併用の内訳)。
     # 行の並びは [0]買上日 [1]品名 [2]商品情報 [3]金額 [4]支払 [5]担当 [6]商品番号
-    #            [7]line_id [8]slip_id [9]credit_kind [10]画像 → [4]を表示用に置き換え、
-    # [9]は画像ファイル名に詰め替えてUIへ渡す(UIの列番号を増やさない)。
+    #            [7]line_id [8]slip_id [9]credit_kind [10]画像 [11]商品キー → [4]を表示用に
+    # 置き換え、[9]は画像ファイル名に詰め替えてUIへ渡す(popで[11]の商品キーは[10]へ繰り上がる)。
+    # ★商品キー([10])は購入履歴→商品詳細のジャンプに使う。宝飾ナビは同じ商品番号を
+    #   複数の商品に使い回すことがあり(実データ診断で17組確認)、番号では特定できない。
     pay_texts = slip_pay_texts(con, "WHERE s.customer_id = ?", (cid,))
     for row in sales:
         row[4] = pay_texts.get(row[8]) or pay_fallback(row[4], row[9])
-        row[9] = row.pop(10)  # [9]=商品画像(サムネイル用)
+        row[9] = row.pop(10)  # [9]=商品画像(サムネイル用)。元[11]の商品キーが[10]になる
 
     # 取消(返品)済みの明細。監査ログとして「取消済みも表示」トグルON時のみ画面に出す。
     # 形状は sales と同じ並び＋[9]取消日時・[10]取消した担当者・[11]取消理由・[12]ログインユーザー。
