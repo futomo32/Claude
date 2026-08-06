@@ -619,6 +619,16 @@ class Handler(BaseHTTPRequestHandler):
                 finally:
                     con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/warranty":
+                # 保証書に刷る値(台紙へ重ね刷りするので値と写真だけ)
+                con = connect()
+                try:
+                    result = db_query.warranty_data(con, payload.get("line_id"))
+                except ValueError as e:
+                    return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                finally:
+                    con.close()
+                return self._send(200, json.dumps({"ok": True, "doc": result}, ensure_ascii=False).encode("utf-8"))
             if path == "/api/care_done":
                 # ホームの「お声がけ」の✓(アプローチ履歴に記録して一覧から消す)
                 con = connect()

@@ -2597,6 +2597,55 @@ def get_product(con, product_key):
     return out
 
 
+# 保証書の用紙の分かれ目。10万円以上=A4、それ以外=A5(2026-08-06 店の運用で決定)
+WARRANTY_A4_MIN = 100000
+
+
+def warranty_data(con, line_id):
+    """保証書に刷る値を1明細ぶん集める。
+
+    台紙(A4/A5)に**値と写真だけを重ね刷り**するので、枠・題字・保証文言は返さない。
+    用紙は買上金額で決まる: 10万円以上=A4 / それ以外=A5。
+    """
+    con.row_factory = sqlite3.Row
+    r = con.execute("""SELECT s.sold_at, s.staff_name, l.amount, l.free_name,
+                              c.customer_id, c.name cname,
+                              p.product_no, p.name pname, p.cert_no,
+                              p.center_stone, p.center_carat, p.image_file
+                       FROM sale_lines l JOIN sales_slips s ON s.slip_id = l.slip_id
+                       LEFT JOIN customers c ON c.customer_id = s.customer_id
+                       LEFT JOIN products p ON p.product_key = l.product_key
+                       WHERE l.line_id = ?
+                             AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0""",
+                    (line_id,)).fetchone()
+    if not r:
+        raise ValueError("保証書を作る明細が見つかりません(取消済みの可能性があります)")
+
+    # 石の情報。★宝飾ナビの「脇石1・脇石2」はトキワに取り込んでいないため、
+    #   中石だけになる(実物の保証書は「BO28.720ct D2.550ct」のように脇石も入る)。
+    #   8月末の実データ再取込で脇石の列を足すまでは中石のみで刷る。
+    stone = " ".join(x for x in [
+        (r["center_stone"] or "").strip(),
+        (f'{str(r["center_carat"]).strip()}ct' if str(r["center_carat"] or "").strip() else ""),
+    ] if x)
+
+    d = _parse_date(r["sold_at"])
+    amount = r["amount"] or 0
+    return {
+        "date_text": f"{d.year} 年 {d.month} 月 {d.day} 日" if d else "",
+        "product_no": r["product_no"] or "",
+        "cert_no": r["cert_no"] or "",
+        "customer_name": r["cname"] or "",
+        "customer_id": str(r["customer_id"] or ""),
+        "product_name": r["pname"] or r["free_name"] or "",
+        "stone": stone,
+        "staff_name": r["staff_name"] or "",
+        "image_file": r["image_file"] or "",
+        "amount": amount,
+        "paper": "a4" if amount >= WARRANTY_A4_MIN else "a5",
+    }
+
+
 def product_buyers(con, product_key):
     """この商品を買った方を新しい順で返す(商品詳細から購入履歴へ飛ぶために使う)。
 
