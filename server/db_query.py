@@ -3354,20 +3354,62 @@ def logout_user_all(con, uid):
     return {"users": list_app_users(con), "logged_out": uid}
 
 
+# ── DMを出さない印(住所の先頭に付ける記号) ───────────────────────────────
+# 店の運用では、DMが届かない/出さない顧客の住所の先頭に記号を3つ重ねて書いている
+# (例「ＴＴＴ豊田市桜町1-18」)。住所を見ただけで理由が分かり、万一ラベルに印字されても
+# 気付けるようにするための仕組み。ここではその記号を機械にも読ませ、宛名の書き出し・
+# 印刷から自動で除外する。
+# ★同じ判定を画面側(tokiwa-ui.html の DM_BLOCK_REASONS / dmBlockReason)にも持っている。
+#   記号を増やす時は両方を直すこと(サーバー=B2書き出し / 画面=24面ラベル印刷)。
+DM_BLOCK_REASONS = {
+    "T": "転居", "S": "死去", "M": "店の都合", "K": "本人希望", "F": "福祉(生活保護)",
+}
+
+
+def dm_block_reason(address):
+    """住所の先頭の記号からDMを出さない理由を返す。該当しなければ None。
+
+    全角(ＴＴＴ)・半角(TTT)・小文字(ttt)のどれで書かれていても拾う。
+    日本語の住所がこれらの並びで始まることはないため、誤検知の心配はない。
+    """
+    s = unicodedata.normalize("NFKC", str(address or "")).strip().upper()
+    for letter, reason in DM_BLOCK_REASONS.items():
+        if s.startswith(letter * 3):
+            return reason
+    return None
+
+
+def _count_reasons(reasons):
+    """理由の一覧を「転居1件・死去2件」の形にまとめる(案内文用)。"""
+    counts = {}
+    for r in reasons:
+        counts[r] = counts.get(r, 0) + 1
+    return "・".join(f"{k}{v}件" for k, v in counts.items())
+
+
 def kuroneko_b2_customers(con, ids):
     """クロネコB2(DM便)書き出し用に、選ばれた顧客の必須項目を集める。
-    電話番号・郵便番号・住所・名前のいずれかが無い顧客は書き出せないので除外する
-    (B2側の必須項目)。除外した顧客の名前は呼び出し元での案内表示に使う。"""
+
+    2種類の理由で書き出さない顧客がいる。取り違えると原因が分からなくなるため分けて返す。
+      blocked … 住所の先頭にDM不可の記号がある(転居・死去など)。理由つきで案内する
+      skipped … 電話番号・郵便番号・住所・名前のいずれかが無い(B2側の必須項目)
+    ★とくに「死去」の顧客をヤマトへ送ってしまうと取り返しがつかないため、
+      記号の判定は必須項目の確認より先に行う。
+    """
     con.row_factory = sqlite3.Row
-    rows, skipped = [], []
+    rows, skipped, blocked = [], [], []
     for cid in ids or []:
         r = con.execute("SELECT name,tel,postal,address,address2 FROM customers WHERE customer_id=?",
                          (cid,)).fetchone()
         if not r:
             continue
+        reason = dm_block_reason(r["address"])
+        if reason:
+            blocked.append(reason)
+            continue
         if not (r["name"] and r["tel"] and r["postal"] and r["address"]):
-            skipped.append(r["name"] if r and r["name"] else cid)
+            skipped.append(r["name"] if r["name"] else cid)
             continue
         rows.append({"name": r["name"], "tel": r["tel"], "postal": r["postal"],
                      "address": r["address"], "address2": r["address2"] or ""})
-    return rows, skipped
+    return rows, skipped, _count_reasons(blocked)

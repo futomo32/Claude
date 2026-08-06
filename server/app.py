@@ -623,13 +623,16 @@ class Handler(BaseHTTPRequestHandler):
                 # DM便の宛名をクロネコB2の取込テンプレート形式(xlsx)で書き出す
                 con = connect()
                 try:
-                    rows, skipped = db_query.kuroneko_b2_customers(con, payload.get("ids") or [])
+                    rows, skipped, blocked = db_query.kuroneko_b2_customers(con, payload.get("ids") or [])
                 finally:
                     con.close()
                 if not rows:
-                    return self._send(200, json.dumps(
-                        {"error": "書き出せる顧客がいません(電話番号・郵便番号・住所・名前が必要です)"},
-                        ensure_ascii=False).encode("utf-8"))
+                    msg = "書き出せる顧客がいません"
+                    if blocked:
+                        msg += "(DM送付不可: " + blocked + ")"
+                    else:
+                        msg += "(電話番号・郵便番号・住所・名前が必要です)"
+                    return self._send(200, json.dumps({"error": msg}, ensure_ascii=False).encode("utf-8"))
                 xbytes = kuroneko_b2.export_bytes(rows)
                 result = {
                     "ok": True,
@@ -637,6 +640,7 @@ class Handler(BaseHTTPRequestHandler):
                     "data_base64": base64.b64encode(xbytes).decode("ascii"),
                     "count": len(rows),
                     "skipped": skipped,
+                    "blocked": blocked,
                 }
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/void_receipt_print":

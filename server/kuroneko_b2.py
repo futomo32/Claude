@@ -56,6 +56,11 @@ def export_bytes(customers, ship_date=None):
         ws.cell(row=i, column=COL_KIND, value=3)  # DM便固定
         date_cell = ws.cell(row=i, column=COL_SHIP_DATE, value=ship_date)
         date_cell.number_format = "yyyy/mm/dd"
+        # 電話番号・郵便番号は「文字列」書式を明示する。値は元から文字列だが、書式が
+        # 既定(標準)のままだとExcelで開いた時に「数値として保存されていません」の警告が出て、
+        # そこで数値に変換すると先頭の0が落ちる(0060000→60000)。書式で変換を防ぐ。
+        for col in (COL_TEL, COL_POSTAL, COL_SENDER_POSTAL):
+            ws.cell(row=i, column=col).number_format = "@"
         ws.cell(row=i, column=COL_TEL, value=c["tel"])
         ws.cell(row=i, column=COL_POSTAL, value=c["postal"])
         ws.cell(row=i, column=COL_ADDRESS, value=c["address"])
