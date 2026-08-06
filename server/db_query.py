@@ -3352,3 +3352,22 @@ def logout_user_all(con, uid):
     con.execute("DELETE FROM app_sessions WHERE user_id=?", (uid,))
     con.commit()
     return {"users": list_app_users(con), "logged_out": uid}
+
+
+def kuroneko_b2_customers(con, ids):
+    """クロネコB2(DM便)書き出し用に、選ばれた顧客の必須項目を集める。
+    電話番号・郵便番号・住所・名前のいずれかが無い顧客は書き出せないので除外する
+    (B2側の必須項目)。除外した顧客の名前は呼び出し元での案内表示に使う。"""
+    con.row_factory = sqlite3.Row
+    rows, skipped = [], []
+    for cid in ids or []:
+        r = con.execute("SELECT name,tel,postal,address,address2 FROM customers WHERE customer_id=?",
+                         (cid,)).fetchone()
+        if not r:
+            continue
+        if not (r["name"] and r["tel"] and r["postal"] and r["address"]):
+            skipped.append(r["name"] if r and r["name"] else cid)
+            continue
+        rows.append({"name": r["name"], "tel": r["tel"], "postal": r["postal"],
+                     "address": r["address"], "address2": r["address2"] or ""})
+    return rows, skipped

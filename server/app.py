@@ -14,7 +14,7 @@
 正式運用(Windows単機)ではこのサーバーをローカルで起動し、ブラウザで開く構成。
 将来デスクトップアプリ(Electron等)に載せ替える場合もAPIはそのまま流用できる。
 """
-import base64, json, mimetypes, os, re, socket, sqlite3, sys, threading, time, uuid, urllib.request, urllib.parse
+import base64, datetime, json, mimetypes, os, re, socket, sqlite3, sys, threading, time, uuid, urllib.request, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = os.path.join(os.path.dirname(__file__), "..")
@@ -80,6 +80,7 @@ import devices  # noqa: E402  機器制御層(フェーズ2)。機器OFFモー�
 import backup  # noqa: E402  DBバックアップ(世代管理・店外複製・件数の急減検知)
 import integrity  # noqa: E402  データ点検(破損・参照切れ・残高と履歴の矛盾)
 import store_info  # noqa: E402  店舗の固定情報(唯一の正)。画面へ注入して帳票にも使う
+import kuroneko_b2  # noqa: E402  クロネコB2(DM便)のxlsx書き出し
 
 
 def _extra_dirs(settings):
@@ -617,6 +618,26 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
                 finally:
                     con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/kuroneko_b2_export":
+                # DM便の宛名をクロネコB2の取込テンプレート形式(xlsx)で書き出す
+                con = connect()
+                try:
+                    rows, skipped = db_query.kuroneko_b2_customers(con, payload.get("ids") or [])
+                finally:
+                    con.close()
+                if not rows:
+                    return self._send(200, json.dumps(
+                        {"error": "書き出せる顧客がいません(電話番号・郵便番号・住所・名前が必要です)"},
+                        ensure_ascii=False).encode("utf-8"))
+                xbytes = kuroneko_b2.export_bytes(rows)
+                result = {
+                    "ok": True,
+                    "filename": "kuroneko_b2_" + datetime.date.today().strftime("%Y%m%d") + ".xlsx",
+                    "data_base64": base64.b64encode(xbytes).decode("ascii"),
+                    "count": len(rows),
+                    "skipped": skipped,
+                }
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/void_receipt_print":
                 # 返品レシート(お客様控+店控)。現金売上の返品ならドロワーも開ける
