@@ -223,6 +223,14 @@ def ensure_schema(con):
             changed = True
         except sqlite3.Error:
             pass
+    # 後付けの索引(既存DBにも自動で張る)。schema.sql と対で管理すること。
+    # idx_rx_line: 明細→処方箋の逆引き。この抜けが原因で、明細の多い顧客の詳細表示に
+    # 10秒超かかっていた(2026-08-06)。「検索に使う外部キーには必ず索引」の原則。
+    try:
+        con.execute("CREATE INDEX IF NOT EXISTS idx_rx_line ON prescriptions(sale_line_id)")
+        changed = True
+    except sqlite3.Error:
+        pass
     if changed:
         con.commit()
 
@@ -817,14 +825,21 @@ def customer_detail(con, cid):
     cur = con.cursor()
     cid = str(cid)
 
-    # 品名: 処方箋(メガネ)が紐づく明細は、処方箋のレンズ名/フレーム名を優先して表示する。
-    # (レジで「メガネレンズ」等の仮名で会計→処方箋で正式名に直しても購入一覧に反映される。
-    #  移行データのように過去に紐付いた分もこの表示で正しい名前になる)
+    # 品名の差し替え表: 明細ID → 処方箋の正式名(レンズ名優先、無ければフレーム名)。
+    # レジでは「メガネレンズ」等の仮名で会計し、後から処方箋で正式名を入れるため、
+    # 購入一覧の品名は処方箋側を優先して表示する(v0.25.0からの仕様)。
+    # ★明細1行ごとにサブクエリで処方箋を引く書き方はしない。顧客の処方箋を1回だけ
+    #   取って辞書で突き合わせる(下の処方箋候補と同じパターン。意図が読める形を優先)。
+    rx_names = {}
+    for r in cur.execute("""SELECT sale_line_id, lens_name, frame_name FROM prescriptions
+                            WHERE customer_id = ? AND sale_line_id IS NOT NULL
+                            ORDER BY id""", (cid,)):
+        nm = r["lens_name"] or r["frame_name"]
+        if nm:
+            rx_names.setdefault(r["sale_line_id"], nm)  # 同じ明細に複数あれば最初の1件
+
     sales = [list(r) for r in cur.execute("""
-        SELECT s.sold_at,
-               COALESCE((SELECT COALESCE(NULLIF(rx.lens_name,''), NULLIF(rx.frame_name,''))
-                         FROM prescriptions rx WHERE rx.sale_line_id = l.line_id LIMIT 1),
-                        l.free_name, p.name) AS disp_name,
+        SELECT s.sold_at, COALESCE(l.free_name, p.name) AS disp_name,
                l.info, l.amount, s.pay_method, s.staff_name, p.product_no, l.line_id, s.slip_id,
                s.credit_kind, p.image_file, l.product_key
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
@@ -841,6 +856,7 @@ def customer_detail(con, cid):
     #   複数の商品に使い回すことがあり(実データ診断で17組確認)、番号では特定できない。
     pay_texts = slip_pay_texts(con, "WHERE s.customer_id = ?", (cid,))
     for row in sales:
+        row[1] = rx_names.get(row[7]) or row[1]  # [7]=line_id。処方箋の正式名を優先
         row[4] = pay_texts.get(row[8]) or pay_fallback(row[4], row[9])
         row[9] = row.pop(10)  # [9]=商品画像(サムネイル用)。元[11]の商品キーが[10]になる
 

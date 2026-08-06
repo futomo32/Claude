@@ -260,6 +260,10 @@ CREATE TABLE prescriptions (
   jewelry_misassign INTEGER NOT NULL DEFAULT 0 -- 1=宝飾品が誤って紐づいている(要修正)
 );
 CREATE INDEX idx_rx_cust ON prescriptions(customer_id);
+-- 明細→処方箋の逆引き用(品名の差し替え・明細の品名修正)。
+-- 「検索に使う外部キーには必ず索引」の原則(他のFKと同じ)。2026-08-06、この索引の
+-- 抜けが原因で、明細の多い顧客の詳細表示に10秒超かかっていた(20万明細×5万処方箋)。
+CREATE INDEX idx_rx_line ON prescriptions(sale_line_id);
 
 -- ── 修理伝票(宝飾ナビに無かった新機能。預かり〜引渡までの進捗管理) ──
 CREATE TABLE repairs (
