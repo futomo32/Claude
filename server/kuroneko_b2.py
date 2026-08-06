@@ -8,9 +8,12 @@
 import datetime
 import io
 
-import openpyxl
-
 import store_info
+
+# openpyxl はここでは読み込まない(export_bytes の中で読み込む)。
+# 2026-08-06、店のPCに openpyxl が入っておらず、この import が原因で
+# トキワ全体が起動できなくなる事故が起きた。B2書き出しは付加機能なので、
+# 部品が無くてもサーバー本体は必ず起動し、使おうとした時だけ案内を出す。
 
 # B2テンプレートの列位置(1-indexed)。ここだけがテンプレートと合っていればよい。
 COL_KIND = 2        # 送り状種類(3=DM便)
@@ -44,6 +47,13 @@ _LAST_COL = 25
 
 def export_bytes(customers, ship_date=None):
     """customers = [{"name","tel","postal","address","address2"}, ...] からxlsxバイト列を作る。"""
+    try:
+        import openpyxl
+    except ImportError:
+        raise ValueError(
+            "クロネコB2の書き出しには openpyxl が必要です。"
+            "コマンドプロンプトで「python -m pip install openpyxl」を実行してから、"
+            "トキワを起動し直してください。")
     ship_date = ship_date or datetime.date.today()
     wb = openpyxl.Workbook()
     ws = wb.active

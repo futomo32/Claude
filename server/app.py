@@ -643,7 +643,11 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         msg += "(電話番号・郵便番号・住所・名前が必要です)"
                     return self._send(200, json.dumps({"error": msg}, ensure_ascii=False).encode("utf-8"))
-                xbytes = kuroneko_b2.export_bytes(rows)
+                try:
+                    xbytes = kuroneko_b2.export_bytes(rows)
+                except ValueError as e:
+                    # openpyxl 未導入など。画面にそのまま出せる日本語の案内が入っている
+                    return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
                 result = {
                     "ok": True,
                     "filename": "kuroneko_b2_" + datetime.date.today().strftime("%Y%m%d") + ".xlsx",
