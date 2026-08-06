@@ -198,6 +198,10 @@ def ensure_schema(con):
         ("sales_slips", "voided_by", "TEXT"),
         ("sales_slips", "voided_staff", "TEXT"),
         ("sales_slips", "voided_reason", "TEXT"),
+        # ホームの「お声がけ」で、同じ用件を二度出さないための鍵。
+        # 例「誕生日:1234:2026」「修理納期:57」。✓を押すとこの鍵つきで履歴に記録し、
+        # 次からその用件は一覧に出さない(2026-08-06 追加)。
+        ("approach_history", "ref_key", "TEXT"),
     ]
     changed = False
     for table, col, decl in adds:
@@ -325,6 +329,148 @@ def stocktake_reset(con):
     _set_setting(con, "stocktake_started_at", datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
     con.commit()
     return {"ok": True}
+
+
+# ── ホームの「今週のお声がけ」 ────────────────────────────────────────────
+# 期間の決め方は店の運用に合わせて決めた(2026-08-06)。ここを直せば全部追随する。
+CARE_POINT_DAYS = 30    # ポイント失効の何日前から出すか
+CARE_REPAIR_DAYS = 7    # 修理の引渡予定日の何日前から出すか
+CARE_MAX = 12           # ホームに一度に出す最大件数(超えた分は「他○件」)
+
+
+def _add_years(d, years):
+    """日付にN年足す。2月29日は28日に寄せる(閏年でない年に存在しないため)。"""
+    try:
+        return d.replace(year=d.year + years)
+    except ValueError:
+        return d.replace(year=d.year + years, day=28)
+
+
+def _parse_date(s):
+    """'YYYY-MM-DD'(時刻が付いていても可)を date にする。読めなければ None。"""
+    t = str(s or "")[:10]
+    try:
+        return datetime.date.fromisoformat(t)
+    except ValueError:
+        return None
+
+
+def _care_skip_outreach(r):
+    """こちらから連絡する用件(誕生日・記念日・ポイント)の対象外か。
+
+    DMを出さない相手は外す。**とくに死去された方の誕生日をお声がけ候補に出すのは
+    事故なので必ず外す。**集計対象外(ななし等)も連絡先として扱わない。
+    ※修理納期はこの判定を通さない。お預かり品を返す義務があり、連絡の可否とは別のため。
+    """
+    if r["exclude_stats"]:
+        return True
+    return bool(dm_block_reason(r["address"])) or dm_is_blocked(r["dm_ok"])
+
+
+def care_list(con):
+    """ホームの「今週のお声がけ」に出す項目を集める。
+
+    4種類。期間は店の運用に合わせて決めた(2026-08-06):
+      誕生日      … 今月ぶん全部。ただし**過ぎた日は出さない**
+      結婚記念日  … 同じ
+      ポイント失効 … 失効日(最終購入日 + card_expiry_years年)の30日前から
+      修理納期    … 引渡予定日の7日前から。**過ぎた分は出し続け overdue=1 で強調**
+
+    ✓を押した用件は approach_history に ref_key つきで記録され、二度と出てこない。
+    """
+    con.row_factory = sqlite3.Row
+    today = datetime.date.today()
+    mm = f"{today.month:02d}"
+
+    done = {r["ref_key"] for r in con.execute(
+        "SELECT ref_key FROM approach_history WHERE COALESCE(ref_key,'')<>''")}
+    items = []
+
+    def add(kind, r, when, ref_key, detail="", overdue=False):
+        if ref_key in done:
+            return
+        items.append({
+            "kind": kind, "customer_id": r["customer_id"], "name": r["name"],
+            "staff_name": r["staff_name"], "date": when.isoformat(),
+            "when_text": f"{when.month}/{when.day}", "detail": detail,
+            "overdue": 1 if overdue else 0, "ref_key": ref_key,
+        })
+
+    # ── 誕生日・結婚記念日(今月ぶん・過ぎた日は出さない) ──
+    for kind, col in (("誕生日", "birthday"), ("結婚記念日", "wedding_day")):
+        for r in con.execute(f"""SELECT customer_id,name,staff_name,address,dm_ok,exclude_stats,
+                                        {col} d
+                                 FROM customers
+                                 WHERE COALESCE({col},'')<>'' AND substr({col},6,2)=?""", (mm,)):
+            d = _parse_date(r["d"])
+            if not d or d.day < today.day or _care_skip_outreach(r):
+                continue
+            add(kind, r, datetime.date(today.year, today.month, d.day),
+                f"{kind}:{r['customer_id']}:{today.year}")
+
+    # ── ポイント失効間近(失効日の30日前から) ──
+    years = max(1, int(point_settings(con).get("card_expiry_years") or 5))
+    for r in con.execute("""SELECT c.customer_id,c.name,c.staff_name,c.address,c.dm_ok,
+                                   c.exclude_stats, b.balance,
+                                   MAX(s.sold_at) last_buy
+                            FROM customers c
+                            JOIN point_balances b ON b.customer_id=c.customer_id AND b.balance>0
+                            LEFT JOIN sales_slips s ON s.customer_id=c.customer_id
+                                 AND COALESCE(s.voided,0)=0
+                            GROUP BY c.customer_id"""):
+        last = _parse_date(r["last_buy"])
+        if not last or _care_skip_outreach(r):
+            continue
+        expiry = _add_years(last, years)
+        left = (expiry - today).days
+        if 0 <= left <= CARE_POINT_DAYS:
+            add("ポイント失効", r, expiry,
+                f"ポイント失効:{r['customer_id']}:{expiry.year}",
+                detail=f"{r['balance']:,}pt({expiry.month}/{expiry.day}まで)")
+
+    # ── 修理納期(7日前から。過ぎた分も出し続ける) ──
+    for r in con.execute("""SELECT rp.id, rp.item_name, rp.promised_at,
+                                   c.customer_id, c.name, c.staff_name
+                            FROM repairs rp JOIN customers c ON c.customer_id=rp.customer_id
+                            WHERE COALESCE(rp.promised_at,'')<>''
+                                  AND COALESCE(rp.status,'') <> '引渡済み'"""):
+        d = _parse_date(r["promised_at"])
+        if not d:
+            continue
+        left = (d - today).days
+        if left <= CARE_REPAIR_DAYS:
+            add("修理納期", r, d, f"修理納期:{r['id']}",
+                detail=r["item_name"] or "", overdue=left < 0)
+
+    # 期限が近い順。過ぎているものを先頭に出す(放置が一番まずいため)
+    items.sort(key=lambda x: (not x["overdue"], x["date"]))
+    return {"items": items[:CARE_MAX], "total": len(items)}
+
+
+def record_care_done(con, p):
+    """ホームの「お声がけ」の✓。アプローチ履歴に記録し、同じ用件を二度出さないようにする。
+
+    undo=1 で取り消す(押し間違いを戻せるようにする。記録を消すだけ)。
+    """
+    cid = str(p.get("customer_id") or "").strip()
+    ref_key = str(p.get("ref_key") or "").strip()
+    if not cid or not ref_key:
+        raise ValueError("お声がけの対象が指定されていません")
+    with write_lock(con):
+        if p.get("undo"):
+            con.execute("DELETE FROM approach_history WHERE ref_key=?", (ref_key,))
+        else:
+            # 二重に押されても履歴が増えないようにする
+            row = con.execute("SELECT 1 FROM approach_history WHERE ref_key=?", (ref_key,)).fetchone()
+            if not row:
+                con.execute("""INSERT INTO approach_history
+                                 (customer_id,approach_date,kind,title,staff_name,done,ref_key)
+                               VALUES (?,?,?,?,?,1,?)""",
+                            (cid, datetime.date.today().isoformat(),
+                             str(p.get("kind") or ""), str(p.get("title") or ""),
+                             p.get("staff_name"), ref_key))
+    con.commit()
+    return {"ok": True, "care": care_list(con)}
 
 
 def build_blob(con):
@@ -478,6 +624,7 @@ def build_blob(con):
                 pointTx=point_tx, urikake=urikake, urikakeHist=urikake_hist,
                 approach=approach, rx=rx, rxCandidates=rx_candidates, products=products,
                 repairs=repairs, tenders=tenders, stockStats=stock_summary,
+                care=care_list(con),
                 pointSettings=point_settings(con),
                 tagSettings=tag_settings(con))
 

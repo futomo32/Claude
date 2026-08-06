@@ -619,6 +619,16 @@ class Handler(BaseHTTPRequestHandler):
                 finally:
                     con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/care_done":
+                # ホームの「お声がけ」の✓(アプローチ履歴に記録して一覧から消す)
+                con = connect()
+                try:
+                    result = db_query.record_care_done(con, payload)
+                except ValueError as e:
+                    return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                finally:
+                    con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/kuroneko_b2_export":
                 # DM便の宛名をクロネコB2の取込テンプレート形式(xlsx)で書き出す
                 con = connect()
