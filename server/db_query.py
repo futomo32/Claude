@@ -2592,7 +2592,30 @@ def get_product(con, product_key):
         "FROM products WHERE product_key=?", (pk,)).fetchone()
     if not r:
         raise ValueError("商品が見つかりません")
-    return dict(r)
+    out = dict(r)
+    out["buyers"] = product_buyers(con, pk)
+    return out
+
+
+def product_buyers(con, product_key):
+    """この商品を買った方を新しい順で返す(商品詳細から購入履歴へ飛ぶために使う)。
+
+    同じ品が「売れて → 返品されて → また売れた」場合は複数件になるため一覧で返す。
+    画面は先頭(最後の売上)を出し、2件以上あれば「他○件」と添える。
+    取消済みの明細・伝票は数えない(売れていないことになるため)。
+    """
+    con.row_factory = sqlite3.Row
+    rows = []
+    for b in con.execute("""SELECT s.customer_id cid, c.name cname, s.sold_at, s.slip_id
+                            FROM sale_lines l JOIN sales_slips s ON s.slip_id = l.slip_id
+                            LEFT JOIN customers c ON c.customer_id = s.customer_id
+                            WHERE l.product_key = ?
+                                  AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0
+                                  AND s.customer_id IS NOT NULL
+                            ORDER BY s.sold_at DESC""", (str(product_key),)):
+        rows.append({"customer_id": str(b["cid"]), "name": b["cname"],
+                     "sold_at": b["sold_at"], "slip_id": b["slip_id"]})
+    return rows
 
 
 def update_product(con, payload):
