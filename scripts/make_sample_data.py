@@ -111,7 +111,7 @@ def main():
         addr2 = f"コーポ常盤{random.randint(1,5)}0{random.randint(1,8)}号室" if random.random() < 0.3 else None
         cur.execute("""INSERT INTO customers(customer_id,name,kana,tel,gender,birthday,wedding_day,
                        postal,address,address2,staff_code,staff_name,store_code,dm_ok,registered_at,is_test,note)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'01','可',?,?,?)""",
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'01','送る',?,?,?)""",
                     (str(cid), name, kana, tel, gender, birthday, wedding, postal, addr, addr2,
                      staff[0], staff[1], d(random.randint(2014, 2024)), is_test, note))
         return staff

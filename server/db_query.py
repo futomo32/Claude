@@ -1138,7 +1138,16 @@ def detailed_customer_search(con, p):
     if g("gender"):
         where.append("c.gender = ?"); args.append(g("gender"))
     if g("dm_ok") == "1":
-        where.append("COALESCE(c.dm_ok,0) = 1")
+        # 「DM可のみ」= DM区分が「送らない」でなく、住所の先頭にDM不可の記号も無い顧客。
+        # 空欄は「可」として残す(店の運用で、出したくない時だけ値を入れているため)。
+        # 従来は `COALESCE(c.dm_ok,0)=1` と数値の1を比べていたが、実際に入っている値は
+        # 「送る/送らない」「可/不可」等の文字列で、一件も一致せず絞れていなかった。
+        where.append("normjp(COALESCE(c.dm_ok,'')) NOT IN (%s)"
+                     % ",".join("?" for _ in _DM_NO_NORM))
+        args.extend(_DM_NO_NORM)
+        where.append("(%s)" % " AND ".join(
+            "normjp(COALESCE(c.address,'')) NOT LIKE ?" for _ in DM_BLOCK_REASONS))
+        args.extend(normjp(k * 3) + "%" for k in DM_BLOCK_REASONS)
 
     # 最終購入(購入の最新日)。none=購入履歴なし / N=N年以上購入なし(購入はあるが古い)
     lb = g("last_buy")
@@ -3379,6 +3388,22 @@ def dm_block_reason(address):
     return None
 
 
+# ── DM区分(customers.dm_ok)の表記ゆれ ────────────────────────────────────
+# 同じ列に取込元ごとの表記が混在している(CSV取込=送る/送らない、xlsx取込=元の列の値を
+# そのまま、旧UI=可/不可)。表記を「送る/送らない」に寄せる過程でも古い値が残るため、
+# 読み取り側で吸収する。
+# ★ここに無い値は「送る」として扱う。実データに別の表記(有/無 等)があれば必ず足すこと。
+#   空欄は「送る」= 店の運用で「出したくない意思がある時だけ値を入れている」ため。
+DM_NO_VALUES = ("送らない", "送付しない", "送付不可", "不可", "無", "無し", "なし",
+                "いいえ", "×", "x", "2")
+_DM_NO_NORM = tuple(sorted({normjp(v) for v in DM_NO_VALUES}))
+
+
+def dm_is_blocked(dm_ok):
+    """DM区分が「送らない」を意味するかを返す(空欄・不明な値は「送る」扱い)。"""
+    return normjp(str(dm_ok or "").strip()) in _DM_NO_NORM
+
+
 def _count_reasons(reasons):
     """理由の一覧を「転居1件・死去2件」の形にまとめる(案内文用)。"""
     counts = {}
@@ -3391,19 +3416,20 @@ def kuroneko_b2_customers(con, ids):
     """クロネコB2(DM便)書き出し用に、選ばれた顧客の必須項目を集める。
 
     2種類の理由で書き出さない顧客がいる。取り違えると原因が分からなくなるため分けて返す。
-      blocked … 住所の先頭にDM不可の記号がある(転居・死去など)。理由つきで案内する
+      blocked … DMを出さない相手。住所の先頭の記号(転居・死去など)か、DM区分の「送らない」
       skipped … 電話番号・郵便番号・住所・名前のいずれかが無い(B2側の必須項目)
     ★とくに「死去」の顧客をヤマトへ送ってしまうと取り返しがつかないため、
-      記号の判定は必須項目の確認より先に行う。
+      出さない判定は必須項目の確認より先に行う。
     """
     con.row_factory = sqlite3.Row
     rows, skipped, blocked = [], [], []
     for cid in ids or []:
-        r = con.execute("SELECT name,tel,postal,address,address2 FROM customers WHERE customer_id=?",
+        r = con.execute("SELECT name,tel,postal,address,address2,dm_ok FROM customers WHERE customer_id=?",
                          (cid,)).fetchone()
         if not r:
             continue
-        reason = dm_block_reason(r["address"])
+        # 住所の記号とDM区分のどちらか一方でも「出さない」なら出さない(安全側に倒す)
+        reason = dm_block_reason(r["address"]) or ("送らない" if dm_is_blocked(r["dm_ok"]) else None)
         if reason:
             blocked.append(reason)
             continue
