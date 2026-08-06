@@ -10,6 +10,8 @@
   1. data/real/csv/ の各テーブルの全列について、値が入っている行の割合(入力率)を数える
   2. 値のサンプルと「値の形」(数字だけ/日付/カナ など)をまとめる
   3. トキワが取り込み済みと【確認できている】列に印を付け、それ以外を入力率の高い順に並べる
+     (★「取り込み済み」の根拠は scripts/import_csv.py の実装。2026-08-06に全列を
+       突き合わせて書き直した。import_csv.py を変えたらこの一覧も直すこと)
 
 ★「未確認」は「不要」ではない。単にこちらで対応を確認できていないだけ。
   入力率が高い未確認の列から順に、何の項目かを見ていくのが効率的。
@@ -43,47 +45,137 @@ SAMPLE_N = 3          # 列ごとに集める値のサンプル数
 DEFAULT_MIN_PCT = 10  # 画面に出す入力率の下限(%)
 
 # 移行の主戦場になるテーブル。既定ではここだけ見る(--all で全部)
-MAIN_TABLES = ["d_item", "d_user", "d_hanbai", "d_siire", "d_uriage", "d_shohosen", "d_urikake"]
+# (2026-08-06 更新: import_csv.py が実際に読むテーブル名に合わせた。
+#  旧一覧の d_uriage / d_urikake は実データに存在しない名前だった)
+MAIN_TABLES = ["d_item", "d_siire", "d_user", "d_hanbai", "d_shohosen",
+               "d_kakeuri", "d_kakeurihistory", "d_nyukin", "d_point", "d_pointhistory"]
 
 # ── トキワが取り込み済みと【確認できている】列 ──
 # ★ここに無い＝不要ではなく「未確認」。確認できたらここに足していくこと。
-#   (2026-08-03 時点。scripts/import_to_sqlite.py と db/schema.sql を突き合わせた結果)
+# ★★2026-08-06 全面書き直し: scripts/import_csv.py が実際に r.get() で読んでいる列と
+#   1つずつ突き合わせた。以前の一覧は実装と食い違っており(strcbuncode→実際はstrdbuncode、
+#   strsecode→実際はstriscode)、さらに「strtaghinname=取込済み」「d_siire=取込済み」と
+#   書いてあったが**どちらも取込は実装されていない**(列だけ作って取込を入れ忘れていた)。
+#   この一覧を直す時は、必ず import_csv.py の該当行と突き合わせること。
 KNOWN = {
     "d_item": {
-        "lngsykey": "product_key(商品キー)",
+        "lngsykey": "product_key(商品キー。strsytencodeと組で使用)",
+        "strsytencode": "product_key(商品キーの店舗部分)",
         "strsyno": "product_no(商品番号)",
         "strsyname": "name(商品名)",
         "strsyinfo": "info(商品情報)",
-        "strcbuncode": "category(大分類)",
-        "strsirsakicode": "supplier(仕入先)",
+        "strdbuncode": "category(大分類。m_dbunruiで名前解決)",
+        "strbrcode": "brand(ブランド。m_brandで名前解決)",
+        "strbrandcode": "brand(別名も見る)", "strbrand": "brand(別名も見る)",
+        "strjicode": "metal(地金。m_jiganeで名前解決)",
+        "strjiganecode": "metal(別名も見る)", "strjigane": "metal(別名も見る)",
+        "strsirsakicode": "supplier(仕入先。m_siiresakiで名前解決)",
         "curorokin": "cost_price(仕入単価/下代)",
         "curkoukin": "list_price(上代)",
         "strjotaikbn": "state(状態区分)",
         "strhotencode": "location(保管場所)",
-        "strsecode": "center_stone(中石)",
+        "striscode": "center_stone(中石。m_ishiで名前解決)",
         "curmainjuryo": "center_carat(中石重量)",
+        "strcolcode": "color", "strclacode": "clarity", "strcutcode": "cut",
+        "strkanbno": "cert_no(鑑別書No)",
         "strpicfilename": "image_file(商品写真)",
         "dattoudate": "registered_at(登録日)",
-        "strtaghinname": "tag_name(タグ品名) ※2026-08-03 追加",
+        # ★strtaghinname(タグ品名)は products.tag_name 列だけ作って取込が未実装。
+        #   ここに書かない=未確認として表示されるのが正しい(2026-08-06 判明)。
     },
-    "d_siire": {
-        "lngsykey": "products と紐づけ",
-        "strsirsycode": "maker_no(品番) ※2026-08-03 追加",
-        "cursirtanka": "cost_price(仕入単価)",
-        "dattoudate": "registered_at(登録日)",
-    },
+    # ★d_siire は取込が一切実装されていない(2026-08-06 判明)。
+    #   products.maker_no(品番=strsirsycode)の列だけ作って取込を入れ忘れている。
+    #   値札はこの品番を刷るため、8月末の再取込までに実装が必要。
+    #   → 全列が「未確認」と表示されるのが正しい状態。取込を実装したらここに足すこと。
+    "d_siire": {},
     "d_user": {
-        "lngkokey": "customer_id",
+        "lngkokey": "customer_id(strkotencodeと組で使用)",
+        "strkotencode": "customer_id(店舗部分)・store_code",
         "strkoname": "name", "strkokana": "kana", "strkotel": "tel", "strtel2": "tel2",
         "strkopos": "postal", "strkojyu1": "address", "strkojyu2": "address2",
-        "datbirthday": "birthday", "strtancode": "staff", "strtikucode": "district",
-        "strrank": "rank", "dattoudate": "registered_at",
+        "strsexkbn": "gender(1=女,2=男)",
+        "datbirthday": "birthday", "datwedddate": "wedding_day",
+        "strrank": "rank",
+        "strtikucode": "district(m_tikuで名前解決)",
+        "strtiku": "district(別名も見る)", "strchikucode": "district(別名も見る)",
+        "strdmkbn": "dm_ok(1=送る,2=送らない)",
+        "strpcmail": "email", "strkeitaimail": "email(PCメールが空の時)",
+        "lngfinsize1": "ring_size(指1リングサイズ)",
+        "strpiasukbn": "pierce(1=有,2=無)",
+        "strtancode": "staff_code・staff_name",
+        "strkanritenpo": "store_code(管理店舗)",
+        "dattoudate": "registered_at",
+    },
+    "d_user_memo": {
+        "lngkokey": "customer_id", "strkotencode": "customer_id(店舗部分)",
+        "datinpdate": "updated_at",
+        **{f"strmemo{i:02d}": "customer_memos.body" for i in range(1, 11)},
+    },
+    "d_famiry": {
+        "lngkokey": "customer_id", "strkotencode": "customer_id(店舗部分)",
+        "strfamiryname": "name", "strzokukbn": "relation(続柄)",
+        "strsexkbn": "gender", "datbirthday": "birthday",
     },
     "d_hanbai": {
-        "lngkokey": "customer_id", "lngsykey": "product_key",
-        "datkaidate": "sold_at", "curkaikin": "amount", "curteika": "list_price",
-        "curwariritu": "discount_rate", "strhantancode": "staff",
-        "curdenpyono": "slip_id", "strdocode": "動機", "strbacode": "購入場所",
+        "lngkokey": "customer_id", "strkotencode": "customer_id(店舗部分)・store_code",
+        "lngsykey": "product_key", "strsytencode": "product_key(店舗部分)",
+        "curdenpyono": "slip_no(伝票番号=明細のグループ化)",
+        "datkaidate": "sold_at", "datcredate": "sold_at(買上日が空の時)",
+        "strhantancode": "staff_code・staff_name(m_tantouで名前解決)",
+        "strkakekbn": "pay_method(1=現金,2=掛売,3=クレジット…)",
+        "strcrekbn": "credit_kind(JCB/VISA等)",
+        "strdocode": "motive(動機。m_doukiで名前解決)",
+        "strbacode": "place(購入場所。m_basyoで名前解決)",
+        "curusepoint": "used_points", "curkasanpoint": "earned_points",
+        "strkokname": "free_name(商品台帳に無い明細の品名)",
+        "strsyinfo": "info",
+        "curteika": "list_price", "curkaikin": "amount", "curkaizeikin": "tax",
+        "curwariritu": "discount_rate",
+    },
+    "d_kakeuri": {
+        "lngkokey": "customer_id", "strkotencode": "customer_id(店舗部分)",
+        "lngsykey": "product_key", "strsytencode": "product_key(店舗部分)",
+        "datkaidate": "bought_at", "curatamakin": "down_payment",
+        "curzankin": "balance", "datnyukindate": "last_paid_at",
+    },
+    "d_kakeurihistory": {
+        "lngkokey": "customer_id", "strkotencode": "customer_id(店舗部分)",
+        "lngkakekbn": "entry_type", "datkakedate": "entry_date",
+        "curkakekin": "amount", "curnyukin": "paid", "strbiko": "note",
+    },
+    "d_nyukin": {
+        "lngkokey": "customer_id", "strkotencode": "customer_id(店舗部分)",
+        "datnyudate": "entry_date", "curnyukin": "paid", "strbiko": "note",
+    },
+    "d_point": {
+        "lngkokey": "customer_id", "strkotencode": "customer_id(店舗部分)",
+        "curpointzan": "point_balances.balance", "datkoshinbi": "updated_at",
+    },
+    "d_pointhistory": {
+        "lngkokey": "customer_id", "strkotencode": "customer_id(店舗部分)",
+        "lngpointkbn": "tx_type", "curkasanpoint": "add_points", "curusepoint": "use_points",
+        "curzanpoint": "balance(取引後残高)", "strsyname": "product_name",
+        "dathakko": "occurred_at", "datinpdate": "occurred_at(発行日が空の時)",
+        "lngpointseq": "残高補完の最終行判定",
+    },
+    "d_shohosen": {
+        "lngkokey": "customer_id", "strkotencode": "customer_id(店舗部分)",
+        "lngshohosenno": "rx_no", "stryotokbn": "purpose(1=常用,2=遠用,3=近用)",
+        "lngsykey1": "lens_key", "strsytencode1": "lens_key(店舗部分)",
+        "lngsykey2": "frame_key", "strsytencode2": "frame_key(店舗部分)",
+        "strsph_r": "sph_r", "strsph_l": "sph_l", "strcyl_r": "cyl_r", "strcyl_l": "cyl_l",
+        "strax_r": "ax_r", "strax_l": "ax_l", "stradd_r": "add_r", "stradd_l": "add_l",
+        "strpr_r": "pri_r", "strpr_l": "pri_l", "strbase_r": "base_r", "strbase_l": "base_l",
+        "strpden_r": "pd_far_r", "strpden_l": "pd_far_l", "strpden_b": "pd_far_both",
+        "strpdkin_r": "pd_near_r", "strpdkin_l": "pd_near_l", "strpdkin_b": "pd_near_both",
+        "strragan_r": "naked_r", "strragan_l": "naked_l", "strragan_b": "naked_both",
+        "strkyosei_r": "corrected_r", "strkyosei_l": "corrected_l", "strkyosei_b": "corrected_both",
+        "curgokeiteika": "total_list", "curgokeiurine": "total_sell",
+        "strtaioshacode": "handler(m_tantouで名前解決)", "datinpdate": "rx_date",
+    },
+    "d_systemuser": {
+        "struserid": "app_users.user_id", "lngmasterflg": "role(管理者判定)",
+        "strsytencode": "store_code", "strdispname": "display_name",
     },
 }
 
