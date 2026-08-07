@@ -202,6 +202,10 @@ def ensure_schema(con):
         # 例「誕生日:1234:2026」「修理納期:57」。✓を押すとこの鍵つきで履歴に記録し、
         # 次からその用件は一覧に出さない(2026-08-06 追加)。
         ("approach_history", "ref_key", "TEXT"),
+        # 返金方法(現金/クレジット/ポイント等)。取消時に選ぶ。返品日の現金締めに
+        # 現金返金だけを反映するために必要(2026-08-06 税理士確認に基づく)。
+        ("sale_lines", "refund_method", "TEXT"),
+        ("sales_slips", "refund_method", "TEXT"),
     ]
     changed = False
     for table, col, decl in adds:
@@ -624,7 +628,8 @@ def build_blob(con):
     tenders = []
     for r in cur.execute("""SELECT s.sold_at, sp.method, sp.amount, s.customer_id
                             FROM sale_payments sp JOIN sales_slips s ON s.slip_id = sp.slip_id
-                            WHERE COALESCE(s.voided,0)=0
+                            WHERE (COALESCE(s.voided,0)=0
+                                   OR substr(COALESCE(s.voided_at,''),1,10) <> s.sold_at)
                             ORDER BY s.sold_at DESC"""):
         tenders.append([r["sold_at"], r["method"], r["amount"], str(r["customer_id"])])
 
@@ -718,7 +723,8 @@ def build_blob_light(con):
     tenders = []
     for r in cur.execute("""SELECT s.sold_at, sp.method, sp.amount, s.customer_id
                             FROM sale_payments sp JOIN sales_slips s ON s.slip_id = sp.slip_id
-                            WHERE COALESCE(s.voided,0)=0
+                            WHERE (COALESCE(s.voided,0)=0
+                                   OR substr(COALESCE(s.voided_at,''),1,10) <> s.sold_at)
                             ORDER BY s.sold_at DESC"""):
         tenders.append([r["sold_at"], r["method"], r["amount"], str(r["customer_id"])])
 
@@ -1120,24 +1126,53 @@ def sale_kind4(is_glasses, category, place):
     return "店頭"
 
 
+# ── 日報・帳票の集計ルール(2026-08-06 顧問税理士の確認に基づき確定) ──────────
+# 締めた日の日報は後から変えない。判断基準は「売った日と同じ日に取り消したか」。
+#   ・当日中の取消(締め前) … 訂正扱い。売上にも返品にも出さない(5回打ち直したら最終だけ残る)
+#   ・日をまたいだ取消     … 売った日の日報はそのまま。**取消した日**の日報にマイナスの
+#     返品行を出す(元の売上日を注記)。現金締めには返金方法が現金の分だけ反映する。
+# SQL片: 「この明細は売った日のうちに取り消された(=訂正)」
+_SAME_DAY_VOID = "(COALESCE(l.voided,0)=1 AND substr(COALESCE(l.voided_at,''),1,10) = s.sold_at)"
+
+
 def daily_sales(con, date):
-    """指定日のレジ売上明細(日報・ホームタイル用)。全売上をブラウザに持たずサーバーで集計。"""
+    """指定日のレジ売上明細(日報・ホームタイル用)。全売上をブラウザに持たずサーバーで集計。
+    売上行は「売った日」基準(後日取消でも残す)。返品行は「取消した日」に ret=1 で出す。"""
     con.row_factory = sqlite3.Row
     out = []
     # 現金＋クレジット併用の内訳(sale_payments)を先に引いておき、支払欄に金額つきで出す
     pay_texts = slip_pay_texts(con, "WHERE s.sold_at = ?", (str(date),))
-    for r in con.execute("""
+    for r in con.execute(f"""
         SELECT s.slip_id, s.customer_id cid, c.name cname,
                COALESCE(l.free_name, p.name) item, l.info, l.amount, s.pay_method, s.credit_kind,
                s.staff_name, p.is_glasses ig, p.category cat, s.place place
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         LEFT JOIN customers c ON c.customer_id = s.customer_id
-        WHERE s.sold_at = ? AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0""", (str(date),)):
+        WHERE s.sold_at = ? AND NOT {_SAME_DAY_VOID}""", (str(date),)):
         out.append({"cid": r["cid"], "name": r["cname"] or r["cid"], "item": r["item"],
                     "info": r["info"], "amount": r["amount"] or 0,
                     "pay": pay_texts.get(r["slip_id"]) or pay_fallback(r["pay_method"], r["credit_kind"]),
                     "staff": r["staff_name"],
+                    "kind4": sale_kind4(r["ig"], r["cat"], r["place"])})
+    # 返品行: この日に取り消された明細(当日訂正は除く)をマイナスで出す
+    for r in con.execute(f"""
+        SELECT s.customer_id cid, c.name cname,
+               COALESCE(l.free_name, p.name) item, l.info, l.amount,
+               l.refund_method rm, s.pay_method, s.credit_kind,
+               s.sold_at orig, l.voided_staff vstaff,
+               p.is_glasses ig, p.category cat, s.place place
+        FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
+        LEFT JOIN products p ON l.product_key = p.product_key
+        LEFT JOIN customers c ON c.customer_id = s.customer_id
+        WHERE COALESCE(l.voided,0)=1 AND substr(COALESCE(l.voided_at,''),1,10) = ?
+              AND NOT {_SAME_DAY_VOID}""", (str(date),)):
+        method = r["rm"] or pay_fallback(r["pay_method"], r["credit_kind"])
+        out.append({"cid": r["cid"], "name": r["cname"] or r["cid"], "item": r["item"],
+                    "info": r["info"], "amount": -(r["amount"] or 0),
+                    "pay": f"返金({method})", "refund_method": method,
+                    "staff": r["vstaff"], "ret": 1,
+                    "note": f"{r['orig']}購入分の返品",
                     "kind4": sale_kind4(r["ig"], r["cat"], r["place"])})
     return out
 
@@ -1145,29 +1180,46 @@ def daily_sales(con, date):
 def payment_totals(con, frm, to=None):
     """期間の支払方法別の合計(日報の「内訳」用)。現金＋クレジット併用でも、
     sale_payments の内訳ごとに集計するので「現金がいくら/クレジットがいくら」が分かる。
-    sale_payments に内訳が無い伝票(移行データ)は、伝票の支払方法で明細金額を寄せる。"""
+    sale_payments に内訳が無い伝票(移行データ)は、伝票の支払方法で明細金額を寄せる。
+
+    集計ルール(_SAME_DAY_VOID のコメント参照):
+      受け取ったお金は「売った日」に計上(後日取消でも売った日の締めは変えない)。
+      返金は「取消した日」に返金方法でマイナス計上。
+      伝票まるごと当日中の取消だけは訂正扱いで最初から無かったことにする。"""
     con.row_factory = sqlite3.Row
     to = to or frm
+    # 「伝票まるごと売った日のうちに取消」(訂正)。お金は動かなかった扱いにする
+    same_day_slip = ("(COALESCE(s.voided,0)=1 AND "
+                     "substr(COALESCE(s.voided_at,''),1,10) = s.sold_at)")
     totals, seen = {}, set()
-    for r in con.execute("""
+    for r in con.execute(f"""
         SELECT sp.method m, COALESCE(SUM(sp.amount),0) t, GROUP_CONCAT(DISTINCT s.slip_id) ids
         FROM sale_payments sp JOIN sales_slips s ON s.slip_id = sp.slip_id
-        WHERE s.sold_at >= ? AND s.sold_at <= ? AND COALESCE(s.voided,0)=0
+        WHERE s.sold_at >= ? AND s.sold_at <= ? AND NOT {same_day_slip}
         GROUP BY sp.method""", (str(frm), str(to))):
         totals[r["m"] or "現金"] = totals.get(r["m"] or "現金", 0) + int(r["t"] or 0)
         for i in str(r["ids"] or "").split(","):
             if i:
                 seen.add(int(i))
-    for r in con.execute("""
+    for r in con.execute(f"""
         SELECT s.slip_id, s.pay_method pm, s.credit_kind ck, COALESCE(SUM(l.amount),0) t
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
-        WHERE s.sold_at >= ? AND s.sold_at <= ?
-              AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0
+        WHERE s.sold_at >= ? AND s.sold_at <= ? AND NOT {same_day_slip}
         GROUP BY s.slip_id""", (str(frm), str(to))):
         if r["slip_id"] in seen:
             continue  # 内訳がある伝票は二重計上しない
         k = pay_fallback(r["pm"], r["ck"])
         totals[k] = totals.get(k, 0) + int(r["t"] or 0)
+    # 返金: 取消した日が期間内の明細をマイナス計上(当日訂正の伝票は上で除外済みなので触らない)
+    for r in con.execute(f"""
+        SELECT l.refund_method rm, s.pay_method pm, s.credit_kind ck, COALESCE(SUM(l.amount),0) t
+        FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
+        WHERE COALESCE(l.voided,0)=1
+              AND substr(COALESCE(l.voided_at,''),1,10) >= ? AND substr(COALESCE(l.voided_at,''),1,10) <= ?
+              AND NOT {same_day_slip} AND NOT {_SAME_DAY_VOID}
+        GROUP BY rm, pm, ck""", (str(frm), str(to))):
+        k = r["rm"] or pay_fallback(r["pm"], r["ck"])
+        totals[k] = totals.get(k, 0) - int(r["t"] or 0)
     return [{"method": k, "amount": v} for k, v in
             sorted(totals.items(), key=lambda kv: -kv[1]) if v]
 
@@ -1182,21 +1234,41 @@ def slip_lines(con, frm, to, staff=""):
         args.append(staff)
     out = []
     pay_texts = slip_pay_texts(con, "WHERE s.sold_at >= ? AND s.sold_at <= ?", (str(frm), str(to)))
-    for r in con.execute("""
+    for r in con.execute(f"""
         SELECT s.slip_id, s.sold_at, s.customer_id cid, c.name cname,
                COALESCE(l.free_name, p.name) item, l.amount, s.pay_method, s.credit_kind, s.staff_name,
                p.is_glasses ig, p.category cat, s.place place
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         LEFT JOIN customers c ON c.customer_id = s.customer_id
-        WHERE s.sold_at >= ? AND s.sold_at <= ?
-              AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0""" + staffsql + """
+        WHERE s.sold_at >= ? AND s.sold_at <= ? AND NOT {_SAME_DAY_VOID}""" + staffsql + """
         ORDER BY s.sold_at""", args):
         out.append({"date": r["sold_at"], "name": r["cname"] or r["cid"], "item": r["item"],
                     "amount": r["amount"] or 0,
                     "pay": pay_texts.get(r["slip_id"]) or pay_fallback(r["pay_method"], r["credit_kind"]),
                     "staff": r["staff_name"],
                     "kind4": sale_kind4(r["ig"], r["cat"], r["place"])})
+    # 返品行: 取消した日が期間内の明細をマイナスで出す(当日訂正は出さない)。
+    # 売上行と同じ形＋ret/noteを持ち、日付順に混ぜて返す
+    for r in con.execute(f"""
+        SELECT substr(l.voided_at,1,10) vdate, s.customer_id cid, c.name cname,
+               COALESCE(l.free_name, p.name) item, l.amount,
+               l.refund_method rm, s.pay_method, s.credit_kind, s.sold_at orig,
+               l.voided_staff vstaff, p.is_glasses ig, p.category cat, s.place place
+        FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
+        LEFT JOIN products p ON l.product_key = p.product_key
+        LEFT JOIN customers c ON c.customer_id = s.customer_id
+        WHERE COALESCE(l.voided,0)=1
+              AND substr(COALESCE(l.voided_at,''),1,10) >= ? AND substr(COALESCE(l.voided_at,''),1,10) <= ?
+              AND NOT {_SAME_DAY_VOID}""" + staffsql.replace("s.staff_name", "l.voided_staff") + """
+        ORDER BY vdate""", args):
+        method = r["rm"] or pay_fallback(r["pay_method"], r["credit_kind"])
+        out.append({"date": r["vdate"], "name": r["cname"] or r["cid"], "item": r["item"],
+                    "amount": -(r["amount"] or 0),
+                    "pay": f"返金({method})", "staff": r["vstaff"], "ret": 1,
+                    "note": f"{r['orig']}購入分の返品",
+                    "kind4": sale_kind4(r["ig"], r["cat"], r["place"])})
+    out.sort(key=lambda x: x["date"])
     return out
 
 
@@ -3394,19 +3466,28 @@ def _reverse_points_for_void(con, slip_id, voided_amount, reason):
             "delta": applied, "balance": newbal, "clamped": (bal + delta) < 0}
 
 
-def _void_record(operator, staff, reason):
-    """取消の記録3点を検証して返す。担当者と理由は必須(監査で後から追えるようにするため)。"""
+# 返金方法の選択肢。取消時に選ぶ(基本は「現金は現金・カードはカード・ポイントはポイント」
+# だが、カードの返金期限切れ等で現金返金になるケースがあるため固定にしない。2026-08-06)。
+REFUND_METHODS = ("現金", "クレジット", "銀行振込", "ポイント", "その他")
+
+
+def _void_record(operator, staff, reason, refund_method=None):
+    """取消の記録を検証して返す。担当者と理由は必須(監査で後から追えるようにするため)。
+    返金方法は未指定なら現金(現金締めに関わるため、画面では必ず選ばせる)。"""
     staff = str(staff or "").strip()
     reason = str(reason or "").strip()[:200]
+    rm = str(refund_method or "現金").strip()
     if not staff:
         raise ValueError("取消した担当者を選んでください")
     if not reason:
         raise ValueError("取消の理由を入力してください")
+    if rm not in REFUND_METHODS:
+        raise ValueError("返金方法の指定が正しくありません")
     return (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            str(operator or ""), staff, reason)
+            str(operator or ""), staff, reason, rm)
 
 
-def void_sale_line(con, line_id, operator=None, staff=None, reason=None):
+def void_sale_line(con, line_id, operator=None, staff=None, reason=None, refund_method=None):
     """明細1行を取消(訂正/一部返品)。集計・履歴から除外し、在庫品なら在庫に戻す。
     最終正データのみ表示する方針のため、取消済み行は各画面に出さない。
 
@@ -3416,7 +3497,7 @@ def void_sale_line(con, line_id, operator=None, staff=None, reason=None):
       reason   … 取消理由 ※必須
     """
     line_id = int(line_id)
-    now, op, stf, rsn = _void_record(operator, staff, reason)   # 先に検証(ロックを短くする)
+    now, op, stf, rsn, rm = _void_record(operator, staff, reason, refund_method)  # 先に検証
     with write_lock(con):   # 二重取消・在庫戻しとポイント調整の競合を防ぐ
         row = con.execute("SELECT voided FROM sale_lines WHERE line_id=?", (line_id,)).fetchone()
         if not row:
@@ -3427,19 +3508,21 @@ def void_sale_line(con, line_id, operator=None, staff=None, reason=None):
                          (line_id,)).fetchone()
         _restock_line(con, line_id)
         con.execute("""UPDATE sale_lines SET voided=1, voided_at=?, voided_by=?, voided_staff=?,
-                              voided_reason=? WHERE line_id=?""", (now, op, stf, rsn, line_id))
+                              voided_reason=?, refund_method=? WHERE line_id=?""",
+                    (now, op, stf, rsn, rm, line_id))
         # 付与ptを取り消し、使用ptを戻す(取り消した金額の割合で按分)
         pts = _reverse_points_for_void(con, lr[0], lr[1], rsn) if lr else None
-    return {"line_id": line_id, "voided": True, "voided_at": now,
+    return {"line_id": line_id, "voided": True, "voided_at": now, "refund_method": rm,
             "voided_by": op, "voided_staff": stf, "voided_reason": rsn, "points": pts}
 
 
-def void_sale_slip(con, slip_id, operator=None, staff=None, reason=None):
+def void_sale_slip(con, slip_id, operator=None, staff=None, reason=None, refund_method=None):
     """伝票ごと取消(返品)。伝票の全明細を無効化し、在庫品は在庫に戻す。
-    伝票のvoidedも立て、入金(sale_payments)も集計から外れる。
-    記録内容は void_sale_line と同じ(明細・伝票の両方に残す)。"""
+    記録内容は void_sale_line と同じ(明細・伝票の両方に残す)。
+    ※集計の扱いは日報のルールに従う: 当日中の取消=訂正として消える /
+      日をまたいだ取消=売った日はそのまま・取消日にマイナス計上。"""
     slip_id = int(slip_id)
-    now, op, stf, rsn = _void_record(operator, staff, reason)   # 先に検証(ロックを短くする)
+    now, op, stf, rsn, rm = _void_record(operator, staff, reason, refund_method)  # 先に検証
     with write_lock(con):
         row = con.execute("SELECT voided FROM sales_slips WHERE slip_id=?", (slip_id,)).fetchone()
         if not row:
@@ -3450,12 +3533,13 @@ def void_sale_slip(con, slip_id, operator=None, staff=None, reason=None):
         for lr in live:
             _restock_line(con, lr[0])
         con.execute("""UPDATE sale_lines SET voided=1, voided_at=?, voided_by=?, voided_staff=?,
-                              voided_reason=? WHERE slip_id=? AND COALESCE(voided,0)=0""",
-                    (now, op, stf, rsn, slip_id))
+                              voided_reason=?, refund_method=? WHERE slip_id=? AND COALESCE(voided,0)=0""",
+                    (now, op, stf, rsn, rm, slip_id))
         con.execute("""UPDATE sales_slips SET voided=1, voided_at=?, voided_by=?, voided_staff=?,
-                              voided_reason=? WHERE slip_id=?""", (now, op, stf, rsn, slip_id))
+                              voided_reason=?, refund_method=? WHERE slip_id=?""",
+                    (now, op, stf, rsn, rm, slip_id))
         pts = _reverse_points_for_void(con, slip_id, sum(int(r[1] or 0) for r in live), rsn)
-    return {"slip_id": slip_id, "voided": True, "voided_at": now,
+    return {"slip_id": slip_id, "voided": True, "voided_at": now, "refund_method": rm,
             "voided_by": op, "voided_staff": stf, "voided_reason": rsn, "points": pts}
 
 

@@ -782,13 +782,15 @@ class Handler(BaseHTTPRequestHandler):
                 # staff(取消した担当者)と reason(理由)は画面からの必須入力
                 con = connect()
                 result = db_query.void_sale_line(con, payload.get("line_id"), user.get("name"),
-                                                 payload.get("staff"), payload.get("reason"))
+                                                 payload.get("staff"), payload.get("reason"),
+                                                 payload.get("refund_method"))
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/void_slip":
                 con = connect()
                 result = db_query.void_sale_slip(con, payload.get("slip_id"), user.get("name"),
-                                                 payload.get("staff"), payload.get("reason"))
+                                                 payload.get("staff"), payload.get("reason"),
+                                                 payload.get("refund_method"))
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/rank_apply":
