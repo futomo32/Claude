@@ -417,7 +417,7 @@
       📲 ブラウザのメニューから「ホーム画面に追加」すると、アプリのように使用できます。<br>
       ⚠️ ブラウザのデータを削除すると記録も消えるため、月末に CSV を保存しておくことをおすすめします。
     </div>
-    <div class="version">バージョン <b id="appVersion">1.5.1</b>（2026.08.10 更新）</div>
+    <div class="version">バージョン <b id="appVersion">1.5.2</b>（2026.08.10 更新）</div>
   </section>
 </main>
 
@@ -764,21 +764,28 @@ document.getElementById("csvBtn").onclick = () => {
   lines.push(`氏名,${csvEsc(name)}`);
   lines.push(`対象月,${viewYear}年${viewMonth}月`);
   lines.push("");
-  lines.push("日付,曜日,出勤,退勤,休憩(分),勤務時間");
-  let totalMin = 0;
+  lines.push("日付,曜日,出勤,退勤,休憩開始,休憩終了,休憩時間,勤務時間");
+  let totalMin = 0, totalBreakMin = 0;
   keys.forEach(k => {
     const rec = records[k];
     const [y, m, d] = k.split("-").map(Number);
     const dow = DOW[new Date(y, m - 1, d).getDay()];
     const w = workedMinutes(rec);
     if (w !== null) totalMin += w;
+    const bMin = breakMinutes(rec);
+    totalBreakMin += bMin;
+    /* 休憩は複数回に対応：開始・終了はそれぞれ「12:00 / 15:00」のように連結、時間は 0:30 形式 */
+    const bks = (rec.breaks || []).filter(b => b.start || b.end);
+    const bStart = bks.map(b => b.start || "").join(" / ");
+    const bEnd = bks.map(b => b.end || "").join(" / ");
+    const bDur = bks.length ? minToHM(bMin) : "";
     lines.push([
       k, dow, rec.in || "", rec.out || "",
-      breakMinutes(rec), w !== null ? minToHM(w) : "",
+      csvEsc(bStart), csvEsc(bEnd), bDur, w !== null ? minToHM(w) : "",
     ].join(","));
   });
   lines.push("");
-  lines.push(`合計,,,,,${minToHM(totalMin)}`);
+  lines.push(`合計,,,,,,${minToHM(totalBreakMin)},${minToHM(totalMin)}`);
 
   /* BOM so Excel opens it with correct Japanese encoding */
   const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv" });

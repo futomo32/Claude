@@ -1,5 +1,5 @@
 /* ヤナセぱっと勤怠 service worker — オフラインでも動くようにキャッシュします */
-const CACHE = "patto-kintai-v6";
+const CACHE = "patto-kintai-v7";
 const ASSETS = ["./", "./index.html", "./guide.html", "./manifest.json", "./logo.png", "./icon.png", "./icon-maskable.png"];
 
 self.addEventListener("install", (e) => {
