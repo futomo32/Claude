@@ -175,8 +175,29 @@
     .step,.tip,.memo,.legend .btnrow,.hero{box-shadow:none; border:1.5px solid var(--line);
       break-inside:avoid; page-break-inside:avoid}
     .shot img,.tip img{box-shadow:none}
+    .backbtn{display:none !important}
   }
+  /* 常に表示される「戻る」ボタン */
+  .backbtn{
+    position:fixed;
+    top:calc(10px + env(safe-area-inset-top));
+    left:calc(10px + env(safe-area-inset-left));
+    z-index:100;
+    display:inline-flex; align-items:center; gap:6px;
+    background:var(--card); color:var(--pink-ink);
+    font-weight:700; font-size:16px; line-height:1;
+    padding:12px 18px; border-radius:999px;
+    text-decoration:none;
+    box-shadow:0 4px 16px rgba(180,60,90,.28);
+    border:1.5px solid var(--pink-soft);
+  }
+  .backbtn:active{transform:scale(.96)}
+  .backbtn .ar{font-size:18px; margin-top:-1px}
+  /* ボタンが先頭のロゴに重ならないよう上部に余白 */
+  .wrap{padding-top:64px}
 </style>
+
+<a class="backbtn" href="index.html" onclick="if(document.referrer&&history.length>1){history.back();return false;}"><span class="ar">←</span>アプリに戻る</a>
 
 <div class="wrap">
 
