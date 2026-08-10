@@ -1,34 +1,35 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""商品写真をファイル名の商品キーから突き合わせて後埋めする(B-7の第2弾)。
+"""商品写真をファイル名から突き合わせて後埋めする(B-7の第2弾)。
 
-背景(2026-08-06):
-  トキワが写真を知る経路は d_item.strpicfilename だけだが、入力率4.2%しかない。
-  一方 data/real/images/ には「キー.jpg」「キー_連番.jpg」形式のファイルが大量にあり、
-  宝飾ナビはこの命名で写真を持っている。実物を確認した結果:
-    - 200169 → 連番なし・_2・_5=ピンクブレス / _3=サングラス / _4=グレーのブレス
-    - その _4 と同じ写真が 200170.jpg として存在
-  → **連番は写真の登録履歴**(169に誤登録→170で正式登録し直し、履歴は残る)で、
-    **一番大きい連番が現在の写真**、というのが店の理解で確定(2026-08-06)。
-    誤登録の古い写真が履歴に混ざっていても、最大連番を選べば現在の商品の写真になる。
+ファイル名の規則(2026-08-10 diag_image_naming.py の実測で確定):
+  「{店舗番号(前ゼロ無し)}{商品番号}.jpg」と「同_連番.jpg」。
+  例: 店01・商品番号04714 → 104714.jpg, 104714_2.jpg …
+  実データ7,121種のうち93.6%がこの解釈で商品に一致した(キー解釈は誤りで、
+  一度6,353件を誤紐付けし --undo で取り消した経緯がある。同じ過ちを繰り返さない
+  こと: 解釈を変える時は必ず diag_image_naming.py で一致率を確かめる)。
 
-方針: ★間違った写真を付けるくらいなら付けない(安全側)。
-  1. キーの数字がトキワの商品1件だけに該当する場合のみ紐付ける
-     (代表は上の理解どおり「一番大きい連番」。連番なしは連番付きが無い時だけ)
-  2. 複数商品に該当する数字(店舗またぎの重複)は紐付けず、件数を報告するだけ
-  3. 既に写真が付いている商品(strpicfilename由来)は上書きしない
-  4. 既定は「何が起きるか表示するだけ」(ドライラン)。実際に書くのは --apply
+連番の意味(2026-08-06 店の確認):
+  写真の登録履歴(誤登録も残る)。**一番大きい連番が現在の写真**。
+  連番なしのファイルは一番古い履歴なので、連番付きが1枚も無い時だけ使う。
+
+同じ店舗+番号を複数の商品が使っている問題(番号の使い回し・5,316種):
+  写真がどの商品のものかはファイル名からは決められない。既定では宝飾ナビと
+  同じ見え方に合わせ、**その店舗+番号を持つ全商品に同じ代表写真を付ける**。
+  (誤りが混ざり得るが、ナビでも同じ表示だったもの。厳密にしたい場合は
+   --strict で「1商品に確定する時だけ付ける」に切り替えられる)
 
 使い方(店のPC):
-  python3 scripts/backfill_images_bykey.py           # まず結果を見る(書き込まない)
-  python3 scripts/backfill_images_bykey.py --apply   # 内容に納得したら反映
-  python3 scripts/backfill_images_bykey.py --undo    # ★この方式で付けた写真を全部外す
+  python3 scripts/backfill_images_bykey.py            # まず結果を見る(書き込まない)
+  python3 scripts/backfill_images_bykey.py --apply    # 内容に納得したら反映
+  python3 scripts/backfill_images_bykey.py --strict   # 1商品に確定する分だけ(＋--applyで反映)
+  python3 scripts/backfill_images_bykey.py --undo     # この方式で付けた写真を全部外す
 
-★2026-08-10 反映後に誤紐付けが発覚(時計に別商品のペンダント写真が付いた・
-  リングには付かない)。ファイル名の数字は商品キーではない可能性が高い。
-  --undo で取り消し → diag_image_naming.py で命名規則を特定 → 再設計の順で進める。
-
-出力は件数とキーの数字だけ。商品名・顧客名は出さない。
+安全策:
+  ・既に写真が付いている商品(strpicfilename由来・画面から登録)は上書きしない
+  ・書くのは「数字だけ(＋_連番)」のファイル名のみ。この形はこのスクリプトしか
+    書かないので、--undo で自分の分だけ正確に外せる
+出力は件数と番号だけ。顧客情報は出さない。
 """
 import os
 import re
@@ -47,18 +48,18 @@ FNAME = re.compile(r"^(\d+)(?:_(\d+))?\.(jpe?g|png)$", re.IGNORECASE)
 def undo(con):
     """このスクリプトが付けた写真を全部外す。
     「数字だけ(＋_連番)のファイル名」を image_file に書くのはこのスクリプトだけなので、
-    その形の紐付けを空に戻せば反映前と同じ状態になる
-    (strpicfilename由来のK01型や、画面から登録した写真は名前の形が違うため触らない)。"""
+    その形の紐付けを空に戻せば反映前と同じ状態になる。"""
     hits = [(pk,) for pk, img in con.execute(
         "SELECT product_key, image_file FROM products WHERE COALESCE(image_file,'')<>''")
         if FNAME.match(img or "")]
     con.executemany("UPDATE products SET image_file=NULL WHERE product_key=?", hits)
     con.commit()
-    print(f"取り消しました: {len(hits):,}件(キー名形式の写真の紐付けを外しました)")
+    print(f"取り消しました: {len(hits):,}件(数字名形式の写真の紐付けを外しました)")
 
 
 def main():
     apply_mode = "--apply" in sys.argv
+    strict = "--strict" in sys.argv
     if not os.path.exists(DB):
         sys.exit(f"[エラー] DBがありません: {DB}")
     if "--undo" in sys.argv:
@@ -69,7 +70,7 @@ def main():
     if not os.path.isdir(IMG_DIR):
         sys.exit(f"[エラー] 画像フォルダがありません: {IMG_DIR}")
 
-    # ── 画像をキーの数字ごとにまとめ、代表(一番大きい連番)を選ぶ ──
+    # ── 画像を「数字部分」ごとにまとめ、代表(一番大きい連番)を選ぶ ──
     groups = defaultdict(list)   # "104714" → [(連番, ファイル名), ...]
     others = 0
     for fn in os.listdir(IMG_DIR):
@@ -80,43 +81,45 @@ def main():
         groups[m.group(1)].append((int(m.group(2) or 0), fn))
     best = {k: max(v)[1] for k, v in groups.items()}
 
-    # ── 商品側: キーの数字部分 → 商品の一覧 ──
+    # ── 商品側: 「店舗番号(前ゼロ無し)+商品番号」→ 商品の一覧 ──
     con = sqlite3.connect(DB)
-    by_digits = defaultdict(list)   # "104714" → [(product_key, image_file), ...]
-    for pk, img in con.execute("SELECT product_key, image_file FROM products"):
-        digits = str(pk).split("-", 1)[-1]
-        by_digits[digits].append((pk, img))
+    by_sno = defaultdict(list)   # "104714" → [(product_key, image_file), ...]
+    for pk, no, img in con.execute("SELECT product_key, product_no, image_file FROM products"):
+        store, _, _key = str(pk or "").partition("-")
+        no = str(no or "").strip()
+        if not (store.isdigit() and no.isdigit()):
+            continue             # 番号が英字混じり(R-5000等)の商品はこの命名の対象外
+        by_sno[str(int(store)) + no].append((pk, img))
 
-    assign, skipped_multi, skipped_has, unmatched = [], [], 0, 0
+    assign, skipped_multi, skipped_has, unmatched = [], 0, 0, 0
     for digits, fn in sorted(best.items()):
-        prods = by_digits.get(digits)
+        prods = by_sno.get(digits)
         if not prods:
             unmatched += 1
             continue
-        if len(prods) > 1:
-            skipped_multi.append((digits, len(prods)))   # 店舗またぎの重複 → 触らない
+        if strict and len(prods) > 1:
+            skipped_multi += 1
             continue
-        pk, img = prods[0]
-        if img:
-            skipped_has += 1                             # 既に写真あり → 上書きしない
-            continue
-        assign.append((fn, pk))
+        for pk, img in prods:
+            if img:
+                skipped_has += 1     # 既に写真あり → 上書きしない
+            else:
+                assign.append((fn, pk))
 
     print("=" * 64)
-    print(f"  画像フォルダ: キー名形式 {sum(len(v) for v in groups.values()):,}枚"
-          f"(キー{len(groups):,}種) / その他の命名 {others:,}枚(対象外)")
-    print(f"  紐付けできる商品        : {len(assign):,}件(キーが1商品に確定するもののみ)")
+    print(f"  画像フォルダ: 数字名形式 {sum(len(v) for v in groups.values()):,}枚"
+          f"(番号{len(groups):,}種) / その他の命名 {others:,}枚(対象外)")
+    print(f"  紐付けする商品          : {len(assign):,}件"
+          + ("(--strict: 1商品に確定する番号のみ)" if strict else "(同じ店舗+番号の商品は全員に同じ代表写真)"))
     print(f"  既に写真ありでスキップ  : {skipped_has:,}件")
-    print(f"  複数商品に該当でスキップ: {len(skipped_multi):,}キー ★別商品の写真が混在し得るため自動では付けない")
-    print(f"  該当商品なしのファイル  : {unmatched:,}キー")
-    if skipped_multi[:20]:
-        print("  (複数該当キーの例: " + ", ".join(f"{d}({n}商品)" for d, n in skipped_multi[:20]) + ")")
+    if strict:
+        print(f"  複数商品に該当でスキップ: {skipped_multi:,}番号")
+    print(f"  該当商品なしのファイル  : {unmatched:,}番号(削除済み・未取込の商品の写真。無害)")
     print("=" * 64)
 
     if not apply_mode:
         print("★ドライランです。まだ何も書いていません。")
-        print("  内容が妥当なら --apply を付けて実行してください:")
-        print("    python3 scripts/backfill_images_bykey.py --apply")
+        print("  内容が妥当なら --apply を付けて実行してください。")
         con.close()
         return
 
@@ -127,7 +130,6 @@ def main():
     con.close()
     print(f"反映しました: {len(assign):,}件")
     print("トキワを開き直して(またはF5)、商品・在庫や購入履歴で写真を確認してください。")
-    print("複数該当でスキップした商品は、商品詳細の「写真を撮る/選ぶ」から手で付けられます。")
 
 
 if __name__ == "__main__":
