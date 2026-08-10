@@ -26,16 +26,19 @@
     --shadow: 0 4px 14px rgba(255, 143, 171, .18);
   }
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { height: 100%; }
+  html { height: 100%; }
   body {
     font-family: "Hiragino Maru Gothic ProN", "BIZ UDGothic", "Yu Gothic", "Meiryo", system-ui, sans-serif;
     background: var(--bg);
     color: var(--ink);
     display: flex;
     flex-direction: column;
+    /* height:100% で固定すると、はみ出した分の下に余白が付かず
+       最下部が下メニューに隠れるため min-height にする */
+    min-height: 100%;
     max-width: 480px;
     margin: 0 auto;
-    padding-bottom: calc(70px + env(safe-area-inset-bottom));
+    padding-bottom: calc(84px + env(safe-area-inset-bottom));
     /* 日本語を文節単位で折り返し、単語の途中で改行されないようにする */
     word-break: auto-phrase;
     line-break: strict;
@@ -178,7 +181,7 @@
   .csv-btn {
     display: block;
     width: 100%;
-    margin-top: 16px;
+    margin: 0 0 14px;
     border: none;
     border-radius: var(--radius);
     background: var(--pink);
@@ -213,6 +216,8 @@
   }
   .setting-card input:focus { outline: none; border-color: var(--pink); }
   .about { font-size: .75rem; color: var(--ink-light); line-height: 1.7; }
+  .version { text-align: center; font-size: .72rem; color: var(--ink-light); margin-top: 14px; letter-spacing: .02em; }
+  .version b { font-weight: bold; color: var(--pink-ink, var(--pink)); }
   .guide-link {
     display: flex; align-items: center; gap: 12px;
     text-decoration: none; color: var(--ink);
@@ -376,6 +381,7 @@
 
   <!-- ============ history ============ -->
   <section id="page-history" class="page">
+    <button class="csv-btn" id="csvBtn">📄 CSVでダウンロード</button>
     <div class="month-nav">
       <button id="prevMonth">‹</button>
       <div class="month-label" id="monthLabel"></div>
@@ -389,7 +395,6 @@
     </div>
 
     <div class="history-list" id="historyList"></div>
-    <button class="csv-btn" id="csvBtn">📄 CSVでダウンロード</button>
   </section>
 
   <!-- ============ settings ============ -->
@@ -412,6 +417,7 @@
       📲 ブラウザのメニューから「ホーム画面に追加」すると、アプリのように使用できます。<br>
       ⚠️ ブラウザのデータを削除すると記録も消えるため、月末に CSV を保存しておくことをおすすめします。
     </div>
+    <div class="version">バージョン <b id="appVersion">1.5.1</b>（2026.08.10 更新）</div>
   </section>
 </main>
 
