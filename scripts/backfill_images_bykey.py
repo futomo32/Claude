@@ -22,6 +22,11 @@
 使い方(店のPC):
   python3 scripts/backfill_images_bykey.py           # まず結果を見る(書き込まない)
   python3 scripts/backfill_images_bykey.py --apply   # 内容に納得したら反映
+  python3 scripts/backfill_images_bykey.py --undo    # ★この方式で付けた写真を全部外す
+
+★2026-08-10 反映後に誤紐付けが発覚(時計に別商品のペンダント写真が付いた・
+  リングには付かない)。ファイル名の数字は商品キーではない可能性が高い。
+  --undo で取り消し → diag_image_naming.py で命名規則を特定 → 再設計の順で進める。
 
 出力は件数とキーの数字だけ。商品名・顧客名は出さない。
 """
@@ -39,10 +44,28 @@ IMG_DIR = os.path.join(BASE, "data", "real", "images")
 FNAME = re.compile(r"^(\d+)(?:_(\d+))?\.(jpe?g|png)$", re.IGNORECASE)
 
 
+def undo(con):
+    """このスクリプトが付けた写真を全部外す。
+    「数字だけ(＋_連番)のファイル名」を image_file に書くのはこのスクリプトだけなので、
+    その形の紐付けを空に戻せば反映前と同じ状態になる
+    (strpicfilename由来のK01型や、画面から登録した写真は名前の形が違うため触らない)。"""
+    hits = [(pk,) for pk, img in con.execute(
+        "SELECT product_key, image_file FROM products WHERE COALESCE(image_file,'')<>''")
+        if FNAME.match(img or "")]
+    con.executemany("UPDATE products SET image_file=NULL WHERE product_key=?", hits)
+    con.commit()
+    print(f"取り消しました: {len(hits):,}件(キー名形式の写真の紐付けを外しました)")
+
+
 def main():
     apply_mode = "--apply" in sys.argv
     if not os.path.exists(DB):
         sys.exit(f"[エラー] DBがありません: {DB}")
+    if "--undo" in sys.argv:
+        con = sqlite3.connect(DB)
+        undo(con)
+        con.close()
+        return
     if not os.path.isdir(IMG_DIR):
         sys.exit(f"[エラー] 画像フォルダがありません: {IMG_DIR}")
 
