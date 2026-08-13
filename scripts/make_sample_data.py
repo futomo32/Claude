@@ -287,7 +287,9 @@ def main():
                         random.choice(STAFF)[1])
 
     # ── 本日(2026-07-11)の営業サンプル(ホーム/日報のデモが空にならないように) ──
-    TODAY = "2026-07-11"
+    # 実行日を「今日」とする(2026-08-10 変更。固定日付だと本日の日報・ホームタイル・
+    # お声がけ・日またぎ返品など「今日」を使う機能がテストできないため)
+    TODAY = datetime.date.today().isoformat()
 
     def record_today(cid, staff, pay, item, amount):
         slip[0] += 1
@@ -321,6 +323,76 @@ def main():
         cur.execute("UPDATE receivables SET balance=balance-?, last_paid_at=? WHERE id=?", (pay_amt, TODAY, rc[0]))
         cur.execute("""INSERT INTO receivable_entries(customer_id,entry_type,entry_date,product_name,amount,paid)
                        VALUES (?,?,?,?,?,?)""", ("3", "入金", TODAY, "売掛入金", None, pay_amt))
+
+    # ── 最終テスト用シナリオ(2026-08-10 追加。v0.34系の新機能・修正の検証用) ──
+    # ペルソナ9001〜9008番(ランダム顧客の番号帯と衝突しない)。名前が「何のテスト用か」を表す。全員 is_test=1。
+    today_d = datetime.date.today()
+    yesterday = (today_d - datetime.timedelta(days=1)).isoformat()
+
+    def mday(offset):
+        """今月内で今日からoffset日後の日付(28日を超えないよう丸める)"""
+        day = min(28, today_d.day + offset)
+        return f"{today_d.year:04d}-{today_d.month:02d}-{day:02d}"
+
+    # §20 お声がけ: 誕生日(今月・今日以降)/結婚記念日/ポイント失効間近/修理納期
+    add_customer(9001, "誕生日 未来子", "ﾀﾝｼﾞｮｳﾋﾞ ﾐｷｺ", "女", f"1970-{mday(5)[5:]}",
+                 staff=S[0], is_test=1, note="お声がけ確認(今月の誕生日)")
+    add_customer(9002, "記念日 夫婦子", "ｷﾈﾝﾋﾞ ﾌｳﾌｺ", "女", d(1965, 1, 10), f"1990-{mday(2)[5:]}",
+                 staff=S[1], is_test=1, note="お声がけ確認(今月の結婚記念日)")
+    add_customer(9003, "失効 間近子", "ｼｯｺｳ ﾏｼﾞｶｺ", "女", d(1972, 2, 2),
+                 staff=S[2], is_test=1, note="お声がけ確認(ポイント失効間近)")
+    # 失効日=5日後になるよう最終購入日を逆算(失効=最終購入+5年。表示12件の上位に入れる)
+    expiry_target = today_d + datetime.timedelta(days=5)
+    try:
+        old_buy = expiry_target.replace(year=expiry_target.year - 5).isoformat()
+    except ValueError:  # 2/29 対策
+        old_buy = expiry_target.replace(year=expiry_target.year - 5, day=28).isoformat()
+    cur.execute("""INSERT INTO sales_slips(slip_id,customer_id,staff_name,store_code,sold_at,pay_method)
+                   VALUES (9101,'9003',?, '01', ?, '現金')""", (S[2][1], old_buy))
+    cur.execute("INSERT INTO sale_lines(slip_id,free_name,amount) VALUES (9101,'昔の指輪',80000)")
+    cur.execute("INSERT OR REPLACE INTO point_balances(customer_id,balance,updated_at) VALUES ('9003',1200,?)", (old_buy,))
+    add_customer(9004, "納期 遅男", "ﾉｳｷ ｵｸﾚｵ", "男", d(1960, 3, 3),
+                 staff=S[0], is_test=1, note="お声がけ確認(修理納期・遅れ)")
+    add_repair_seed(9004, "ネックレス糸替え", "糸のゆるみ", 2000, yesterday,
+                    (today_d - datetime.timedelta(days=2)).isoformat(), "修理中", S[0][1], "納期超過の表示確認")
+    add_repair_seed(9004, "指輪サイズ直し", "9号→11号", 3000, yesterday,
+                    (today_d + datetime.timedelta(days=3)).isoformat(), "預かり中", S[1][1])
+    # §7/§20 DM不可: 死去(ＳＳＳ住所)と「送らない」— ラベル・B2・お声がけに出ないこと
+    add_customer(9005, "死去 出ない子", "ｼｷｮ ﾃﾞﾅｲｺ", "女", f"1940-{mday(3)[5:]}",
+                 staff=S[1], is_test=1, note="DM不可確認(住所ＳＳＳ・誕生日今月でもお声がけに出ない)")
+    cur.execute("UPDATE customers SET address='ＳＳＳ'||address WHERE customer_id='9005'")
+    add_customer(9006, "送らない 子", "ｵｸﾗﾅｲ ｺ", "女", f"1955-{mday(4)[5:]}",
+                 staff=S[2], is_test=1, note="DM不可確認(区分=送らない)")
+    cur.execute("UPDATE customers SET dm_ok='送らない' WHERE customer_id='9006'")
+    # §7-9 B2の必須チェック: 電話なし
+    add_customer(9007, "電話 なし子", "ﾃﾞﾝﾜ ﾅｼｺ", "女", d(1985, 5, 5),
+                 staff=S[0], is_test=1, note="B2確認(電話未登録→除外案内)")
+    cur.execute("UPDATE customers SET tel=NULL WHERE customer_id='9007'")
+    # §11 日またぎ返品 + §21 保証書(10万以上=A4) + 同番号別商品(v0.34.9の確認):
+    #   昨日、同じ商品番号を持つ2商品のうちAをリング15万円で販売。今日取り消すと
+    #   「昨日の日報はそのまま・今日にマイナス行」を確認できる。Bは在庫のまま。
+    add_customer(9008, "返品 予定子", "ﾍﾝﾋﾟﾝ ﾖﾃｲｺ", "女", d(1978, 6, 6),
+                 staff=S[1], is_test=1, note="日またぎ返品確認(昨日の売上を今日取消す)")
+    cur.execute("""INSERT INTO products(product_key,product_no,name,category,list_price,cost_price,state,center_stone)
+                   VALUES ('01-90001','90001','ダイヤリングA(同番号テスト)','宝石',150000,60000,'売上','ダイヤ')""")
+    cur.execute("""INSERT INTO products(product_key,product_no,name,category,list_price,cost_price,state,center_stone)
+                   VALUES ('01-90002','90001','ルビーリングB(同番号テスト)','宝石',80000,30000,'在庫','ルビー')""")
+    cur.execute("""INSERT INTO sales_slips(slip_id,customer_id,staff_name,store_code,sold_at,pay_method)
+                   VALUES (9102,'9008',?, '01', ?, '現金')""", (S[1][1], yesterday))
+    cur.execute("INSERT INTO sale_lines(slip_id,product_key,list_price,amount) VALUES (9102,'01-90001',150000,150000)")
+    cur.execute("INSERT INTO sale_payments(slip_id,method,amount) VALUES (9102,'現金',150000)")
+    stats["personas"] += 8
+
+    # ── お声がけのノイズ整理 ──
+    # 乱数生成の修理は納期が固定日付のため、実行日によっては全部「納期遅れ」になり、
+    # お声がけ(表示12件)をテスト用ペルソナより先に埋め尽くしてしまう。
+    # 修理画面の確認用に「修理 実子」(8番)の進行中の修理は納期を未来に寄せて残し、
+    # それ以外の古い納期は引渡済みにする。納期遅れの検証は9004(納期 遅男)の1件に集約。
+    cur.execute("UPDATE repairs SET promised_at=? WHERE customer_id='8' AND status<>'引渡済み'",
+                ((today_d + datetime.timedelta(days=7)).isoformat(),))
+    cur.execute("""UPDATE repairs SET status='引渡済み', completed_at=promised_at
+                   WHERE customer_id NOT IN ('8','9004') AND promised_at < ? AND status<>'引渡済み'""",
+                (TODAY,))
 
     cur.execute("INSERT INTO schema_migrations(version,note) VALUES (1,'サンプルデータ生成')")
     con.commit()
