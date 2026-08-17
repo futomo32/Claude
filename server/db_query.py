@@ -2455,11 +2455,42 @@ def check_customer_duplicate(con, tel=None, name=None, kana=None, exclude_id=Non
     return {"hits": hits[:10]}
 
 
+RELATION_FALLBACK = "家族"
+
+
+def reverse_relation(relation, my_gender=None):
+    """自分(A)から見た相手(B)の続柄 → 相手(B)から見た自分(A)の続柄を返す。
+
+    家族関係は双方向で1つの事実なので、A側に登録したらB側にも行を作る。その時
+    B側の続柄を機械的に決められる範囲だけ埋め、決められない分は「家族」にする。
+      夫 ⇄ 妻                    … 確実に決まる
+      長男・次男・長女・次女 → 父/母 … A の性別で決まる(性別が未入力なら決まらない)
+      父・母 → 何番目の子か       … データからは決めようがないので「家族」
+    決められない時に NULL ではなく「家族」を返すのは、NULLだと画面表示が「ー」になり
+    未入力なのか壊れているのか区別できないため(2026-08-13の不具合)。
+    ★画面側の reverseRelation()(tokiwa-ui.html)と対で持っている。片方だけ直さないこと。
+    """
+    r = str(relation or "").strip()
+    if r == "夫":
+        return "妻"
+    if r == "妻":
+        return "夫"
+    if r in ("長男", "次男", "長女", "次女", "子", "息子", "娘"):
+        g = str(my_gender or "").strip()
+        if g.startswith("男"):
+            return "父"
+        if g.startswith("女"):
+            return "母"
+    return RELATION_FALLBACK
+
+
 def add_family(con, p):
     """家族を追加する。
     A(自由入力): {customer_id, name, relation, gender, birthday}
-    B(登録済み顧客とリンク): {customer_id, linked_customer_id, relation} を渡すと、
+    B(登録済み顧客とリンク): {customer_id, linked_customer_id, relation, reverse_relation} を渡すと、
       相手顧客の氏名等をコピーして双方向に登録(相手側にも本人を家族として追加)。
+      reverse_relation(相手から見た本人の続柄)は画面で指定できる。省略時は
+      reverse_relation() で機械的に裏返す。
     """
     cid = str(p.get("customer_id") or "").strip()
     if not cid:
@@ -2474,29 +2505,34 @@ def add_family(con, p):
             raise ValueError("リンク先の顧客が見つかりません")
         if linked == cid:
             raise ValueError("自分自身は家族に登録できません")
-        # 既に同じリンクがあれば重複させない
+        me = con.execute("SELECT name,gender,birthday FROM customers WHERE customer_id=?", (cid,)).fetchone()
+        rel = p.get("relation") or None
+        # 相手側の続柄: 画面で選ばれていればそれを使い、無ければ機械的に裏返す
+        rrel = str(p.get("reverse_relation") or "").strip() or reverse_relation(rel, me[1] if me else None)
+        # 既に同じリンクがあれば重複させない(続柄は画面の指定で上書きする)
         dup = con.execute("SELECT id FROM customer_families WHERE customer_id=? AND linked_customer_id=?",
                           (cid, linked)).fetchone()
         if dup:
             new_id = dup[0]
+            cur.execute("UPDATE customer_families SET relation=? WHERE id=?", (rel, new_id))
         else:
             cur.execute("""INSERT INTO customer_families(customer_id,name,relation,gender,birthday,linked_customer_id)
                            VALUES (?,?,?,?,?,?)""",
-                        (cid, row[0], p.get("relation"), row[1], row[2], linked))
+                        (cid, row[0], rel, row[1], row[2], linked))
             new_id = cur.lastrowid
         # 双方向: 相手側にも本人を家族として登録する。
-        # ★続柄はNULLではなく「家族」を入れる(NULLだと相手側の表示が「ー」になり、
-        #   未入力なのか壊れているのか分からない。正しい続柄は相手側で編集してもらう)。
         # dupの場合もここを通す: 片側だけ削除された後の登録し直しで、欠けた側を修復するため。
-        me = con.execute("SELECT name,gender,birthday FROM customers WHERE customer_id=?", (cid,)).fetchone()
         rev = con.execute("SELECT id FROM customer_families WHERE customer_id=? AND linked_customer_id=?",
                           (linked, cid)).fetchone()
-        if me and not rev:
+        if rev:
+            reverse_id = rev[0]
+            cur.execute("UPDATE customer_families SET relation=? WHERE id=?", (rrel, reverse_id))
+        elif me:
             cur.execute("""INSERT INTO customer_families(customer_id,name,relation,gender,birthday,linked_customer_id)
-                           VALUES (?,?,?,?,?,?)""", (linked, me[0], "家族", me[1], me[2], cid))
+                           VALUES (?,?,?,?,?,?)""", (linked, me[0], rrel, me[1], me[2], cid))
             reverse_id = cur.lastrowid
         else:
-            reverse_id = rev[0] if rev else None
+            reverse_id = None
     else:
         # A: 自由入力
         if not p.get("name"):
@@ -2507,12 +2543,16 @@ def add_family(con, p):
         new_id = cur.lastrowid
         reverse_id = None
     con.commit()
-    # reverse_id: リンク登録で相手側にできた行のid(画面が相手側の表示を正しく更新するために返す)
-    return {"customer_id": cid, "ok": True, "id": new_id, "reverse_id": reverse_id}
+    # reverse_id / reverse_relation: 相手側の行のidと続柄(画面が相手側の表示を更新するために返す)
+    return {"customer_id": cid, "ok": True, "id": new_id,
+            "reverse_id": reverse_id, "reverse_relation": rrel if linked else None}
 
 
 def update_family(con, p):
-    """家族1件を修正する。リンク(B)行は続柄のみ変更(氏名等は相手顧客に追随)。自由入力(A)行は全項目。"""
+    """家族1件を修正する。リンク(B)行は続柄のみ変更(氏名等は相手顧客に追随)。自由入力(A)行は全項目。
+    リンク行は**相手側の対の行の続柄も一緒に直す**(2026-08-17)。片側だけ直せると
+    「Aでは妻なのにBでは家族のまま」というズレが残り、どちらが正しいか分からなくなるため。
+    reverse_relation の指定が無ければ reverse_relation() で機械的に裏返す。"""
     fid = p.get("id")
     if not fid:
         raise ValueError("対象の家族が指定されていません")
@@ -2520,8 +2560,19 @@ def update_family(con, p):
     if not row:
         raise ValueError("対象の家族が見つかりません")
     relation = p.get("relation") or None
+    reverse_id = None
+    rrel = None
     if row[1]:  # リンク(B)
         con.execute("UPDATE customer_families SET relation=? WHERE id=?", (relation, fid))
+        rev = con.execute("""SELECT id FROM customer_families
+                             WHERE customer_id=? AND linked_customer_id=?""", (row[1], row[0])).fetchone()
+        if rev:
+            rrel = str(p.get("reverse_relation") or "").strip()
+            if not rrel:
+                g = con.execute("SELECT gender FROM customers WHERE customer_id=?", (row[0],)).fetchone()
+                rrel = reverse_relation(relation, g[0] if g else None)
+            con.execute("UPDATE customer_families SET relation=? WHERE id=?", (rrel, rev[0]))
+            reverse_id = rev[0]
     else:       # 自由入力(A)
         name = (p.get("name") or "").strip()
         if not name:
@@ -2529,7 +2580,8 @@ def update_family(con, p):
         con.execute("UPDATE customer_families SET name=?, relation=?, gender=?, birthday=? WHERE id=?",
                     (name, relation, p.get("gender") or None, p.get("birthday") or None, fid))
     con.commit()
-    return {"id": fid, "customer_id": row[0], "linked": row[1]}
+    return {"id": fid, "customer_id": row[0], "linked": row[1],
+            "reverse_id": reverse_id, "reverse_relation": rrel}
 
 
 def delete_family(con, family_id):
