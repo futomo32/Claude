@@ -2279,15 +2279,22 @@ def find_duplicate_customers(con, limit=200):
                                      WHERE COALESCE(s.voided,0)=0 AND COALESCE(l.voided,0)=0
                                      GROUP BY s.customer_id) t ON t.cid = c.customer_id
                           WHERE COALESCE(c.is_test,0)=0""").fetchall()
-    by_tel, by_name = {}, {}
+    # 判定(2026-08-13 厳格化): 「電話だけ一致」は同居家族を、「氏名だけ一致」は同姓同名を
+    # 大量に拾い、一覧が使い物にならなかった(実テストで数百組)。重複と呼べるのは
+    #   nametel  … 氏名+電話番号の両方が一致(ダミー電話は _tel_key が除外)
+    #   namebirth… 氏名+生年月日の両方が一致(電話が未登録の古い顧客向けの控え)
+    by_tel, by_name = {}, {}   # 変数名は流用: by_tel=氏名+電話 / by_name=氏名+生年月日
     for r in rows:
+        nk = normjp(str(r["name"] or ""))
+        if not nk:
+            continue
         for t in (r["tel"], r["tel2"]):
-            d = _digits(t)
-            if len(d) >= 9:                     # 短すぎる番号は判定に使わない
-                by_tel.setdefault(d, []).append(r)
-        key = normjp(str(r["name"] or "")) + "|" + normjp(str(r["kana"] or ""))
-        if key.strip("|"):
-            by_name.setdefault(key, []).append(r)
+            tk = _tel_key(t)
+            if tk:
+                by_tel.setdefault(nk + "|" + tk, []).append(r)
+        bd = str(r["birthday"] or "").strip()
+        if bd:
+            by_name.setdefault(nk + "|" + bd, []).append(r)
 
     def pack(r):
         return {"customer_id": r["customer_id"], "name": r["name"], "kana": r["kana"],
@@ -2296,7 +2303,7 @@ def find_duplicate_customers(con, limit=200):
                 "last": r["last_purchase_at"]}
 
     groups, seen = [], set()
-    for kind, table in (("tel", by_tel), ("name", by_name)):
+    for kind, table in (("nametel", by_tel), ("namebirth", by_name)):
         for key, members in table.items():
             if len(members) < 2:
                 continue
@@ -2306,7 +2313,7 @@ def find_duplicate_customers(con, limit=200):
             seen.add(ids)
             groups.append({"kind": kind, "key": key,
                            "members": [pack(m) for m in members]})
-    groups.sort(key=lambda g: (0 if g["kind"] == "tel" else 1, -len(g["members"])))
+    groups.sort(key=lambda g: (0 if g["kind"] == "nametel" else 1, -len(g["members"])))
     return {"groups": groups[:limit], "total": len(groups)}
 
 
@@ -2414,33 +2421,37 @@ def merge_customers(con, keep_id, merge_id, operator=None):
             "moved": moved, "points_added": add, "point_balance": newbal}
 
 
+def _tel_key(t):
+    """電話番号を比較用に正規化する。9桁未満と「ダミー番号」は None(判定に使わない)。
+    実データには 1111111111 / 1111-11-1111 のような穴埋めの番号が大量にあり、
+    これを「同じ電話」と数えると無関係な顧客同士が重複扱いになる(2026-08-13 テストで発覚)。
+    数字の種類が2種類以下の番号はダミーとみなす。"""
+    d = _digits(t)
+    if len(d) < 9 or len(set(d)) <= 2:
+        return None
+    return d
+
+
 def check_customer_duplicate(con, tel=None, name=None, kana=None, exclude_id=None):
-    """登録前の重複チェック。同じ電話番号・同じ氏名の既存顧客を返す(警告用)。
-    ★登録は止めない(同じ電話番号のご家族など正当なケースがあるため)。"""
+    """登録前の重複チェック(2026-08-13 判定を厳格化)。
+    「電話だけ一致」は同居のご家族、「氏名だけ一致」は同姓同名の別人を大量に拾って
+    警告が意味を失うため、**氏名と電話番号の両方が一致した時だけ**警告する。
+    ★登録は止めない(それでも別人のケースはあり得るため)。"""
     con.row_factory = sqlite3.Row
-    hits, seen = [], set()
-    d = _digits(tel)
+    hits = []
     ex = str(exclude_id or "")
-    if len(d) >= 9:
+    nk = normjp(str(name or ""))
+    tk = _tel_key(tel)
+    if nk and tk:
         for r in con.execute("""SELECT customer_id, name, kana, tel, tel2, address
                                 FROM customers WHERE COALESCE(is_test,0)=0"""):
             if r["customer_id"] == ex:
                 continue
-            if d in (_digits(r["tel"]), _digits(r["tel2"])):
+            if normjp(str(r["name"] or "")) == nk and tk in (_tel_key(r["tel"]), _tel_key(r["tel2"])):
                 hits.append({"customer_id": r["customer_id"], "name": r["name"], "kana": r["kana"],
                              "tel": r["tel"], "address": r["address"],
-                             "last": _last_purchase(con, r["customer_id"]), "why": "電話番号が同じ"})
-                seen.add(r["customer_id"])
-    nk = normjp(str(name or ""))
-    if nk:
-        for r in con.execute("""SELECT customer_id, name, kana, tel, address
-                                FROM customers WHERE COALESCE(is_test,0)=0"""):
-            if r["customer_id"] == ex or r["customer_id"] in seen:
-                continue
-            if normjp(str(r["name"] or "")) == nk:
-                hits.append({"customer_id": r["customer_id"], "name": r["name"], "kana": r["kana"],
-                             "tel": r["tel"], "address": r["address"],
-                             "last": _last_purchase(con, r["customer_id"]), "why": "氏名が同じ"})
+                             "last": _last_purchase(con, r["customer_id"]),
+                             "why": "氏名と電話番号が同じ"})
     return {"hits": hits[:10]}
 
 
@@ -2473,13 +2484,19 @@ def add_family(con, p):
                            VALUES (?,?,?,?,?,?)""",
                         (cid, row[0], p.get("relation"), row[1], row[2], linked))
             new_id = cur.lastrowid
-            # 双方向: 相手側にも本人を家族として登録(続柄は空。あとで相手側で編集可)
-            me = con.execute("SELECT name,gender,birthday FROM customers WHERE customer_id=?", (cid,)).fetchone()
-            rev = con.execute("SELECT 1 FROM customer_families WHERE customer_id=? AND linked_customer_id=?",
-                              (linked, cid)).fetchone()
-            if me and not rev:
-                cur.execute("""INSERT INTO customer_families(customer_id,name,relation,gender,birthday,linked_customer_id)
-                               VALUES (?,?,?,?,?,?)""", (linked, me[0], None, me[1], me[2], cid))
+        # 双方向: 相手側にも本人を家族として登録する。
+        # ★続柄はNULLではなく「家族」を入れる(NULLだと相手側の表示が「ー」になり、
+        #   未入力なのか壊れているのか分からない。正しい続柄は相手側で編集してもらう)。
+        # dupの場合もここを通す: 片側だけ削除された後の登録し直しで、欠けた側を修復するため。
+        me = con.execute("SELECT name,gender,birthday FROM customers WHERE customer_id=?", (cid,)).fetchone()
+        rev = con.execute("SELECT id FROM customer_families WHERE customer_id=? AND linked_customer_id=?",
+                          (linked, cid)).fetchone()
+        if me and not rev:
+            cur.execute("""INSERT INTO customer_families(customer_id,name,relation,gender,birthday,linked_customer_id)
+                           VALUES (?,?,?,?,?,?)""", (linked, me[0], "家族", me[1], me[2], cid))
+            reverse_id = cur.lastrowid
+        else:
+            reverse_id = rev[0] if rev else None
     else:
         # A: 自由入力
         if not p.get("name"):
@@ -2488,8 +2505,10 @@ def add_family(con, p):
                        VALUES (?,?,?,?,?,?)""",
                     (cid, p.get("name"), p.get("relation"), p.get("gender"), p.get("birthday"), None))
         new_id = cur.lastrowid
+        reverse_id = None
     con.commit()
-    return {"customer_id": cid, "ok": True, "id": new_id}
+    # reverse_id: リンク登録で相手側にできた行のid(画面が相手側の表示を正しく更新するために返す)
+    return {"customer_id": cid, "ok": True, "id": new_id, "reverse_id": reverse_id}
 
 
 def update_family(con, p):
@@ -2514,15 +2533,28 @@ def update_family(con, p):
 
 
 def delete_family(con, family_id):
-    """家族1件を削除する(この顧客側の1行のみ。相手側のリンク行は残す)。"""
+    """家族1件を削除する。リンク行(B方式)の場合は**相手側の対の行も一緒に削除**する。
+    (2026-08-13 変更。片側だけ消すと「Aから消したのにB側にAが残る」という
+     非対称な状態になり、テストで混乱を招いたため。家族関係は双方向で1つの事実)"""
     if not family_id:
         raise ValueError("対象の家族が指定されていません")
-    row = con.execute("SELECT customer_id FROM customer_families WHERE id=?", (family_id,)).fetchone()
+    con.row_factory = sqlite3.Row
+    row = con.execute("SELECT customer_id, linked_customer_id FROM customer_families WHERE id=?",
+                      (family_id,)).fetchone()
     if not row:
         raise ValueError("対象の家族が見つかりません")
     con.execute("DELETE FROM customer_families WHERE id=?", (family_id,))
+    reverse_deleted = None
+    if row["linked_customer_id"]:
+        rev = con.execute("""SELECT id FROM customer_families
+                             WHERE customer_id=? AND linked_customer_id=?""",
+                          (row["linked_customer_id"], row["customer_id"])).fetchone()
+        if rev:
+            con.execute("DELETE FROM customer_families WHERE id=?", (rev["id"],))
+            reverse_deleted = rev["id"]
     con.commit()
-    return {"deleted": family_id, "customer_id": row[0]}
+    return {"deleted": family_id, "customer_id": row["customer_id"],
+            "linked_customer_id": row["linked_customer_id"], "reverse_deleted": reverse_deleted}
 
 
 PRODUCT_FIELDS = ("product_no", "name", "category", "brand", "metal", "supplier", "cost_price",
