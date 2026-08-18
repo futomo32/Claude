@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#e7e3ff">
+<meta name="description" content="質問に答えるだけで、AIにそのまま貼れる高品質なプロンプトをつくるアプリ">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="../icon.png" type="image/png">
+<link rel="apple-touch-icon" href="../icon.png">
+<title>プロンプトメーカー</title>
+<style>
+  :root {
+    --bg: #f7f6ff;
+    --card: #ffffff;
+    --violet: #7c6cf5;
+    --violet-soft: #e7e3ff;
+    --mint: #4fc3a1;
+    --mint-soft: #d9f5ec;
+    --sun: #ffb347;
+    --sun-soft: #fff0d9;
+    --ink: #3d3a52;
+    --ink-light: #8b87a3;
+    --line: #ece9f8;
+    --radius: 18px;
+    --shadow: 0 4px 16px rgba(124, 108, 245, .13);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { height: 100%; }
+  body {
+    font-family: "Hiragino Maru Gothic ProN", "BIZ UDGothic", "Yu Gothic", "Meiryo", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100%;
+    max-width: 560px;
+    margin: 0 auto;
+    line-height: 1.7;
+    word-break: auto-phrase;
+    line-break: strict;
+    padding-bottom: calc(28px + env(safe-area-inset-bottom));
+  }
+
+  header {
+    background: linear-gradient(135deg, var(--violet-soft), #f3e9ff);
+    padding: calc(14px + env(safe-area-inset-top)) 20px 14px;
+    border-radius: 0 0 var(--radius) var(--radius);
+    text-align: center;
+  }
+  header h1 { font-size: 1.25rem; font-weight: 800; letter-spacing: .04em; }
+  header p { font-size: .78rem; color: var(--ink-light); margin-top: 2px; }
+
+  main { padding: 16px 14px 0; }
+  .page { display: none; }
+  .page.on { display: block; }
+
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+  .lead { font-size: .88rem; color: var(--ink-light); }
+  .lead b { color: var(--ink); }
+
+  h2.sec { font-size: .95rem; font-weight: 800; margin: 18px 0 8px; padding-left: 8px; border-left: 4px solid var(--violet); }
+
+  /* ---------- カテゴリ ---------- */
+  .cats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .cat {
+    background: var(--card); border: 2px solid transparent; border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 14px 12px; text-align: left; cursor: pointer;
+    font-family: inherit; color: inherit; transition: transform .1s, border-color .1s;
+  }
+  .cat:active { transform: scale(.97); border-color: var(--violet); }
+  .cat .ic { font-size: 1.6rem; display: block; line-height: 1.2; }
+  .cat .ti { display: block; font-weight: 800; font-size: .92rem; margin-top: 4px; line-height: 1.35; }
+  .cat .de { display: block; font-size: .72rem; color: var(--ink-light); line-height: 1.5; margin-top: 3px; }
+
+  /* ---------- 質問 ---------- */
+  .bar { height: 7px; background: var(--line); border-radius: 99px; overflow: hidden; margin-bottom: 4px; }
+  .bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--violet), #a99bff); transition: width .25s; }
+  .step { font-size: .72rem; color: var(--ink-light); text-align: right; margin-bottom: 10px; }
+  .q { font-size: 1.05rem; font-weight: 800; line-height: 1.5; }
+  .qnote { font-size: .78rem; color: var(--ink-light); margin-top: 4px; }
+
+  .opts { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .opt {
+    display: block; width: 100%; text-align: left; font-family: inherit; font-size: .93rem; color: inherit;
+    background: #fbfaff; border: 2px solid var(--line); border-radius: 14px; padding: 12px 14px; cursor: pointer;
+  }
+  .opt:active { transform: scale(.99); }
+  .opt.on { border-color: var(--violet); background: var(--violet-soft); font-weight: 700; }
+  .opt .oh { display: block; font-size: .74rem; color: var(--ink-light); font-weight: 400; }
+
+  textarea, input[type=text] {
+    width: 100%; font-family: inherit; font-size: 1rem; color: inherit; line-height: 1.6;
+    background: #fbfaff; border: 2px solid var(--line); border-radius: 14px; padding: 12px; margin-top: 14px;
+  }
+  textarea { min-height: 108px; resize: vertical; }
+  textarea:focus, input[type=text]:focus { outline: none; border-color: var(--violet); }
+
+  .navrow { display: flex; gap: 10px; margin-top: 16px; align-items: center; }
+  button.btn {
+    flex: 1; font-family: inherit; font-size: 1rem; font-weight: 800; color: #fff; cursor: pointer;
+    background: var(--violet); border: none; border-radius: 14px; padding: 14px; box-shadow: var(--shadow);
+  }
+  button.btn:disabled { background: #cfcae8; box-shadow: none; }
+  button.btn.sub { background: #fff; color: var(--ink-light); border: 2px solid var(--line); box-shadow: none; flex: 0 0 auto; padding: 14px 18px; }
+  button.btn.ghost { background: var(--mint); }
+  .skip { text-align: center; margin-top: 10px; }
+  .skip button { background: none; border: none; font-family: inherit; font-size: .82rem; color: var(--ink-light); text-decoration: underline; cursor: pointer; }
+
+  /* ---------- 結果 ---------- */
+  .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .tab {
+    flex: 1; font-family: inherit; font-size: .84rem; font-weight: 700; color: var(--ink-light); cursor: pointer;
+    background: #fff; border: 2px solid var(--line); border-radius: 12px; padding: 10px 6px; line-height: 1.35;
+  }
+  .tab.on { border-color: var(--violet); background: var(--violet-soft); color: var(--ink); }
+
+  pre.prompt {
+    background: #2f2b45; color: #f2f0ff; border-radius: 14px; padding: 14px;
+    font-family: "SFMono-Regular", Consolas, "Courier New", monospace; font-size: .82rem; line-height: 1.65;
+    white-space: pre-wrap; word-break: break-word; max-height: 46vh; overflow-y: auto;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 4px; }
+  .chip {
+    font-family: inherit; font-size: .78rem; color: var(--ink-light); cursor: pointer;
+    background: #fbfaff; border: 2px solid var(--line); border-radius: 99px; padding: 6px 12px;
+  }
+  .chip.on { border-color: var(--mint); background: var(--mint-soft); color: var(--ink); font-weight: 700; }
+
+  .tool { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px dashed var(--line); }
+  .tool:last-child { border-bottom: none; }
+  .tool .no { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 99px; background: var(--violet-soft); color: var(--violet); font-size: .74rem; font-weight: 800; text-align: center; line-height: 22px; }
+  .tool .nm { font-weight: 800; font-size: .92rem; }
+  .tool .wh { font-size: .78rem; color: var(--ink-light); line-height: 1.55; }
+  ul.tips { list-style: none; }
+  ul.tips li { font-size: .82rem; color: var(--ink-light); line-height: 1.6; padding-left: 18px; position: relative; margin-bottom: 6px; }
+  ul.tips li::before { content: "✔"; position: absolute; left: 0; color: var(--mint); }
+
+  .hist { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--line); }
+  .hist:last-child { border-bottom: none; }
+  .hist button.open { flex: 1; text-align: left; background: none; border: none; font-family: inherit; color: inherit; cursor: pointer; }
+  .hist .ht { font-size: .88rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hist .hd { font-size: .72rem; color: var(--ink-light); }
+  .hist .del { background: none; border: none; color: var(--ink-light); font-size: 1rem; cursor: pointer; padding: 4px 6px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px);
+    background: var(--ink); color: #fff; font-size: .86rem; font-weight: 700; padding: 11px 20px; border-radius: 99px;
+    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 50;
+  }
+  .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  footer { text-align: center; font-size: .72rem; color: var(--ink-light); padding: 18px 14px 0; }
+  footer a { color: var(--violet); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>✨ プロンプトメーカー</h1>
+  <p>質問に答えるだけで、AIにそのまま貼れる指示文をつくります</p>
+</header>
+
+<main>
+  <!-- ========== ホーム ========== -->
+  <section id="pHome" class="page on">
+    <div class="card">
+      <p class="lead">
+        <b>やりたいことを選ぶ → いくつかの質問に答える → できあがったプロンプトをコピー</b><br>
+        あとは ChatGPT や Claude に貼るだけ。どのAIを使うといいかも一緒に出ます。
+      </p>
+    </div>
+
+    <h2 class="sec">何をしたいですか？</h2>
+    <div id="cats" class="cats"></div>
+
+    <div id="histWrap" style="display:none">
+      <h2 class="sec">前につくったもの</h2>
+      <div class="card" id="hist"></div>
+    </div>
+
+    <footer>
+      できたプロンプトは端末の中だけに保存されます（サーバーには送りません）<br>
+      <a href="../">⏰ ぱっと勤怠</a> ／ <a href="../english/">📚 中学5教科マスター</a>
+    </footer>
+  </section>
+
+  <!-- ========== 質問 ========== -->
+  <section id="pAsk" class="page">
+    <div class="bar"><i id="barIn" style="width:0%"></i></div>
+    <div class="step" id="stepTxt"></div>
+    <div class="card">
+      <div class="q" id="qText"></div>
+      <div class="qnote" id="qNote"></div>
+      <div id="qBody"></div>
+      <div class="navrow">
+        <button class="btn sub" id="btnBack">← もどる</button>
+        <button class="btn" id="btnNext">つぎへ</button>
+      </div>
+      <div class="skip" id="skipWrap" style="display:none"><button id="btnSkip">この質問はとばす</button></div>
+    </div>
+  </section>
+
+  <!-- ========== 結果 ========== -->
+  <section id="pResult" class="page">
+    <div class="tabs">
+      <button class="tab on" id="tabDirect">📋 そのまま使う<br><span style="font-weight:400;font-size:.72rem">貼れば完成</span></button>
+      <button class="tab" id="tabInterview">💬 AIに深掘りしてもらう<br><span style="font-weight:400;font-size:.72rem">質問されて仕上げる</span></button>
+    </div>
+
+    <div class="card">
+      <div id="modeNote" class="qnote" style="margin-bottom:10px"></div>
+      <pre class="prompt" id="promptBox"></pre>
+      <div class="navrow">
+        <button class="btn" id="btnCopy">📋 コピーする</button>
+      </div>
+    </div>
+
+    <h2 class="sec">仕上げの味つけ（押すと文が足されます）</h2>
+    <div class="card"><div class="chips" id="chips"></div></div>
+
+    <h2 class="sec">どのAIに貼るのがおすすめ？</h2>
+    <div class="card" id="tools"></div>
+
+    <h2 class="sec">うまくいくコツ</h2>
+    <div class="card"><ul class="tips" id="tips"></ul></div>
+
+    <div class="navrow" style="padding:0 0 18px">
+      <button class="btn sub" id="btnEdit">← 答えを直す</button>
+      <button class="btn ghost" id="btnHome">最初から</button>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

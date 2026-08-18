@@ -1,6 +1,7 @@
 /* ヤナセぱっと勤怠 service worker — オフラインでも動くようにキャッシュします */
-const CACHE = "patto-kintai-v6";
-const ASSETS = ["./", "./index.html", "./guide.html", "./manifest.json", "./logo.png", "./icon.png", "./icon-maskable.png"];
+const CACHE = "patto-kintai-v7";
+const ASSETS = ["./", "./index.html", "./guide.html", "./manifest.json", "./logo.png", "./icon.png", "./icon-maskable.png",
+  "./prompt/", "./prompt/index.html", "./prompt/app.js", "./prompt/data.js", "./prompt/manifest.json"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));

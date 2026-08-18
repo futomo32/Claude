@@ -1,0 +1,14 @@
+{
+  "name": "プロンプトメーカー",
+  "short_name": "プロンプト",
+  "description": "質問に答えるだけで、AIにそのまま貼れるプロンプトをつくるアプリ",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f6ff",
+  "theme_color": "#e7e3ff",
+  "icons": [
+    { "src": "../icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "../icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
