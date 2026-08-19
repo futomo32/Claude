@@ -130,8 +130,8 @@
       if (!h) return;
       const c = CATEGORIES.find((x) => x.id === h.catId);
       if (!c) return;
-      cat = c; qs = c.questions.slice(); answers = h.answers || {}; extras = h.extras || [];
-      idx = qs.length - 1; mode = "direct";
+      cat = c; answers = h.answers || {}; extras = h.extras || [];
+      refresh(); idx = qs.length - 1; mode = "direct";
       renderResult(); show("pResult");
     }));
     $("hist").querySelectorAll(".del").forEach((b) => b.addEventListener("click", () => {
@@ -143,16 +143,33 @@
   }
 
   /* ---------------- 質問フロー ---------------- */
+  /* when を持つ質問は、条件を満たすときだけ表示する（例：チラシを選んだときだけ聞く） */
+  function refresh() {
+    qs = cat.questions.filter(function (q) { return !q.when || q.when(answers); });
+  }
+  /* 質問を1つ進む／戻る。表示対象が変わっても迷子にならないよう、
+     いまの質問のIDを基準に位置を数え直す */
+  function move(dir) {
+    const cur = qs[idx];
+    refresh();
+    let at = qs.findIndex(function (q) { return q.id === cur.id; });
+    if (at < 0) at = Math.min(idx, qs.length - 1); /* いまの質問が隠れた場合 */
+    return at + dir;
+  }
+
   function start(catId) {
     cat = CATEGORIES.find((c) => c.id === catId);
     if (!cat) return;
-    qs = cat.questions.slice();
-    answers = {}; extras = []; idx = 0; mode = "direct";
+    answers = {};
+    refresh();
+    extras = []; idx = 0; mode = "direct";
     renderQuestion();
     show("pAsk");
   }
 
   function renderQuestion() {
+    refresh();
+    if (idx > qs.length - 1) idx = qs.length - 1;
     const q = qs[idx];
     $("barIn").style.width = Math.round((idx / qs.length) * 100) + "%";
     $("stepTxt").textContent = cat.icon + " " + cat.title + " ・ " + (idx + 1) + " / " + qs.length;
@@ -224,12 +241,15 @@
   function next() {
     const q = qs[idx];
     if (!q.optional && !answered(q)) { toast("この質問は答えが必要です"); return; }
-    if (idx < qs.length - 1) { idx++; renderQuestion(); }
-    else { finish(); }
+    const at = move(1);
+    if (at < qs.length) { idx = at; renderQuestion(); }
+    else { idx = qs.length - 1; finish(); }
   }
   function back() {
     if (idx === 0) { show("pHome"); renderHistory(); return; }
-    idx--; renderQuestion();
+    const at = move(-1);
+    idx = Math.max(0, at);
+    renderQuestion();
   }
   function finish() {
     pushHistory();
@@ -252,7 +272,7 @@
     return text;
   }
   function buildInterview() {
-    const known = cat.questions.map((q) => {
+    const known = qs.map((q) => {
       const v = displayAnswer(q);
       if (!v) return null;
       const label = q.q.replace(/（いくつでも）/g, "").replace(/[？?]\s*$/, "");
