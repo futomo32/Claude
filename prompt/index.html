@@ -154,11 +154,34 @@
   }
   .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+  /* JavaScriptが動かない環境・エラー時に、画面上で原因が分かるようにする */
+  .alert {
+    background: #fff4e5; border: 2px solid var(--sun); border-radius: var(--radius);
+    padding: 14px; margin-bottom: 14px; font-size: .86rem; line-height: 1.7;
+  }
+  .alert b { display: block; font-size: .95rem; margin-bottom: 4px; }
+  #errbox {
+    display: none; background: #ffeaea; border: 2px solid #ff8b8b; border-radius: var(--radius);
+    padding: 14px; margin-bottom: 14px; font-size: .8rem; line-height: 1.6; word-break: break-all;
+  }
+
   footer { text-align: center; font-size: .72rem; color: var(--ink-light); padding: 18px 14px 0; }
   footer a { color: var(--violet); }
 </style>
 </head>
 <body>
+
+<script>
+/* スマホでは原因が見えないので、JSエラーを画面に表示する */
+window.addEventListener("error", function (ev) {
+  var b = document.getElementById("errbox");
+  if (!b) return;
+  b.style.display = "block";
+  b.textContent = "エラーが起きました： " + (ev.message || ev.error || "不明")
+    + (ev.lineno ? "（" + ev.lineno + "行目）" : "")
+    + " ／ このメッセージをそのまま伝えてください。";
+});
+</script>
 
 <header>
   <h1>✨ プロンプトメーカー</h1>
@@ -168,6 +191,16 @@
 <main>
   <!-- ========== ホーム ========== -->
   <section id="pHome" class="page on">
+    <noscript>
+      <div class="alert">
+        <b>⚠️ このままでは質問が表示されません</b>
+        このアプリはJavaScriptで動いていますが、いまの画面ではJavaScriptが止まっています。
+        <b style="margin-top:8px">開き直してください</b>
+        ファイルのプレビュー画面（メールやチャットの中の簡易表示）では動きません。
+        Safari や Chrome で開き直すと動きます。
+      </div>
+    </noscript>
+    <div id="errbox"></div>
     <div class="card">
       <p class="lead">
         <b>やりたいことを選ぶ → いくつかの質問に答える → できあがったプロンプトをコピー</b><br>
