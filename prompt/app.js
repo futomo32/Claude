@@ -213,15 +213,17 @@
         wrap.appendChild(b);
       });
       body.appendChild(wrap);
+      /* 「つぎへ」ボタンに focus が残ったままだと、Enterでもう一度進んでしまう。
+         新しい質問文へ focus を移して防ぐ（読み上げにも有効） */
+      setTimeout(() => $("qText").focus(), 60);
     } else {
       const el = document.createElement(q.type === "textarea" ? "textarea" : "input");
       if (q.type !== "textarea") el.type = "text";
       el.placeholder = q.ph || "";
       el.value = answers[q.id] || "";
       el.addEventListener("input", () => { answers[q.id] = el.value; updateNext(); });
-      if (q.type !== "textarea") {
-        el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); next(); } });
-      }
+      /* Enterでは進まない（進むのは「つぎへ」を押したときだけ）。
+         1行入力欄は既定でEnter時に何も起きないため、送信の妨げになる処理は入れない */
       body.appendChild(el);
       setTimeout(() => el.focus(), 60);
     }

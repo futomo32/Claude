@@ -82,6 +82,8 @@
   .bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--violet), #a99bff); transition: width .25s; }
   .step { font-size: .72rem; color: var(--ink-light); text-align: right; margin-bottom: 10px; }
   .q { font-size: 1.05rem; font-weight: 800; line-height: 1.5; }
+  .q:focus { outline: none; }
+  .q:focus-visible { outline: 2px solid var(--violet); outline-offset: 4px; border-radius: 6px; }
   .qnote { font-size: .78rem; color: var(--ink-light); margin-top: 4px; }
 
   .opts { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
@@ -227,7 +229,7 @@ window.addEventListener("error", function (ev) {
     <div class="bar"><i id="barIn" style="width:0%"></i></div>
     <div class="step" id="stepTxt"></div>
     <div class="card">
-      <div class="q" id="qText"></div>
+      <div class="q" id="qText" tabindex="-1"></div>
       <div class="qnote" id="qNote"></div>
       <div id="qBody"></div>
       <div class="navrow">
