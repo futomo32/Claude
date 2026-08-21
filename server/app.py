@@ -347,6 +347,17 @@ class Handler(BaseHTTPRequestHandler):
                     result = db_query.find_duplicate_customers(con)
                     con.close()
                     return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+                if path == "/api/slip_reassign_preview":
+                    # 付け替えの確認材料(伝票まるごとが動くので中身を先に見せる)
+                    qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+                    con = connect()
+                    try:
+                        result = db_query.slip_reassign_preview(con, (qs.get("slip_id") or [""])[0])
+                    except ValueError as e:
+                        return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                    finally:
+                        con.close()
+                    return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
                 if path == "/api/customer_merge_preview":
                     qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
                     con = connect()
@@ -775,6 +786,19 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/sale_line_update":
                 con = connect()
                 result = db_query.update_sale_line(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/slip_reassign":
+                # 売上伝票を別のお客様へ付け替える。operator(ログインユーザー)はサーバーが
+                # 入れる=詐称できない。staff(担当者)と reason(理由)は画面からの必須入力。
+                con = connect()
+                try:
+                    result = db_query.reassign_slip(con, payload.get("slip_id"),
+                                                    payload.get("customer_id"), user.get("name"),
+                                                    payload.get("staff"), payload.get("reason"))
+                except ValueError as e:
+                    con.close()
+                    return self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/void_line":

@@ -3571,6 +3571,129 @@ def _void_record(operator, staff, reason, refund_method=None):
             str(operator or ""), staff, reason, rm)
 
 
+def slip_reassign_preview(con, slip_id):
+    """付け替えの確認材料。伝票の中身(明細・金額・支払・ポイント・売掛)を返す。
+    ★伝票まるごとが動くので、同じ伝票に何が入っているかを必ず画面に出してから実行させる。"""
+    con.row_factory = sqlite3.Row
+    s = con.execute("""SELECT s.slip_id, s.slip_no, s.sold_at, s.customer_id, s.staff_name,
+                              s.pay_method, s.credit_kind, s.earned_points, s.used_points,
+                              COALESCE(s.voided,0) voided, c.name cname
+                       FROM sales_slips s LEFT JOIN customers c ON c.customer_id = s.customer_id
+                       WHERE s.slip_id = ?""", (slip_id,)).fetchone()
+    if not s:
+        raise ValueError("売上伝票が見つかりません")
+    lines = [{"name": r["nm"], "amount": r["amount"] or 0, "voided": bool(r["v"])}
+             for r in con.execute("""SELECT COALESCE(l.free_name, p.name) nm, l.amount,
+                                            COALESCE(l.voided,0) v
+                                     FROM sale_lines l LEFT JOIN products p ON l.product_key = p.product_key
+                                     WHERE l.slip_id = ? ORDER BY l.line_id""", (slip_id,))]
+    total = sum(x["amount"] for x in lines if not x["voided"])
+    rec = con.execute("""SELECT COUNT(*) n, SUM(CASE WHEN COALESCE(last_paid_at,'')<>'' THEN 1 ELSE 0 END) paid
+                         FROM receivables WHERE slip_id = ?""", (slip_id,)).fetchone()
+    rx = con.execute("""SELECT COUNT(*) FROM prescriptions
+                        WHERE sale_line_id IN (SELECT line_id FROM sale_lines WHERE slip_id = ?)""",
+                     (slip_id,)).fetchone()[0]
+    return {"slip_id": s["slip_id"], "slip_no": s["slip_no"], "sold_at": s["sold_at"],
+            "customer_id": s["customer_id"], "customer_name": s["cname"],
+            "staff_name": s["staff_name"], "voided": bool(s["voided"]),
+            "pay": pay_fallback(s["pay_method"], s["credit_kind"]),
+            "earned_points": int(s["earned_points"] or 0), "used_points": int(s["used_points"] or 0),
+            "lines": lines, "total": total,
+            "receivables": int(rec["n"] or 0), "receivables_paid": int(rec["paid"] or 0),
+            "prescriptions": rx}
+
+
+def reassign_slip(con, slip_id, new_customer_id, operator=None, staff=None, reason=None):
+    """売上伝票を別のお客様に付け替える(2026-08-17)。
+
+    レジで**別のお客様を選んだまま会計してしまった**時の訂正。「取消して打ち直す」と違い、
+    金額・在庫・レシートには一切触らず、**伝票の持ち主だけ**を差し替える。打ち直しだと
+    間違えた側のお客様の履歴に取消の記録が残ってしまうため、付け替えを別に用意した。
+
+    伝票と一緒に動くもの(顧客に紐づいていて、この伝票が原因で発生したもの):
+      ・ポイント履歴(ref_slip_id) と **ポイント残高**(付与分-使用分を両者で調整)
+      ・売掛(slip_id)
+      ・メガネ処方箋(この伝票の明細に紐づくもの)
+    動かさないもの: 在庫の動き(商品側の話で顧客に無関係)・来店記録(伝票と無関係)。
+
+    断るケース:
+      ・取消済みの伝票(付け替える意味がない)
+      ・**売掛に入金済みのもの**(入金記録は伝票に紐づいていないため一緒に動かせない。
+        中途半端に持ち主だけ変えると入金履歴とねじれる。取消して打ち直す)
+    記録は取消と同じ3点(operator/staff/reason)＋**両方のお客様のメモ**に残す。
+    """
+    prev = slip_reassign_preview(con, slip_id)
+    old_cid = prev["customer_id"]
+    new_cid = str(new_customer_id or "").strip()
+    if not new_cid:
+        raise ValueError("付け替え先のお客様を選んでください")
+    if prev["voided"]:
+        raise ValueError("取消済みの伝票は付け替えられません")
+    if str(old_cid or "") == new_cid:
+        raise ValueError("同じお客様です。付け替える必要はありません")
+    if not staff:
+        raise ValueError("付け替えた担当者を選んでください")
+    if not reason:
+        raise ValueError("付け替えの理由を入力してください")
+    if prev["receivables_paid"]:
+        raise ValueError("この売上の売掛には入金済みの記録があるため付け替えられません。"
+                         "取消して正しいお客様で打ち直してください")
+    new_row = con.execute("SELECT name FROM customers WHERE customer_id=?", (new_cid,)).fetchone()
+    if not new_row:
+        raise ValueError("付け替え先のお客様が見つかりません")
+    new_name = new_row[0] if not isinstance(new_row, sqlite3.Row) else new_row["name"]
+    today = datetime.date.today().isoformat()
+    net = prev["earned_points"] - prev["used_points"]   # この伝票が残高に与えた増減
+    moved = {}
+    with write_lock(con):
+        con.execute("UPDATE sales_slips SET customer_id=? WHERE slip_id=?", (new_cid, slip_id))
+        for sql, key in (("UPDATE point_transactions SET customer_id=? WHERE ref_slip_id=?", "ポイント履歴"),
+                         ("UPDATE receivables SET customer_id=? WHERE slip_id=?", "売掛"),
+                         ("""UPDATE prescriptions SET customer_id=? WHERE sale_line_id IN
+                             (SELECT line_id FROM sale_lines WHERE slip_id=?)""", "処方箋")):
+            cur = con.execute(sql, (new_cid, slip_id))
+            if cur.rowcount:
+                moved[key] = cur.rowcount
+        # ポイント残高: 元の顧客から net を引き、新しい顧客に net を足す。
+        # 元の残高が足りない(既に使ってしまった)場合は0で止め、その旨をメモに残す。
+        short = 0
+        if net and old_cid:
+            bal = con.execute("SELECT balance FROM point_balances WHERE customer_id=?", (old_cid,)).fetchone()
+            cur_bal = int((bal[0] if bal else 0) or 0)
+            newbal = cur_bal - net
+            if newbal < 0:
+                short = -newbal
+                newbal = 0
+            con.execute("""INSERT INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)
+                           ON CONFLICT(customer_id) DO UPDATE SET balance=excluded.balance,
+                             updated_at=excluded.updated_at""", (old_cid, newbal, today))
+        if net:
+            bal = con.execute("SELECT balance FROM point_balances WHERE customer_id=?", (new_cid,)).fetchone()
+            con.execute("""INSERT INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)
+                           ON CONFLICT(customer_id) DO UPDATE SET balance=excluded.balance,
+                             updated_at=excluded.updated_at""",
+                        (new_cid, int((bal[0] if bal else 0) or 0) + net, today))
+        # 両方のお客様にメモを残す(どちらの画面を見ても経緯が分かるように)
+        detail = (f"{prev['sold_at']} の売上 ¥{prev['total']:,}"
+                  + (f"(伝票 {prev['slip_no']})" if prev["slip_no"] else "")
+                  + f"(担当: {staff} / 操作: {operator or '不明'} / 理由: {reason})")
+        extra = f" ※元のお客様のポイント残高が{short:,}pt不足したため0で止めました。" if short else ""
+        for cid, body in ((old_cid, f"[売上の付け替え {today}] {detail} を "
+                                    f"{new_name}(ID {new_cid}) へ付け替えました。{extra}"),
+                          (new_cid, f"[売上の付け替え {today}] {detail} を "
+                                    f"{prev['customer_name'] or old_cid}(ID {old_cid}) から引き取りました。")):
+            if not cid:
+                continue
+            try:
+                con.execute("INSERT INTO customer_memos(customer_id, body, updated_at) VALUES (?,?,?)",
+                            (cid, body, today))
+            except sqlite3.Error:
+                pass
+    return {"ok": True, "slip_id": slip_id, "from_id": old_cid, "from_name": prev["customer_name"],
+            "to_id": new_cid, "to_name": new_name, "total": prev["total"],
+            "moved": moved, "points_moved": net, "points_short": short}
+
+
 def void_sale_line(con, line_id, operator=None, staff=None, reason=None, refund_method=None):
     """明細1行を取消(訂正/一部返品)。集計・履歴から除外し、在庫品なら在庫に戻す。
     最終正データのみ表示する方針のため、取消済み行は各画面に出さない。
