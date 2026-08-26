@@ -1,9 +1,17 @@
-/* ヤナセぱっと勤怠 service worker — オフラインでも動くようにキャッシュします */
-const CACHE = "patto-kintai-v6";
-const ASSETS = ["./", "./index.html", "./guide.html", "./manifest.json", "./logo.png", "./icon.png", "./icon-maskable.png"];
+/* ヤナセぱっと勤怠 service worker — オフラインでも動くようにキャッシュします
+   リポジトリ直下の3アプリ（勤怠 / english / prompt）をまとめて受け持ちます */
+const CACHE = "patto-kintai-v7";
+const ASSETS = ["./", "./index.html", "./guide.html", "./manifest.json", "./logo.png", "./icon.png", "./icon-maskable.png",
+  "./prompt/", "./prompt/index.html", "./prompt/app.js", "./prompt/data.js", "./prompt/manifest.json"];
 
+/* 1件でも取れないファイルがあっても install を失敗させない。
+   （addAll だと全部やり直しになり、更新が届かなくなるため1件ずつ入れる） */
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
+  e.waitUntil(
+    caches.open(CACHE).then((c) =>
+      Promise.all(ASSETS.map((url) => c.add(url).catch(() => null)))
+    )
+  );
   self.skipWaiting();
 });
 
@@ -26,6 +34,18 @@ self.addEventListener("fetch", (e) => {
         caches.open(CACHE).then((c) => c.put(e.request, copy));
         return res;
       })
-      .catch(() => caches.match(e.request).then((m) => m || caches.match("./index.html")))
+      .catch(() =>
+        caches.match(e.request).then((m) => {
+          if (m) return m;
+          /* 圏外でキャッシュにもない場合。ページ遷移のときだけ、
+             そのアプリのトップを返す（別アプリの画面が出るのを防ぐ） */
+          if (e.request.mode === "navigate") {
+            const path = new URL(e.request.url).pathname;
+            if (path.indexOf("/prompt/") >= 0) return caches.match("./prompt/index.html");
+            return caches.match("./index.html");
+          }
+          return Response.error();
+        })
+      )
   );
 });
