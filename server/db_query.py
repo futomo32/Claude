@@ -910,8 +910,24 @@ def customer_detail(con, cid):
         if is_glass and r["line_id"] not in linked:
             rx_candidates.append([r["line_id"], r["sold_at"], nm, r["amount"], glass_kind(r["cat"], nm)])
 
+    # 顧客メモ(宝飾ナビ d_user_memo の memo01〜10 を取り込んだもの)。
+    # ★これまで取込済みなのに画面のどこにも出していなかった(2026-08-17に判明)。
+    #   接客の申し送りが書かれている実務上大事な情報なので、基本情報に出す。
+    #   宝飾ナビと同じく seq(memo01→10)の順に並べる。編集は8月末の完全移行までは付けない
+    #   (再取込でメモを入れ直すため、トキワで書いた分が消えてしまう)。
+    memos = [r["body"] for r in cur.execute(
+        "SELECT body FROM customer_memos WHERE customer_id=? AND COALESCE(body,'')<>'' "
+        "ORDER BY COALESCE(seq, 9999), id", (cid,))]
+
+    # 基本情報に出す補足(顧客一覧の配列には持たせず、詳細を開いた時だけ取る)。
+    # 2.5万件の一覧に列を足すとページの読み込みが重くなるため。
+    row = cur.execute("SELECT registered_at, ring_size, pierce FROM customers WHERE customer_id=?",
+                      (cid,)).fetchone()
+    extra = {"registered_at": row["registered_at"], "ring_size": row["ring_size"],
+             "pierce": row["pierce"]} if row else {}
+
     return {"sales": sales, "salesVoided": sales_voided, "rx": rx, "rxCandidates": rx_candidates,
-            "pointTx": point_tx, "approach": approach}
+            "pointTx": point_tx, "approach": approach, "memos": memos, "extra": extra}
 
 
 # 在庫一覧の並び替えで指定できる列(キー→実カラム。ホワイトリストでSQLインジェクション防止)
