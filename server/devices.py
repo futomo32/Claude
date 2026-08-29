@@ -403,15 +403,36 @@ def print_void_receipt(doc, drawer=None):
         return {"error": f"返品レシートの印字に失敗: {e}"}
 
 
+def _log(op, result):
+    """機器の結果を logs/エラー_今日.txt に残す。★成功も残すこと。
+
+    2026-08-29、「トキワは送信成功と返すのに紙が出ない」ことがあり、原因は宝飾ナビの
+    古い印刷ジョブがキューに詰まっていたことだった。**成功していた事実**が残っていれば
+    「Windowsまでは渡っていた=詰まりを疑う」と辿れる。個人情報は書かない。
+    """
+    try:
+        import applog
+        if result.get("error"):
+            applog.write("機器", f"{op} 失敗: {result['error']} "
+                                 f"(プリンタ名={PRINTER_NAME} / COM={PRINTER_COM})")
+        elif result.get("skipped"):
+            applog.write("機器", f"{op} 送信せず: {result.get('message') or '機器OFFモード'}")
+        else:
+            applog.write("機器", f"{op} 成功({result.get('via') or '-'}経由)")
+    except Exception:  # noqa: BLE001 ログで業務を止めない
+        pass
+    return result
+
+
 def print_receipt_doc(doc):
     """領収書を印字する(レシートプリンタ)。"""
     if not ENABLED:
-        return _skip()
+        return _log("領収書", _skip())
     try:
         via = _send_to_printer(build_receipt_doc_bytes(doc))
-        return {"ok": True, "via": via}
+        return _log("領収書", {"ok": True, "via": via})
     except Exception as e:  # noqa: BLE001
-        return {"error": f"領収書の印字に失敗: {e}"}
+        return _log("領収書", {"error": f"領収書の印字に失敗: {e}"})
 
 
 def _send_to_printer(data: bytes):
@@ -443,26 +464,26 @@ def _send_to_printer(data: bytes):
 def print_receipt(receipt, drawer=True):
     """レシートを印字し、必要ならドロワーを開ける。"""
     if not ENABLED:
-        return _skip()
+        return _log("レシート", _skip())
     data = build_receipt_bytes(receipt)
     if drawer:
         data += DRAWER_KICK
     try:
         via = _send_to_printer(data)
-        return {"ok": True, "via": via, "drawer": bool(drawer)}
+        return _log("レシート", {"ok": True, "via": via, "drawer": bool(drawer)})
     except Exception as e:  # noqa: BLE001 機器エラーで会計を壊さない(呼び出し側でトースト表示)
-        return {"error": f"レシート印字に失敗: {e}"}
+        return _log("レシート", {"error": f"レシート印字に失敗: {e}"})
 
 
 def open_drawer():
     """ドロワーだけ開ける(売掛入金の現金授受など)。"""
     if not ENABLED:
-        return _skip()
+        return _log("ドロワー", _skip())
     try:
         via = _send_to_printer(bytes(DRAWER_KICK))
-        return {"ok": True, "via": via}
+        return _log("ドロワー", {"ok": True, "via": via})
     except Exception as e:  # noqa: BLE001
-        return {"error": f"ドロワーを開けられませんでした: {e}"}
+        return _log("ドロワー", {"error": f"ドロワーを開けられませんでした: {e}"})
 
 
 # ── リライトカード(TCP300II) ──────────────────────────

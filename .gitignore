@@ -23,3 +23,6 @@ data/real/
 csv一覧.txt
 data/demo_csv/*.md
 data/demo_csv/*.txt
+
+# 動作ログ(店のPC内でのみ使う。GitHubには載せない)
+logs/

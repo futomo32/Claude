@@ -80,6 +80,7 @@ import devices  # noqa: E402  機器制御層(フェーズ2)。機器OFFモー�
 import backup  # noqa: E402  DBバックアップ(世代管理・店外複製・件数の急減検知)
 import integrity  # noqa: E402  データ点検(破損・参照切れ・残高と履歴の矛盾)
 import store_info  # noqa: E402  店舗の固定情報(唯一の正)。画面へ注入して帳票にも使う
+import applog       # noqa: E402  動作ログ(logs/エラー_今日.txt)
 import kuroneko_b2  # noqa: E402  クロネコB2(DM便)のxlsx書き出し
 
 
@@ -358,6 +359,10 @@ class Handler(BaseHTTPRequestHandler):
                     finally:
                         con.close()
                     return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+                if path == "/api/app_log":
+                    # 直近の動作ログ(設定→レシート・機器 に出す)。個人情報は書いていない
+                    return self._send(200, json.dumps({"lines": applog.tail(30)},
+                                                      ensure_ascii=False).encode("utf-8"))
                 if path == "/api/customer_merge_preview":
                     qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
                     con = connect()
@@ -520,6 +525,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(502, json.dumps({"error": "住所検索に接続できません(オフライン?)。手入力してください"}, ensure_ascii=False).encode("utf-8"))
             self._send(404, json.dumps({"error": "not found"}).encode())
         except Exception as e:  # noqa: BLE001
+            # 画面のお知らせは数秒で消えてしまうので、原因を追えるようログにも残す
+            applog.write("エラー", f"{self.path.split('?', 1)[0]} : {e}")
             self._send(500, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
 
     # パート権限では使えない操作(原価に触れる・商品/マスタを書き換える系)。
@@ -1080,6 +1087,8 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e:
             self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
         except Exception as e:  # noqa: BLE001
+            # 画面のお知らせは数秒で消えてしまうので、原因を追えるようログにも残す
+            applog.write("エラー", f"{self.path.split('?', 1)[0]} : {e}")
             self._send(500, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
 
 
@@ -1133,6 +1142,10 @@ def main():
     else:
         print("【自動バックアップ OFF】設定→バックアップ でONにしてください。")
     print("  → 停止は Ctrl+C。")
+    # その日どう起動したかを残す。「機器ONのはずなのに出ない」を後から切り分けるため
+    applog.write("起動", f"機器モード{'ON' if HW_ENABLED else 'OFF'} / "
+                         f"{'店内共有' if lan else 'このPCのみ'} / ポート{port} / "
+                         f"プリンタ名={devices.PRINTER_NAME}")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
