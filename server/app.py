@@ -533,7 +533,7 @@ class Handler(BaseHTTPRequestHandler):
         "/api/point_settings", "/api/point_adjust", "/api/tag_settings",
     }
     # 管理者のみの操作(担当者マスタ・ログインユーザー管理)
-    ADMIN_ONLY_POSTS = {"/api/staff", "/api/app_user", "/api/app_user_logout",
+    ADMIN_ONLY_POSTS = {"/api/staff", "/api/app_user", "/api/app_user_logout", "/api/app_user_order",
                         "/api/backup_now", "/api/backup_settings", "/api/integrity_check",
                         "/api/customer_merge"}
 
@@ -595,6 +595,16 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/app_user_logout":
                 con = connect()
                 result = db_query.logout_user_all(con, payload.get("id"))
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/app_user_order":
+                # ユーザーの並び替え。画面から全員ぶんの並びを受け取って総入れ替えする
+                con = connect()
+                try:
+                    result = db_query.save_app_user_order(con, payload.get("ids"))
+                except ValueError as e:
+                    con.close()
+                    return self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/checkout":

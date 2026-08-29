@@ -179,6 +179,8 @@ def ensure_schema(con):
         ("products", "maker_no", "TEXT"),  # 品番(仕入先の商品コード)。宝飾ナビ d_siire.strsirsycode
         ("products", "tag_name", "TEXT"),  # タグ用の短い品名。宝飾ナビ d_item.strtaghinname
         ("supplier_master", "fucho_head", "TEXT"),  # 仕入先ごとの符丁頭カナ(漢字名対策)
+        # ログイン画面・ユーザー管理での並び順(小さい順)。未設定(NULL)は末尾＝新しく作った人は下に付く
+        ("app_users", "sort_order", "INTEGER"),
         ("products", "is_consignment", "INTEGER DEFAULT 0"),  # 受託品フラグ(売上になっても残す。後日精算の識別用)
         ("products", "consign_settled", "INTEGER DEFAULT 0"),  # 受託の後日精算(原価入力)が済んだか
         ("prescriptions", "frame_type", "TEXT"),  # フレームの種類(セル/メタル/ツーポ/ナイロール)
@@ -3794,12 +3796,16 @@ def _check_pw(password, stored):
 
 
 def list_login_users(con):
-    """ログイン画面のユーザー選択用(有効ユーザーのみ・ハッシュは返さない)。"""
+    """ログイン画面のユーザー選択用(有効ユーザーのみ・ハッシュは返さない)。
+    並びはユーザー管理で決めた順(sort_order)。毎朝ここから選ぶので、よく使う人を
+    上に置けるようにしている(未設定の人は従来どおり管理者が先・あとはID順で末尾)。"""
     con.row_factory = sqlite3.Row
     return [{"id": r["user_id"], "name": r["display_name"] or r["user_id"],
              "has_pw": bool(r["pass_hash"])}
             for r in con.execute("""SELECT user_id, display_name, pass_hash FROM app_users
-                                    WHERE active=1 ORDER BY role='admin' DESC, user_id""")]
+                                    WHERE active=1
+                                    ORDER BY COALESCE(sort_order, 999999),
+                                             role='admin' DESC, user_id""")]
 
 
 def login_user(con, user_id, password):
@@ -3854,11 +3860,35 @@ def logout_user(con, token):
 def list_app_users(con):
     """ユーザー管理画面用の一覧(管理者のみ)。ハッシュ本体は返さない。"""
     con.row_factory = sqlite3.Row
+    # 並び順は店が決めた順(sort_order)を優先し、未設定の人は従来どおり
+    # 「管理者が先・あとはID順」で末尾に付く(新しく作った人は下に出る)。
     return [{"id": r["user_id"], "name": r["display_name"] or r["user_id"],
              "role": r["role"] or "staff", "active": bool(r["active"]),
              "has_pw": bool(r["pass_hash"])}
             for r in con.execute("""SELECT user_id, display_name, role, pass_hash, active
-                                    FROM app_users ORDER BY role='admin' DESC, user_id""")]
+                                    FROM app_users
+                                    ORDER BY COALESCE(sort_order, 999999),
+                                             role='admin' DESC, user_id""")]
+
+
+def save_app_user_order(con, ids):
+    """ユーザーの並び順を保存する(管理者のみ)。渡された順に 1,2,3… を振る。
+
+    画面から**全員ぶんの並び**を受け取って総入れ替えする(2つを入れ替えるだけの作りにすると、
+    隠れている無効ユーザーを飛び越えた時に順番がずれるため)。一覧に無いユーザーが混ざって
+    いても無視し、渡されなかった人は末尾(未設定)のまま。
+    """
+    ids = [str(i).strip() for i in (ids or []) if str(i).strip()]
+    if not ids:
+        raise ValueError("並び順が指定されていません")
+    known = {r[0] for r in con.execute("SELECT user_id FROM app_users")}
+    with write_lock(con):
+        n = 0
+        for uid in ids:
+            if uid in known:
+                n += 1
+                con.execute("UPDATE app_users SET sort_order=? WHERE user_id=?", (n, uid))
+    return {"users": list_app_users(con), "ordered": n}
 
 
 def save_app_user(con, p):
