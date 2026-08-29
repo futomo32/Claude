@@ -30,13 +30,15 @@ rem ---- ★本番用はサンプルDBを作らない(本物のデータと混ざる事故を防ぐため)----
 if not exist "db\tokiwa.db" goto NODB
 
 rem ---- クロネコB2の書き出しに必要な部品の確認(無くても起動はします)----
+rem ★ここは if ( ) のブロックにしないこと。ブロックの中の echo に丸括弧が入ると
+rem   cmd がそこでブロックを閉じてしまい、バッチ全体が動かなくなる(2026-08-29 の不具合)
 %PY% -c "import openpyxl" >nul 2>nul
-if errorlevel 1 (
-  echo [お知らせ] クロネコB2の書き出しに必要な部品(openpyxl)が入っていません。
-  echo            DM便の書き出しを使う時は、次を一度だけ実行してください:
-  echo              %PY% -m pip install openpyxl
-  echo.
-)
+if not errorlevel 1 goto XLOK
+echo [お知らせ] クロネコB2の書き出しに必要な部品 openpyxl が入っていません。
+echo            DM便の書き出しを使う時は、次を一度だけ実行してください:
+echo              %PY% -m pip install openpyxl
+echo.
+:XLOK
 
 rem ---- サーバーを別ウィンドウで起動(lan=店内共有 / kiki=機器ON)----
 echo トキワサーバーを起動します...

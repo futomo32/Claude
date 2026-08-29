@@ -26,7 +26,8 @@ echo.
 
 %PY% -c "import serial" 2>nul
 if errorlevel 1 (
-  echo pyserial を導入します(初回のみ・ネット接続が必要)...
+  rem ★ブロックの中の echo に半角の丸括弧を書かないこと(cmd がそこでブロックを閉じる)
+  echo pyserial を導入します（初回のみ・ネット接続が必要）...
   %PY% -m pip install pyserial
   if errorlevel 1 goto NOSERIAL
 )
