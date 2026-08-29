@@ -29,6 +29,24 @@ echo.
 rem ---- ★本番用はサンプルDBを作らない(本物のデータと混ざる事故を防ぐため)----
 if not exist "db\tokiwa.db" goto NODB
 
+rem ---- 既にトキワが動いていないか確認 ----
+rem   古い「機器OFF」のサーバーが残っていると、あとから起動しても 8760番 を取れず、
+rem   ブラウザは古い方に繋がる。画面は普通に開くのに「レシートが出ない」ことになる。
+netstat -an | findstr ":8760" >nul 2>nul
+if errorlevel 1 goto PORTOK
+echo.
+echo  [注意] すでに 8760番 が使われています。
+echo         トキワのサーバーが既に動いている可能性があります。
+echo         先に動いているものが「機器OFF」だと、レシートもドロワーも動きません。
+echo.
+echo   1: 中止する ... 先に「トキワ サーバー」のウィンドウを全部閉じる  ← おすすめ
+echo   2: このまま続ける
+echo.
+set "SEL=1"
+set /p SEL="どちらにしますか? [1]: "
+if not "%SEL%"=="2" goto ABORT
+:PORTOK
+
 rem ---- クロネコB2の書き出しに必要な部品の確認(無くても起動はします)----
 rem ★ここは if ( ) のブロックにしないこと。ブロックの中の echo に丸括弧が入ると
 rem   cmd がそこでブロックを閉じてしまい、バッチ全体が動かなくなる(2026-08-29 の不具合)
@@ -61,6 +79,15 @@ echo.
 pause
 endlocal
 exit /b 0
+
+:ABORT
+echo.
+echo  中止しました。タスクバーの「トキワ サーバー」のウィンドウを全部閉じてから、
+echo  もう一度このバッチを実行してください。
+echo.
+pause
+endlocal
+exit /b 1
 
 :NODB
 echo.
