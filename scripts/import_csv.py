@@ -58,12 +58,33 @@ def rows(name):
 
 
 def lookup(name, code_col, name_col):
-    """m_* を {コード: 名前} の辞書に。"""
+    """m_* を {コード: 名前} の辞書に。
+
+    ★列名が想定と違っても拾えるようにしてある。宝飾ナビの列名は似たものが多く
+    (strdbuncode と strcbuncode など)、過去に取り違えて「取り込んだつもりで
+    中身が空」という事故が起きたため。指定の列が無ければ、末尾が code / name の
+    列を自動で探して使い、何をどう読み替えたかを画面に出す(黙って空にしない)。
+    """
     d = {}
+    ck, nk = code_col, name_col
+    checked = False
     for r in rows(name):
-        c = s(r.get(code_col))
+        if not checked:
+            checked = True
+            cols = list(r.keys())
+            if ck not in cols or nk not in cols:
+                auto_c = next((c for c in cols if c and c.lower().endswith("code")), None)
+                auto_n = next((c for c in cols if c and c.lower().endswith("name")), None)
+                if auto_c and auto_n:
+                    print(f"  ※{name}: 列名が想定と違うため自動判定({ck}→{auto_c} / {nk}→{auto_n})")
+                    ck, nk = auto_c, auto_n
+                else:
+                    print(f"  [警告] {name}: コード/名前の列が見つかりません。"
+                          f"この対応表は空のまま進みます(列: {', '.join(str(c) for c in cols[:8])})")
+                    return d
+        c = s(r.get(ck))
         if c is not None:
-            d[c] = s(r.get(name_col))
+            d[c] = s(r.get(nk))
     return d
 
 
@@ -90,6 +111,18 @@ def n(v):
         return int(float(str(v).replace(",", "")))
     except (ValueError, TypeError):
         return None
+
+
+def zero_none(v):
+    """0(と空)は「無し」として None にする。宝飾ナビは未入力を 0 で埋める列があり、
+    そのまま入れると脇石の重量が「0.00ct」と表示されてしまうため(2026-08-29)。"""
+    t = s(v)
+    if t is None:
+        return None
+    try:
+        return None if float(t.replace(",", "")) == 0 else t
+    except ValueError:
+        return t
 
 
 ERA_BASE = {"M": 1867, "T": 1911, "S": 1925, "H": 1988, "R": 2018,
@@ -174,6 +207,7 @@ def main():
     m_basyo = lookup("m_basyo", "strbacode", "strbaname")
     m_tiku = lookup("m_tiku", "strtikucode", "strtikuname")
     m_dbun = lookup("m_dbunrui", "strdbuncode", "strdbunname")
+    m_cbun = lookup("m_cbunrui", "strcbuncode", "strcbunname")   # 中分類(2026-09-01の取込から)
     m_sir = lookup("m_siiresaki", "strsircode", "strsirname")
 
     # ── 店舗 stores(m_stor) ──
@@ -210,11 +244,15 @@ def main():
             s(r.get("lngfinsize1")), PIERCE.get(s(r.get("strpiasukbn")), s(r.get("strpiasukbn"))),
             tan, m_tan.get(tan), s(r.get("strkanritenpo")) or s(r.get("strkotencode")),
             dt(r.get("dattoudate")),
+            # DM備考(転居先不明/手紙出さない/受取拒否 など)。住所の記号・DM区分とは別系統の
+            # 「出さない理由」がここに書かれている(2026-08-29 実データ診断で判明)
+            s(r.get("strbikname1")),
         ))
     cur.executemany("""INSERT INTO customers
       (customer_id,name,kana,tel,tel2,postal,address,address2,gender,birthday,wedding_day,
-       rank,district,dm_ok,email,ring_size,pierce,staff_code,staff_name,store_code,registered_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", cust)
+       rank,district,dm_ok,email,ring_size,pierce,staff_code,staff_name,store_code,registered_at,
+       dm_note)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", cust)
     log["customers"] = len(cust)
 
     # 顧客メモ(d_user_memo: memo01〜10) ──
@@ -259,8 +297,10 @@ def main():
     skipped_del = 0
     ins_prod = """INSERT INTO products
       (product_key,product_no,name,info,category,brand,metal,supplier,cost_price,list_price,state,
-       location,center_stone,center_carat,color,clarity,cut,cert_no,is_glasses,registered_at,image_file)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+       location,center_stone,center_carat,color,clarity,cut,cert_no,is_glasses,registered_at,image_file,
+       tag_name,sub_category,sub_stone,sub_carat1,sub_carat2)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+    n_sub_unknown = 0   # 脇石コードが石マスタに無かった件数(想定違いに気づくための数)
     for r in rows("d_item"):
         pk = pk_of(r)
         if not pk or pk in pseen:
@@ -276,6 +316,15 @@ def main():
         # (全角「レンズ」等が半角パターンから漏れて宝飾誤登録に化ける不具合を防ぐ)
         is_glass = 1 if re.search(GLASS_PAT, (cat or "") + " " + name) else 0
         prod_is_glass[pk] = is_glass
+        # 脇石の石種。中石(striscode)と同じ石マスタを引く前提。合わなければ件数を数えて
+        # あとで気づけるようにし、名前が分からない時はコードをそのまま残す(黙って捨てない)
+        secode = s(r.get("strsecode"))
+        sub_stone = None
+        if secode:
+            sub_stone = m_ishi.get(secode)
+            if sub_stone is None:
+                n_sub_unknown += 1
+                sub_stone = secode
         buf.append((
             pk, s(r.get("strsyno")), name, s(r.get("strsyinfo")), cat,
             m_brand.get(pick(r, "strbrcode", "strbrandcode", "strbrand")),   # ブランド(m_brand)
@@ -286,6 +335,10 @@ def main():
             s(r.get("strcolcode")), s(r.get("strclacode")), s(r.get("strcutcode")),
             s(r.get("strkanbno")), is_glass, dt(r.get("dattoudate")),
             os.path.basename((s(r.get("strpicfilename")) or "").replace("\\", "/")) or None,
+            # ここから2026-09-01の取込で追加した項目(値札・保証書・分類に使う)
+            s(r.get("strtaghinname")),                    # タグ品名(値札に刷る短い品名)
+            m_cbun.get(s(r.get("strcbuncode"))),          # 中分類
+            sub_stone, zero_none(r.get("cursubjuryo1")), zero_none(r.get("cursubjuryo2")),
         ))
         if len(buf) >= BATCH:
             cur.executemany(ins_prod, buf)
@@ -295,6 +348,9 @@ def main():
         cur.executemany(ins_prod, buf)
         cnt += len(buf)
     log["products"] = cnt
+    if n_sub_unknown:
+        print(f"  ※脇石の石種コードのうち {n_sub_unknown:,} 件は石マスタに見つからず、"
+              f"コードのまま入れました(想定と違う対応表かもしれません)")
     if del_nos:
         log["products_skipped(削除リスト)"] = skipped_del
 

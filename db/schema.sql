@@ -41,6 +41,7 @@ CREATE TABLE customers (
   district      TEXT,           -- 地区(m_tiku。DMの地区絞り込み用)
   exclude_stats INTEGER NOT NULL DEFAULT 0,  -- 1=集計対象外(ななし等。ランキング・平均から除外)
   dm_ok         TEXT,
+  dm_note       TEXT,               -- DM備考(転居先不明/手紙出さない/受取拒否)。d_user.strbikname1
   email         TEXT,
   ring_size     TEXT,
   pierce        TEXT,
@@ -99,7 +100,15 @@ CREATE TABLE products (
   cert_no       TEXT,               -- 鑑別書no
   is_glasses    INTEGER NOT NULL DEFAULT 0, -- メガネ商品フラグ(1=メガネ)
   registered_at TEXT,
-  image_file    TEXT                -- 商品写真のファイル名(data/real/images/ 内。無ければNULL)
+  image_file    TEXT,               -- 商品写真のファイル名(data/real/images/ 内。無ければNULL)
+  -- 2026-09-01の最終取込で宝飾ナビから引き継ぐ項目(それまで取込漏れだったもの)。
+  -- ★ここに書いていない列を import_csv.py の INSERT に足すと「no such column」で落ちる。
+  --   既存DBへの追加は server/db_query.py の ensure_schema が行う(両方に足すこと)。
+  tag_name      TEXT,               -- 値札(タグ)に刷る短い品名。d_item.strtaghinname
+  sub_category  TEXT,               -- 中分類。d_item.strcbuncode → m_cbunrui
+  sub_stone     TEXT,               -- 脇石の石種。d_item.strsecode → m_ishi
+  sub_carat1    TEXT,               -- 脇石1の重量。d_item.cursubjuryo1(0は無しとしてNULL)
+  sub_carat2    TEXT                -- 脇石2の重量。d_item.cursubjuryo2
 );
 CREATE INDEX idx_products_no    ON products(product_no);
 CREATE INDEX idx_products_state ON products(state);

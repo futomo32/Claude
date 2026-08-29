@@ -19,6 +19,19 @@
 - [ ] `python3 scripts/import_csv.py data/real/csv`
       (売掛を入れないなら `python3 scripts/import_csv.py data/real/csv --no-receivables`)
 - [ ] 取込ログの件数(customers / products / slips / lines 等)が想定どおりか確認
+- [ ] **★取込ログに出る「警告」を必ず読む**(2026-08-29 追加)
+      - `※m_◯◯: 列名が想定と違うため自動判定` … 読み替えた列が正しいか確認する
+      - `[警告] m_◯◯: コード/名前の列が見つかりません` … **その対応表が空のまま進んでいる**
+      - `※脇石の石種コードのうち N件は石マスタに見つからず` … 件数が多ければ対応表が違う
+- [ ] **新しく取り込む4項目が入ったか確認**(2026-09-01の取込が最後の機会)
+      ```
+      python3 -c "import sqlite3;c=sqlite3.connect('db/tokiwa.db');\
+      [print(q, c.execute('SELECT COUNT(*) FROM '+t+\" WHERE COALESCE(\"+q+\",'')<>''\").fetchone()[0]) \
+       for t,q in [('products','tag_name'),('products','sub_category'),('products','sub_stone'),\
+                   ('products','sub_carat1'),('customers','dm_note')]]"
+      ```
+      目安: tag_name 約48% / sub_category 約96% / sub_stone 約33% / sub_carat1 約41% / dm_note 約33%。
+      **0件のものがあれば取り込めていない**ので、そのまま進まず相談すること。
 
 ## 3. 起動と表示確認
 - [ ] `python3 server/app.py` で起動し、ブラウザで開く

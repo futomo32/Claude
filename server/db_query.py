@@ -181,6 +181,13 @@ def ensure_schema(con):
         ("supplier_master", "fucho_head", "TEXT"),  # 仕入先ごとの符丁頭カナ(漢字名対策)
         # ログイン画面・ユーザー管理での並び順(小さい順)。未設定(NULL)は末尾＝新しく作った人は下に付く
         ("app_users", "sort_order", "INTEGER"),
+        # 2026-09-01の最終取込で宝飾ナビから引き継ぐ項目(2026-08-29 実データ診断で列を特定)。
+        # ここまで取込漏れだったもの。9/1を逃すと二度と入れられないため優先して足した。
+        ("products", "sub_stone", "TEXT"),      # 脇石の石種。d_item.strsecode → m_ishi
+        ("products", "sub_carat1", "TEXT"),     # 脇石1の重量。d_item.cursubjuryo1
+        ("products", "sub_carat2", "TEXT"),     # 脇石2の重量。d_item.cursubjuryo2
+        ("products", "sub_category", "TEXT"),   # 中分類。d_item.strcbuncode → m_cbunrui
+        ("customers", "dm_note", "TEXT"),       # DM備考。d_user.strbikname1(転居先不明/手紙出さない/受取拒否)
         ("products", "is_consignment", "INTEGER DEFAULT 0"),  # 受託品フラグ(売上になっても残す。後日精算の識別用)
         ("products", "consign_settled", "INTEGER DEFAULT 0"),  # 受託の後日精算(原価入力)が済んだか
         ("prescriptions", "frame_type", "TEXT"),  # フレームの種類(セル/メタル/ツーポ/ナイロール)
