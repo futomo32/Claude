@@ -170,6 +170,27 @@ def lan_ip():
             return None
 
 
+def already_running(port):
+    """同じポートで既にトキワが動いていないか調べる(二重起動の防止)。
+
+    ★ポートを bind してみる方法では防げない。Windows の SO_REUSEADDR は Linux/Mac と挙動が
+      違い、**使用中のポートにも割り込んで開けてしまう**ため、2つのサーバーが同時に立ち得る。
+      そうなるとブラウザがどちらに繋がるか不定になり、片方が機器OFFだと「レシートが出たり
+      出なかったり」する。そこで bind ではなく **実際に繋いで応答があるか** で判定する。
+      これなら起動のしかた(バッチ/手打ち)にもOSにも左右されない。
+
+    判定は控えめにする: 繋がった上で /api/health がトキワだと答えた時だけ「動いている」とみなす。
+    他のソフトがたまたま同じポートを使っていた場合に、トキワの起動を止めてしまわないため。
+    """
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.6) as c:
+            c.sendall(b"GET /api/health HTTP/1.0\r\nHost: localhost\r\n\r\n")
+            head = c.recv(400) or b""
+    except OSError:
+        return False        # 誰も居ない = 起動してよい
+    return b"tokiwa" in head.lower()
+
+
 def apply_role_filter(blob, role):
     """パート権限には原価情報を送らない(画面で隠すだけでなく"そもそも送らない")。
     products行の[9]=cost_price(下代)と、在庫サマリの下代合計・粗利率を落とす。"""
@@ -322,7 +343,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             path = self.path.split("?", 1)[0]  # クエリを除いた経路で判定
             if path == "/api/health":
-                return self._send(200, json.dumps({"ok": True}).encode())
+                # app:"tokiwa" は二重起動の判定にも使う(already_running)。消さないこと
+                return self._send(200, json.dumps({"ok": True, "app": "tokiwa"}).encode())
             if path.startswith("/assets/"):
                 # ロゴはログイン画面でも使うため認証不要(静的ファイルのみ)
                 pass
@@ -1107,6 +1129,21 @@ def main():
         elif a.lower() == "nologo":
             NO_LOGO = True
     devices.ENABLED = HW_ENABLED  # 機器制御層に伝える(OFFなら一切送信しない)
+    if already_running(port):
+        print("=" * 60)
+        print(f"【中止】トキワは既に起動しています(ポート {port})。")
+        print("  二重に起動すると、ブラウザがどちらに繋がるか分からなくなります。")
+        print("  片方が機器OFFだと『レシートが出たり出なかったり』という状態になります。")
+        print()
+        print("  対処: 「トキワ サーバー」の黒いウィンドウを全部閉じてから、もう一度起動してください。")
+        print(f"        今動いているトキワを使うだけなら http://localhost:{port}/ を開いてください。")
+        print("=" * 60)
+        applog.write("起動", f"二重起動を止めました(ポート{port}は使用中)")
+        try:
+            input("Enterキーで閉じます...")
+        except EOFError:
+            pass
+        return
     host = "0.0.0.0" if lan else "127.0.0.1"
     srv = ThreadingHTTPServer((host, port), Handler)
     print(f"トキワ起動: http://localhost:{port}/")
