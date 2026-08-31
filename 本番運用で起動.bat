@@ -24,6 +24,16 @@ if not defined PY goto NOPYTHON
 echo 使用する Python: %PY%
 %PY% --version
 if errorlevel 1 goto NOPYTHON
+
+rem ---- 画面を持たない Python を探す(黒い画面を出さずに動かすため)----
+rem   店から「黒い画面が出ているのが違和感」との声。pythonw は画面を作らない。
+rem   ★見つからなければ通常のPythonにそのまま落とす(画面は出るが動く方を優先)。
+rem   隠せるようになったのは動作ログ(logs\エラー_今日.txt)を入れたから。
+rem   以前は黒い画面がエラーの唯一の出口だった。
+set "PYW="
+where pyw >nul 2>nul && set "PYW=pyw -3"
+if not defined PYW ( where pythonw >nul 2>nul && set "PYW=pythonw" )
+if not defined PYW set "PYW=%PY%"
 echo.
 
 rem ---- ★本番用はサンプルDBを作らない(本物のデータと混ざる事故を防ぐため)----
@@ -60,27 +70,53 @@ echo              %PY% -m pip install openpyxl
 echo.
 :XLOK
 
-rem ---- サーバーを別ウィンドウで起動(lan=店内共有 / kiki=機器ON)----
-echo トキワサーバーを起動します...
-start "トキワ サーバー 本番運用(このウィンドウを閉じると停止します)" %PY% server\app.py lan kiki
+rem ---- サーバーを起動(lan=店内共有 / kiki=機器ON)。黒い画面は出さない ----
+echo トキワサーバーを起動しています...
+start "" %PYW% server\app.py lan kiki
 
-timeout /t 3 >nul
-echo ブラウザを開きます: http://localhost:8760/
+rem ---- ★本当に起動したかを確認する ----
+rem   画面を隠すと、起動に失敗しても誰も気づけない。朝レジを開けて初めて分かる、では困る。
+rem   8760番に繋がるかを数秒おきに確かめ、駄目なら「その時だけ」画面を出して止まる。
+set "TRY=0"
+:WAITLOOP
+timeout /t 1 /nobreak >nul
+set /a TRY+=1
+where powershell >nul 2>nul
+if errorlevel 1 goto NOCHECK
+powershell -NoProfile -Command "$c=New-Object Net.Sockets.TcpClient; try{$c.Connect('127.0.0.1',8760);$c.Close();exit 0}catch{exit 1}" >nul 2>nul
+if not errorlevel 1 goto STARTED
+if !TRY! lss 20 goto WAITLOOP
+goto FAILED
+
+:NOCHECK
+rem PowerShell が無い環境では確認できないので、少し待って開くだけにする
+timeout /t 3 /nobreak >nul
+
+:STARTED
 start "" "http://localhost:8760/"
+endlocal
+exit /b 0
+
+:FAILED
 echo.
-echo --------------------------------------------
-echo  起動しました。
-echo  ★他の端末(iPad・スマホ・別のPC)から開くURLは
-echo    「トキワ サーバー」ウィンドウに表示されています
-echo    (http://192.168.〇.〇:8760/ の形)。
-echo  ★初回はWindowsファイアウォールの確認が出ます。
-echo    「アクセスを許可する」を押してください。
-echo  終了するには「トキワ サーバー」ウィンドウを閉じてください。
-echo --------------------------------------------
+echo ============================================
+echo  [エラー] トキワが起動できませんでした。
+echo ============================================
+echo.
+echo  原因の手がかりは次のファイルに残っています:
+echo     logs\エラー_今日.txt
+echo.
+echo  よくある原因:
+echo   ・既にトキワが動いている(二重起動はサーバー側で止めています)
+echo   ・db\tokiwa.db が壊れている
+echo   ・Python の部品が足りない
+echo.
+echo  画面を出して原因を見るには「機器ありで起動.bat」で起動してください。
+echo  黒い画面にエラーがそのまま表示されます。
 echo.
 pause
 endlocal
-exit /b 0
+exit /b 1
 
 :ABORT
 echo.
