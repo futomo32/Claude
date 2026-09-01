@@ -44,14 +44,22 @@ rem   古い「機器OFF」のサーバーが残っていると、ブラウザは古い方に繋がる。
 rem   画面は普通に開くのに「レシートが出ない」ことになるため、ここで気づけるようにする。
 rem   ※これは案内用。実際に二重起動を止めるのはサーバー側(app.py の already_running)。
 rem     手打ちで起動した場合もそちらで止まる。
-netstat -an | findstr ":8760" >nul 2>nul
+rem
+rem   ★2026-09-01 修正: ここは以前 netstat -an ^| findstr ":8760" で見ていたが、
+rem   netstat は LISTENING 以外(TIME_WAIT など)も出す。サーバーを止めた直後は
+rem   ブラウザとの接続が TIME_WAIT で数分残るため、空いているのに「使用中」と
+rem   誤判定していた(停止→起動でいつも警告が出る)。実際に繋いでみる方式に変更し、
+rem   下の起動確認や トキワ停止.bat と同じやり方に揃えた。
+where powershell >nul 2>nul
+if errorlevel 1 goto PORTOK
+powershell -NoProfile -Command "$c=New-Object Net.Sockets.TcpClient; try{$c.Connect('127.0.0.1',8760);$c.Close();exit 0}catch{exit 1}" >nul 2>nul
 if errorlevel 1 goto PORTOK
 echo.
-echo  [注意] すでに 8760番 が使われています。トキワが起動中の可能性があります。
+echo  [注意] 8760番 で応答があります。トキワが既に起動中です。
 echo         先に動いているものが「機器OFF」だと、レシートもドロワーも動きません。
 echo         このまま進めても、二重に起動しないようサーバー側で止まります。
 echo.
-echo   1: 中止する ... 先に「トキワ サーバー」のウィンドウを全部閉じる  ← おすすめ
+echo   1: 中止する ... 先に トキワ停止.bat で止めてから、もう一度これを実行  ← おすすめ
 echo   2: このまま続ける
 echo.
 set "SEL=1"
