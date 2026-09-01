@@ -1,19 +1,19 @@
 @echo off
 setlocal
-cd /d "%~dp0"
-title トキワ 機器テスト
+rem ★このバッチは ツール\ の下にあるので、トキワ本体のフォルダ(1つ上)へ移動してから動く。
+rem   ここを "%~dp0" に戻すと server\ や db\ を見失って動かなくなる(2026-08-31 整理)
+cd /d "%~dp0.."
+title トキワ 券面リライト印字テスト
 
-echo ==========================================
-echo   トキワ 機器テスト（レシート/ドロワー）
-echo ==========================================
+echo ============================================
+echo   トキワ 券面リライト印字テスト（TCP300II）
+echo ============================================
 echo.
-echo  ※ このテストは COM ポートを直接使います。
-echo     宝飾ナビが起動中だとポートが使用中で開けません。
-echo     テスト中は宝飾ナビを終了してください。
+echo  ※ ★必ず予備カードで！ 券面(印字面)が書き変わります。
+echo  ※ COM ポートを直接使うため、宝飾ナビを終了してから実行してください。
 echo.
 pause
 
-rem ---- Python を探す ----
 set "PY="
 where py >nul 2>nul && set "PY=py -3"
 if not defined PY ( where python >nul 2>nul && set "PY=python" )
@@ -23,7 +23,6 @@ if not defined PY goto NOPY
 if errorlevel 1 goto NOPY
 echo.
 
-rem ---- pyserial を用意 ----
 %PY% -c "import serial" 2>nul
 if errorlevel 1 (
   echo pyserial を導入します（初回のみ・ネット接続が必要）...
@@ -31,8 +30,7 @@ if errorlevel 1 (
   if errorlevel 1 goto NOSERIAL
 )
 
-rem ---- テスト実行 ----
-%PY% hardware\kiki_test.py
+%PY% hardware\card_face_test.py
 echo.
 pause
 endlocal

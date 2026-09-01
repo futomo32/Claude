@@ -1,13 +1,15 @@
 @echo off
 setlocal enabledelayedexpansion
-cd /d "%~dp0"
-title トキワ ロゴ印字テスト
+rem ★このバッチは ツール\ の下にあるので、トキワ本体のフォルダ(1つ上)へ移動してから動く。
+rem   ここを "%~dp0" に戻すと server\ や db\ を見失って動かなくなる(2026-08-31 整理)
+cd /d "%~dp0.."
+title トキワ ロゴ中央寄せ確定テスト
 
 echo ============================================
-echo   レシート ロゴ印字テスト（見比べ用）
+echo   ロゴ 中央寄せ確定テスト
 echo ============================================
 echo.
-echo  ・1枚のレシートにロゴを複数パターン印字します
+echo  ・目盛りとロゴ5パターンを1枚に印字します
 echo  ・印字後、レシートの写真を撮って共有してください
 echo  ・宝飾ナビが起動中だと印字できない場合があります
 echo.
@@ -27,7 +29,7 @@ if errorlevel 1 (
   if errorlevel 1 goto NOPILLOW
 )
 
-%PY% "hardware\logo_print_test.py" %1 %2 %3 %4 %5 %6
+%PY% "hardware\logo_center_test.py"
 goto END
 
 :NOPYTHON

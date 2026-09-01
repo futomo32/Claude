@@ -1,17 +1,16 @@
 @echo off
 setlocal
-cd /d "%~dp0"
-title トキワ カード書き込みテスト
+rem ★このバッチは ツール\ の下にあるので、トキワ本体のフォルダ(1つ上)へ移動してから動く。
+rem   ここを "%~dp0" に戻すと server\ や db\ を見失って動かなくなる(2026-08-31 整理)
+cd /d "%~dp0.."
+title トキワ カード読み取りテスト
 
 echo ============================================
-echo   トキワ カード書き込みテスト(TCP300II)
+echo   トキワ カード読み取りテスト（TCP300II）
 echo ============================================
 echo.
-echo  ★このツールはカードの磁気を【上書き】します。元に戻せません。
-echo  ★必ず「消えても構わない予備カード」で実行してください。
-echo  ★お客様の会員カードは絶対に使わないでください。
-echo.
-echo  ※ COM ポートを使うため、宝飾ナビを終了してから実行してください。
+echo  ※ カードには書き込みません（読み取り専用）。
+echo  ※ COM ポートを直接使うため、宝飾ナビを終了してから実行してください。
 echo.
 pause
 
@@ -26,13 +25,12 @@ echo.
 
 %PY% -c "import serial" 2>nul
 if errorlevel 1 (
-  rem ★ブロックの中の echo に半角の丸括弧を書かないこと(cmd がそこでブロックを閉じる)
   echo pyserial を導入します（初回のみ・ネット接続が必要）...
   %PY% -m pip install pyserial
   if errorlevel 1 goto NOSERIAL
 )
 
-%PY% hardware\card_write_test.py
+%PY% hardware\card_test.py
 echo.
 pause
 endlocal
@@ -41,7 +39,7 @@ exit /b 0
 :NOPY
 echo.
 echo [エラー] 使用できる Python が見つかりませんでした。
-echo   python.org でインストール時「Add python.exe to PATH」にチェックしてください。
+echo   python.org 版をインストールし「Add python.exe to PATH」にチェックしてください。
 echo.
 pause
 endlocal
@@ -49,7 +47,7 @@ exit /b 1
 
 :NOSERIAL
 echo.
-echo [エラー] pyserial の導入に失敗しました(ネット未接続などの可能性)。
+echo [エラー] pyserial の導入に失敗しました（ネット未接続などの可能性）。
 echo   コマンドプロンプトで手動: pip install pyserial
 echo.
 pause

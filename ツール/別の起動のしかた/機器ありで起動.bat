@@ -1,6 +1,8 @@
 @echo off
 setlocal enabledelayedexpansion
-cd /d "%~dp0"
+rem ★このバッチは ツール\ の下にあるので、トキワ本体のフォルダ(1つ上)へ移動してから動く。
+rem   ここを "%~dp0" に戻すと server\ や db\ を見失って動かなくなる(2026-08-31 整理)
+cd /d "%~dp0.."
 title トキワ 起動ランチャー(機器あり)
 
 echo ============================================
@@ -10,7 +12,7 @@ echo ============================================
 echo.
 echo  ★注意: 宝飾ナビが機器を使用中だと通信できません。
 echo  ★先に宝飾ナビを終了してから起動してください。
-echo  （機器を使わない普段のテストは「トキワ起動.bat」でOK）
+echo  （機器を使わない普段のテストは「ツール\別の起動のしかた\トキワ起動.bat」でOK）
 echo.
 
 rem ---- Python を探す（py 優先、無ければ python / python3）----
@@ -71,7 +73,7 @@ echo   対処:
 echo   1) https://www.python.org/downloads/windows/ から Python をインストール
 echo      インストーラの最初の画面で
 echo      「Add python.exe to PATH」に必ずチェックを入れてください。
-echo   2) インストール後、この「トキワ起動.bat」をもう一度ダブルクリック
+echo   2) インストール後、この「ツール\別の起動のしかた\トキワ起動.bat」をもう一度ダブルクリック
 echo.
 echo   （Python 無しで画面だけ確認したい場合は tokiwa-ui.html をダブルクリック）
 echo.

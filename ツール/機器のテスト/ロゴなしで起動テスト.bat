@@ -1,6 +1,8 @@
 @echo off
 setlocal enabledelayedexpansion
-cd /d "%~dp0"
+rem ★このバッチは ツール\ の下にあるので、トキワ本体のフォルダ(1つ上)へ移動してから動く。
+rem   ここを "%~dp0" に戻すと server\ や db\ を見失って動かなくなる(2026-08-31 整理)
+cd /d "%~dp0.."
 title トキワ ロゴなしで起動（店名表示テスト）
 
 echo ============================================
@@ -11,7 +13,7 @@ echo  ・ロゴ画像を配信しないモードで起動します（画像ファイルには一切触りません）
 echo  ・帳票（見積書・請求書）のヘッダが正式店名の文字になることを確認できます
 echo  ・確認方法: 見積・請求画面 → 請求書のプレビュー → ヘッダが
 echo    「宝石・メガネ・時計 ヤナセ」の文字になっていればOK
-echo  ・表示テスト専用です。確認が終わったら閉じて、通常の「トキワ起動.bat」を使ってください
+echo  ・表示テスト専用です。確認が終わったら閉じて、通常の「ツール\別の起動のしかた\トキワ起動.bat」を使ってください
 echo.
 
 rem ---- Python を探す（py 優先、無ければ python / python3）----
@@ -22,7 +24,7 @@ if not defined PY ( where python3 >nul 2>nul && set "PY=python3" )
 if not defined PY goto NOPYTHON
 
 if not exist "db\tokiwa.db" (
-  echo [エラー] db\tokiwa.db がありません。先に「トキワ起動.bat」で作成してください。
+  echo [エラー] db\tokiwa.db がありません。先に「ツール\別の起動のしかた\トキワ起動.bat」で作成してください。
   goto END
 )
 

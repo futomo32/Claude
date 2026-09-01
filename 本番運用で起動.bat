@@ -111,7 +111,7 @@ echo   ・既にトキワが動いている(二重起動はサーバー側で止めています)
 echo   ・db\tokiwa.db が壊れている
 echo   ・Python の部品が足りない
 echo.
-echo  画面を出して原因を見るには「機器ありで起動.bat」で起動してください。
+echo  画面を出して原因を見るには「ツール\別の起動のしかた\機器ありで起動.bat」で起動してください。
 echo  黒い画面にエラーがそのまま表示されます。
 echo.
 pause
@@ -136,7 +136,7 @@ echo.
 echo   宝飾ナビのデータを取り込んでから、もう一度起動してください:
 echo     %PY% scripts\import_csv.py data\real\csv
 echo.
-echo   ※お試しで動かしたいだけなら「トキワ起動.bat」を使ってください。
+echo   ※お試しで動かしたいだけなら「ツール\別の起動のしかた\トキワ起動.bat」を使ってください。
 echo.
 pause
 endlocal
