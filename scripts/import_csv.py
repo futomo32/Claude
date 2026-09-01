@@ -17,6 +17,9 @@ import re
 import sqlite3
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _dellist as dellist   # noqa: E402  削除リストの読み方(check_delete_list.py と共通)
+
 csv.field_size_limit(10 * 1024 * 1024)
 
 # メガネ商品の判定パターン(全角・半角そろえて網羅)。分類名・商品名の両方に使う。
@@ -294,14 +297,19 @@ def main():
     #   売れた商品を消すと**その顧客の購入履歴で商品名が出せなくなる**ため、
     #   「不明在庫を消したい」という意図どおり **在庫状態のものだけ**を対象にする。
     #   (受託品は他社の預かり品、返品は履歴なので、どちらも消してはいけない)
-    del_nos = set()
+    #
+    #   ★2026-09-01: 同じ番号で在庫が2件以上ある場合に備え、`104714,72000` のように
+    #   仕入価格を添えて絞れるようにした。商品キー(`01-104714`)での狙い撃ちも可。
+    #   読み方は scripts/_dellist.py にまとめてある(check_delete_list.py と共通)。
     del_path = os.path.join(SRC, "..", "削除商品番号.txt")
-    if os.path.exists(del_path):
-        with open(del_path, encoding="utf-8") as f:
-            for line in f:
-                v = line.strip()
-                if v and not v.startswith("#"):
-                    del_nos.add(v)
+    del_list = dellist.load(del_path)
+    if del_list.errors:
+        print(f"  [警告] 削除リストに読めない行が {len(del_list.errors)} 件あります"
+              f"(この行は無視されます):")
+        for lineno, line, why in del_list.errors[:10]:
+            print(f"    {lineno}行目『{line}』… {why}")
+        if len(del_list.errors) > 10:
+            print(f"    …他{len(del_list.errors) - 10}件")
     skipped_del = 0     # 実際に取り込まなかった件数(=リストに載っていて、かつ在庫だったもの)
     kept_del = 0        # リストに載っていたが在庫でないので残した件数(巻き添えを防いだ数)
     ins_prod = """INSERT INTO products
@@ -314,8 +322,8 @@ def main():
         pk = pk_of(r)
         if not pk or pk in pseen:
             continue
-        if del_nos and s(r.get("strsyno")) in del_nos:
-            # 削除リストの商品番号。ただし**在庫のものだけ**を取り込まない(上の説明を参照)
+        if del_list and del_list.hit(s(r.get("strsyno")), pk, r.get("curorokin")):
+            # 削除リストに当たった商品。ただし**在庫のものだけ**を取り込まない(上の説明を参照)
             if STATE.get(s(r.get("strjotaikbn"))) == "在庫":
                 skipped_del += 1
                 continue
@@ -363,7 +371,7 @@ def main():
     if n_sub_unknown:
         print(f"  ※脇石の石種コードのうち {n_sub_unknown:,} 件は石マスタに見つからず、"
               f"コードのまま入れました(想定と違う対応表かもしれません)")
-    if del_nos:
+    if del_list:
         log["products_skipped(削除リスト・在庫のみ)"] = skipped_del
         if kept_del:
             print(f"  ※削除リストの番号に一致した {kept_del:,} 件は、在庫ではない"
