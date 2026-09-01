@@ -91,12 +91,14 @@ write("d_item", ICOLS, [
 ])
 
 # ── 販売(伝票T1: 顧客01-100 が商品2点、伝票T2: 顧客02-100) ──
-def hanbai(dp, tc, kk, stc, sk, teika, kaikin, tan, name):
+def hanbai(dp, tc, kk, stc, sk, teika, kaikin, tan, koname):
+    # ★koname は strkokname に入れる。この列は**顧客名**であって商品名ではない
+    #   (2026-09-01に実データで確認。品名と誤解して取り込んでいた不具合があった)
     # 掛売区分コードは実データ準拠: 1=現金, 2=掛売, 3=クレジット…
     return {"strkotencode": tc, "lngkokey": kk, "curdenpyono": dp, "datkaidate": "2023/11/3",
             "datcredate": "2023/11/3", "strhantancode": tan, "strkakekbn": "1", "strcrekbn": "",
             "strdocode": "D1", "strbacode": "P1", "curusepoint": "0", "curkasanpoint": "300",
-            "strsytencode": stc, "lngsykey": sk, "curwariritu": "0", "strkokname": name,
+            "strsytencode": stc, "lngsykey": sk, "curwariritu": "0", "strkokname": koname,
             "strsyinfo": "自社", "curteika": teika, "curkaikin": kaikin, "curkaizeikin": "0"}
 
 

@@ -127,7 +127,11 @@ KNOWN = {
         "strdocode": "motive(動機。m_doukiで名前解決)",
         "strbacode": "place(購入場所。m_basyoで名前解決)",
         "curusepoint": "used_points", "curkasanpoint": "earned_points",
-        "strkokname": "free_name(商品台帳に無い明細の品名)",
+        # ★2026-09-01 訂正: 品名だと思っていたが**顧客名**だった(実データ202,749明細の
+        #   うち170,063件が顧客名と一致、商品名との一致は0件)。顧客は伝票側に持っている
+        #   ので取り込まない。この誤解のせいで、商品を消した明細の品名欄にお客様の名前が
+        #   出る不具合になっていた(import_csv.py で修正済み)。
+        "strkokname": "取り込まない(顧客名。伝票の customer_id と重複)",
         "strsyinfo": "info",
         "curteika": "list_price", "curkaikin": "amount", "curkaizeikin": "tax",
         "curwariritu": "discount_rate",

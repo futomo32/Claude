@@ -312,6 +312,7 @@ def main():
             print(f"    …他{len(del_list.errors) - 10}件")
     skipped_del = 0     # 実際に取り込まなかった件数(=リストに載っていて、かつ在庫だったもの)
     kept_del = 0        # リストに載っていたが在庫でないので残した件数(巻き添えを防いだ数)
+    dropped_names = {}  # 取り込まなかった商品の 商品キー→商品名(売上明細の品名に使う)
     ins_prod = """INSERT INTO products
       (product_key,product_no,name,info,category,brand,metal,supplier,cost_price,list_price,state,
        location,center_stone,center_carat,color,clarity,cut,cert_no,is_glasses,registered_at,image_file,
@@ -326,6 +327,12 @@ def main():
             # 削除リストに当たった商品。ただし**在庫のものだけ**を取り込まない(上の説明を参照)
             if STATE.get(s(r.get("strjotaikbn"))) == "在庫":
                 skipped_del += 1
+                # ★消す商品でも「名前」だけは控えておく(2026-09-01)。
+                #   在庫として売れた履歴がある商品を消すと、その明細の品名が出せなくなる。
+                #   売上明細の free_name に入れるため、ここで名前を拾っておく。
+                nm = s(r.get("strsyname"))
+                if nm:
+                    dropped_names[pk] = nm
                 continue
             kept_del += 1     # 売上・返品・受託 → 履歴が壊れるので残す
         pseen.add(pk)
@@ -385,6 +392,7 @@ def main():
     ins_line = """INSERT INTO sale_lines
       (slip_id,product_key,free_name,info,list_price,amount,tax,discount_rate) VALUES (?,?,?,?,?,?,?,?)"""
     n_lines = 0
+    n_noname = 0   # 商品も名前も分からず、品名が空になった明細の数
     for r in rows("d_hanbai"):
         cid = cid_of(r)
         dp = s(r.get("curdenpyono"))
@@ -410,9 +418,22 @@ def main():
             rate = float(str(r.get("curwariritu")).replace("%", "")) if s(r.get("curwariritu")) else None
         except ValueError:
             rate = None
+        # 商品が products に無い明細は、品名を free_name に持たせる(画面は
+        # COALESCE(free_name, products.name) で表示する)。
+        # ★2026-09-01 修正: ここは以前 d_hanbai.strkokname を品名として入れていたが、
+        #   この列は**顧客名**だった(実データ202,749明細のうち170,063件が顧客名と一致・
+        #   商品名との一致は0件)。そのため、商品を消した明細の品名欄に**お客様の名前**が
+        #   出るところだった。品名の代わりになる列は d_hanbai に無いので、
+        #   削除リストで外した商品の名前を控えておいて(dropped_names)それを使う。
+        #   それでも分からないものは空にする(嘘の名前を出さない)。
+        free_name = None
+        if pk not in pseen:
+            free_name = dropped_names.get(pk)
+            if not free_name:
+                n_noname += 1
         line_buf.append((
             slip_id_of[gkey], pk if pk in pseen else None,
-            None if pk in pseen else s(r.get("strkokname")), s(r.get("strsyinfo")),
+            free_name, s(r.get("strsyinfo")),
             n(r.get("curteika")), n(r.get("curkaikin")), n(r.get("curkaizeikin")), rate))
         if len(line_buf) >= BATCH:
             cur.executemany(ins_line, line_buf)
@@ -422,6 +443,13 @@ def main():
         cur.executemany(ins_line, line_buf)
         n_lines += len(line_buf)
     log["slips"], log["lines"], log["synth_slips"] = len(slip_id_of), n_lines, synth
+    if dropped_names:
+        n_named = sum(1 for v in dropped_names.values() if v)
+        print(f"  ※取り込まなかった商品 {n_named:,} 件の**名前だけ**は控えました。"
+              f"その商品が売れていた明細は、購入履歴に品名が出ます。")
+    if n_noname:
+        print(f"  ※商品台帳に無い明細 {n_noname:,} 件は品名が空になります"
+              f"(元データに品名の列が無いため。嘘の名前は出しません)。")
 
     # ── 売掛(d_kakeuri / d_kakeurihistory / d_nyukin) ──
     # --no-receivables 指定時は取り込まない(初期運用を空で始め、紙から手入力する運用)
