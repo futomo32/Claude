@@ -572,7 +572,9 @@ def main():
     # ── 検証 ──
     print("== 取り込み件数 ==")
     for k, v in log.items():
-        print(f"  {k:20s}: {v:,}")
+        # ★件数だけでなく説明文が入ることがある(--no-receivables の時の「取り込まず」など)。
+        #   桁区切りは数値のときだけ付ける(文字列に {:,} を使うと落ちる。2026-09-01 修正)
+        print(f"  {k:20s}: {v:,}" if isinstance(v, int) else f"  {k:20s}: {v}")
     print("\n== 参照整合性 ==")
     viol = cur.execute("PRAGMA foreign_key_check").fetchall()
     if viol:
