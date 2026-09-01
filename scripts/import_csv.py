@@ -318,7 +318,9 @@ def main():
        location,center_stone,center_carat,color,clarity,cut,cert_no,is_glasses,registered_at,image_file,
        tag_name,sub_category,sub_stone,sub_carat1,sub_carat2)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
-    n_sub_unknown = 0   # 脇石コードが石マスタに無かった件数(想定違いに気づくための数)
+    n_sub_unknown = 0    # 脇石コードが石マスタに無かった件数(想定違いに気づくための数)
+    n_cbun_unknown = 0   # 中分類コードが m_cbunrui に無かった件数
+    n_dbun_unknown = 0   # 大分類コードが m_dbunrui に無かった件数
     for r in rows("d_item"):
         pk = pk_of(r)
         if not pk or pk in pseen:
@@ -336,7 +338,12 @@ def main():
                 continue
             kept_del += 1     # 売上・返品・受託 → 履歴が壊れるので残す
         pseen.add(pk)
-        cat = m_dbun.get(s(r.get("strdbuncode")))
+        # 大分類。マスタに無いコードは名前にできない。★ここは画面の「分類」に出るので
+        # コードのまま入れると見た目が壊れる。空のままにして、件数だけ数えて報告する。
+        dbcode = s(r.get("strdbuncode"))
+        cat = m_dbun.get(dbcode)
+        if dbcode and cat is None:
+            n_dbun_unknown += 1
         name = s(r.get("strsyname")) or ""
         prod_names[pk] = name
         # メガネ商品の判定は分類名・商品名の両方を、全角/半角そろえた同一パターンで拾う。
@@ -345,6 +352,17 @@ def main():
         prod_is_glass[pk] = is_glass
         # 脇石の石種。中石(striscode)と同じ石マスタを引く前提。合わなければ件数を数えて
         # あとで気づけるようにし、名前が分からない時はコードをそのまま残す(黙って捨てない)
+        # 中分類。★2026-09-01: マスタに無いコードを黙って捨てていたため、元CSVで96%
+        # 入っているのに取込後は78%になっていた。脇石と同じく**コードのまま残して**
+        # 件数を報告する(黙って捨てない)。この列は今は画面に出していないので、
+        # コードが入っていても表示は壊れない。
+        cbcode = s(r.get("strcbuncode"))
+        sub_cat = None
+        if cbcode:
+            sub_cat = m_cbun.get(cbcode)
+            if sub_cat is None:
+                n_cbun_unknown += 1
+                sub_cat = cbcode
         secode = s(r.get("strsecode"))
         sub_stone = None
         if secode:
@@ -364,7 +382,7 @@ def main():
             os.path.basename((s(r.get("strpicfilename")) or "").replace("\\", "/")) or None,
             # ここから2026-09-01の取込で追加した項目(値札・保証書・分類に使う)
             s(r.get("strtaghinname")),                    # タグ品名(値札に刷る短い品名)
-            m_cbun.get(s(r.get("strcbuncode"))),          # 中分類
+            sub_cat,                                      # 中分類
             sub_stone, zero_none(r.get("cursubjuryo1")), zero_none(r.get("cursubjuryo2")),
         ))
         if len(buf) >= BATCH:
@@ -378,6 +396,12 @@ def main():
     if n_sub_unknown:
         print(f"  ※脇石の石種コードのうち {n_sub_unknown:,} 件は石マスタに見つからず、"
               f"コードのまま入れました(想定と違う対応表かもしれません)")
+    if n_cbun_unknown:
+        print(f"  ※中分類コードのうち {n_cbun_unknown:,} 件は m_cbunrui に見つからず、"
+              f"コードのまま入れました(2026-09-01まではここで黙って捨てていました)")
+    if n_dbun_unknown:
+        print(f"  ※大分類コードのうち {n_dbun_unknown:,} 件は m_dbunrui に見つからず、"
+              f"分類が空になりました(画面に出る列なのでコードは入れていません)")
     if del_list:
         log["products_skipped(削除リスト・在庫のみ)"] = skipped_del
         if kept_del:

@@ -21,12 +21,19 @@ TABLES = ["stores", "staff", "customers", "customer_memos", "customer_families",
           "products", "sales_slips", "sale_lines", "receivables", "receivable_entries",
           "point_balances", "point_transactions", "prescriptions", "app_users"]
 
-# 2026-09-01の取込で追加した4項目(go-live-checklist の確認と同じ)
-NEW_COLS = [("products", "tag_name", "タグ品名", 48),
-            ("products", "sub_category", "中分類", 96),
-            ("products", "sub_stone", "脇石", 33),
-            ("products", "sub_carat1", "脇石重量", 41),
-            ("customers", "dm_note", "DM備考", 33)]
+# 2026-09-01の取込で追加した項目。(表, 列, 表示名, 目安%, 補足)
+# ★目安は「取り込んだ後にどうなるか」の値。元CSVの入力率とは違うものがあるので注意。
+NEW_COLS = [
+    ("products", "tag_name", "タグ品名", 48, ""),
+    # 元CSVの入力率は96%だが、コードを m_cbunrui で名前に直す時に**マスタに無いコードを
+    # 黙って捨てている**ため実測78%。2026-09-01時点の既知の取りこぼし(A-14)。
+    ("products", "sub_category", "中分類", 78, "元は96%。マスタに無いコードを捨てている(既知)"),
+    ("products", "sub_stone", "脇石", 33, ""),
+    # 元CSVの入力率は41%だが、その大半が 0.00。0は「未入力」として空にするので実測0.7%。
+    # (そのまま入れると脇石の重量が「0.00ct」と表示されてしまうため。2026-08-29)
+    ("products", "sub_carat1", "脇石重量", 1, "元は41%。大半が0で、0は未入力として空にしている"),
+    ("customers", "dm_note", "DM備考", 33, ""),
+]
 
 
 def main():
@@ -53,13 +60,17 @@ def main():
     print("  " + " / ".join(f"{s}:{c:,}" for s, c in rows) if rows else "  (なし)")
 
     print("\n== 2026-09-01に追加した項目(0件なら取り込めていない) ==")
-    for tbl, col, label, target in NEW_COLS:
+    for tbl, col, label, target, note in NEW_COLS:
         try:
             n = con.execute(f"SELECT COUNT(*) FROM {tbl} WHERE COALESCE({col},'')<>''").fetchone()[0]
             tot = con.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]
             pct = (n * 100 / tot) if tot else 0
-            mark = "★0件です" if n == 0 else ("" if abs(pct - target) < 15 else "※目安と離れています")
+            # 目安から離れる幅は割合で見る(目安1%のものに±15%を当てると常に素通りするため)
+            mark = "★0件です" if n == 0 else ("" if abs(pct - target) <= max(3, target * 0.3)
+                                            else "※目安と離れています")
             print(f"  {label:8s}({col:12s}): {n:>8,} 件 / {pct:5.1f}%  目安{target}%  {mark}")
+            if note:
+                print(f"      └ {note}")
         except sqlite3.Error as e:
             print(f"  {label:8s}({col:12s}): (読めません: {e})")
 
