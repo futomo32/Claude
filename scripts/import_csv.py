@@ -286,6 +286,14 @@ def main():
     buf, cnt = [], 0
     # 不明在庫などの削除リスト(商品番号を1行ずつ書いたテキスト)。あれば該当商品を取り込まない。
     # 置き場所: data/real/削除商品番号.txt (SRC=data/real/csv の一つ上)。#で始まる行はコメント。
+    #
+    # ★★消すのは「状態が在庫」のものだけ(2026-08-31 実データで確認して決めた)。
+    #   宝飾ナビは同じ商品番号を別の商品に使い回している(1,043番号のうち975番号=93%が重複)。
+    #   番号だけで消すと、**同じ番号を持つ「売れた商品」まで巻き添えで消える**。
+    #   実測: 1,043番号 → 該当2,553件(在庫1,049 / 売上1,162 / 返品251 / 受託91)。
+    #   売れた商品を消すと**その顧客の購入履歴で商品名が出せなくなる**ため、
+    #   「不明在庫を消したい」という意図どおり **在庫状態のものだけ**を対象にする。
+    #   (受託品は他社の預かり品、返品は履歴なので、どちらも消してはいけない)
     del_nos = set()
     del_path = os.path.join(SRC, "..", "削除商品番号.txt")
     if os.path.exists(del_path):
@@ -294,7 +302,8 @@ def main():
                 v = line.strip()
                 if v and not v.startswith("#"):
                     del_nos.add(v)
-    skipped_del = 0
+    skipped_del = 0     # 実際に取り込まなかった件数(=リストに載っていて、かつ在庫だったもの)
+    kept_del = 0        # リストに載っていたが在庫でないので残した件数(巻き添えを防いだ数)
     ins_prod = """INSERT INTO products
       (product_key,product_no,name,info,category,brand,metal,supplier,cost_price,list_price,state,
        location,center_stone,center_carat,color,clarity,cut,cert_no,is_glasses,registered_at,image_file,
@@ -306,8 +315,11 @@ def main():
         if not pk or pk in pseen:
             continue
         if del_nos and s(r.get("strsyno")) in del_nos:
-            skipped_del += 1  # 削除リストの商品番号 → 取り込まない
-            continue
+            # 削除リストの商品番号。ただし**在庫のものだけ**を取り込まない(上の説明を参照)
+            if STATE.get(s(r.get("strjotaikbn"))) == "在庫":
+                skipped_del += 1
+                continue
+            kept_del += 1     # 売上・返品・受託 → 履歴が壊れるので残す
         pseen.add(pk)
         cat = m_dbun.get(s(r.get("strdbuncode")))
         name = s(r.get("strsyname")) or ""
@@ -352,7 +364,10 @@ def main():
         print(f"  ※脇石の石種コードのうち {n_sub_unknown:,} 件は石マスタに見つからず、"
               f"コードのまま入れました(想定と違う対応表かもしれません)")
     if del_nos:
-        log["products_skipped(削除リスト)"] = skipped_del
+        log["products_skipped(削除リスト・在庫のみ)"] = skipped_del
+        if kept_del:
+            print(f"  ※削除リストの番号に一致した {kept_del:,} 件は、在庫ではない"
+                  f"(売上・返品・受託)ため残しました。購入履歴を壊さないためです。")
 
     # ── 売上: d_hanbai を伝票(curdenpyono)でヘッダ+明細に分割 ──
     # 伝票番号→slip_id を確保しつつ、明細をバッチ投入

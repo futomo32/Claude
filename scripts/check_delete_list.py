@@ -12,7 +12,7 @@ data/real/削除商品番号.txt に書いた商品番号(1行ずつ)が、実�
 import csv
 import os
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 csv.field_size_limit(10 * 1024 * 1024)
 BASE = os.path.join(os.path.dirname(__file__), "..")
@@ -23,6 +23,10 @@ LIST = os.path.join(REAL, "削除商品番号.txt")
 
 def s(v):
     return (v or "").strip() or None
+
+
+# 商品の状態(import_csv.py の STATE と同じ。片方だけ直さないこと)
+STATE = {"0": "受託", "1": "在庫", "3": "売上", "5": "返品"}
 
 
 def rows(name):
@@ -61,6 +65,7 @@ def main():
     # d_item を走査: 商品番号→(店-キー)の一覧(重複=同じ番号が複数商品)
     matched = defaultdict(list)   # 商品番号 → [product_key,...]
     key_of_no = {}                # product_key → 商品番号(販売履歴照合用)
+    state_of_pk = {}              # product_key → 状態(在庫/売上/返品/受託)
     for r in rows("d_item"):
         no = s(r.get("strsyno"))
         if no in del_nos:
@@ -69,6 +74,7 @@ def main():
             if pk:
                 matched[no].append(pk)
                 key_of_no[pk] = no
+                state_of_pk[pk] = STATE.get(s(r.get("strjotaikbn")), "その他")
 
     matched_keys = set(key_of_no)
     print(f"商品台帳で一致した商品: {sum(len(v) for v in matched.values()):,} 件"
@@ -79,7 +85,9 @@ def main():
         print("    " + ", ".join(sorted(not_found)[:20]) + (" …" if len(not_found) > 20 else ""))
 
     dup = {no: ks for no, ks in matched.items() if len(ks) > 1}
-    print(f"\n■ 同じ商品番号が複数商品に付いている(まとめて消える): {len(dup):,} 番号")
+    # ※「まとめて消える」わけではない(在庫のものだけ消える)。誤解を招くので表現を直した
+    print(f"\n■ 同じ商品番号が複数商品に付いている: {len(dup):,} 番号"
+          "  ※このうち消えるのは在庫のものだけです")
     for no, ks in list(dup.items())[:15]:
         print(f"    番号 {no} → {len(ks)}商品")
 
@@ -98,9 +106,29 @@ def main():
     else:
         print("    (なし=すべて未販売。そのまま除外して問題なし)")
 
-    print(f"\n== まとめ ==")
-    print(f"  除外される商品: {len(matched_keys):,} 件(うち販売履歴あり {len(sold):,} 件)")
-    print("  問題なければ import_csv.py を実行すると、これらを除外して本番DBを作り直します。")
+    # ★実際に消えるのは「在庫」だけ(2026-08-31 実装)。番号だけで消すと同じ番号の
+    #   売れた商品まで巻き添えになるため、import_csv.py は在庫状態のものだけを除外する。
+    by_state = Counter(state_of_pk.values())
+    print("\n■ 一致した商品の状態(★消えるのは「在庫」だけです)")
+    for st in ("在庫", "売上", "返品", "受託", "その他"):
+        if by_state.get(st):
+            mark = "← これだけ消えます" if st == "在庫" else "← 残します"
+            print(f"    {st:4} : {by_state[st]:>6,}件  {mark}")
+
+    will_delete = [pk for pk, st in state_of_pk.items() if st == "在庫"]
+    del_sold = [pk for pk in will_delete if pk in sold]
+
+    print("\n== まとめ ==")
+    print(f"  リストに一致した商品 : {len(matched_keys):,} 件")
+    print(f"  実際に消える商品     : {len(will_delete):,} 件(状態が「在庫」のものだけ)")
+    print(f"  残る商品             : {len(matched_keys) - len(will_delete):,} 件"
+          f"(売上・返品・受託。購入履歴を壊さないため)")
+    if del_sold:
+        print(f"  ★注意: 消える商品のうち {len(del_sold):,} 件に販売履歴があります。")
+        print("     在庫のまま販売履歴があるのは不自然なので、リストを見直してください。")
+    else:
+        print("  消える商品に販売履歴はありません(想定どおり)。")
+    print("\n  問題なければ import_csv.py を実行すると、これらを除外して本番DBを作り直します。")
 
 
 if __name__ == "__main__":
