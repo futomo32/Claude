@@ -20,6 +20,9 @@ import os
 import sys
 from collections import defaultdict
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _paths import xlsx_dir   # noqa: E402  置き場の決め方は _paths.py にまとめてある
+
 try:
     import openpyxl
 except ImportError:
@@ -91,16 +94,16 @@ def sample(ids, n=15):
 
 def main():
     args = [a for a in sys.argv[1:]]
-    target = "data/real"
+    target = xlsx_dir("data/real")
     if "--demo" in args:
-        target = "data/demo"
+        target = xlsx_dir("data/demo")
         args.remove("--demo")
     if args:
         target = args[0]
 
     if not os.path.isdir(target):
         print(f"[エラー] フォルダが見つかりません: {target}")
-        print("  実データのxlsxを data/real/ に置いてから実行してください(--demo で動作確認)。")
+        print("  実データのxlsxを data/real/xlsx/ に置いてから実行してください(--demo で動作確認)。")
         sys.exit(1)
 
     files = sorted(glob.glob(os.path.join(target, "*.xlsx")))

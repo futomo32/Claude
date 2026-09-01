@@ -7,12 +7,15 @@ xlsx台帳には「◯◯コード」と「◯◯(名前)」の両方の列が�
 
 出力するのは【コードと名前の組・件数】のみ。顧客名などは一切出さない。
 
-  python3 scripts/diag_kubun.py        # data/real のxlsxから抽出
+  python3 scripts/diag_kubun.py        # data/real/xlsx の台帳から抽出
 """
 import glob
 import os
 import sys
 from collections import Counter
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _paths import csv_dir, xlsx_dir   # noqa: E402  置き場の決め方は _paths.py にまとめてある
 
 try:
     import openpyxl
@@ -20,7 +23,9 @@ except ImportError:
     print("[エラー] openpyxl が必要です。 pip3 install openpyxl")
     sys.exit(1)
 
-XDIR = os.path.join(os.path.dirname(__file__), "..", "data", "real")
+REAL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "real")
+XDIR = xlsx_dir(REAL)   # 11台帳。data/real/xlsx を優先(無ければ data/real 直下)
+CDIR = csv_dir(REAL)    # 生ダンプ。data/real/csv を優先
 
 # (ファイル判定キー, [(コード列, 名前列), ...])
 TARGETS = [
@@ -54,7 +59,7 @@ def find(key):
 def dump_m_kubun():
     """m_kubun.csv(汎用区分マスタ)を種別ごとに全部出す(続柄などの正解対応表)。"""
     import csv as _csv
-    path = os.path.join(XDIR, "csv", "m_kubun.csv")
+    path = os.path.join(CDIR, "m_kubun.csv")
     if not os.path.exists(path):
         print("[スキップ] m_kubun.csv が見つかりません")
         return

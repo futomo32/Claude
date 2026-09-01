@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""宝飾ナビの xlsx を読み、db/schema.sql から db/tokiwa.db を構築して流し込む(本番移行ツール)。
+"""宝飾ナビの 11台帳(xlsx)を読み、db/schema.sql から db/tokiwa.db を構築する【旧・移行ツール】。
 
-  python3 scripts/import_to_sqlite.py            # data/real/ の実データを移行(本番)
+★本番の取込はこれではなく scripts/import_csv.py です(2026-07に切り替え済み)。
+  11台帳はまとめ版で、CSVの生ダンプ(114テーブル)の方が情報量が多いため。
+  中分類・脇石・タグ品名・DM備考などはCSVにしか入っていません。
+  これを実行すると db/tokiwa.db を作り直してしまうので、本番では使わないこと。
+
+  python3 scripts/import_to_sqlite.py            # data/real/xlsx を移行
   python3 scripts/import_to_sqlite.py --demo     # data/demo/ で予行演習(リハーサル)
   python3 scripts/import_to_sqlite.py <フォルダ> # 任意フォルダのxlsxを移行
 
@@ -9,12 +14,15 @@
 """
 import openpyxl, glob, os, re, sqlite3, sys, unicodedata, datetime
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _paths import xlsx_dir   # noqa: E402  置き場の決め方は _paths.py にまとめてある
+
 BASE = os.path.join(os.path.dirname(__file__), "..")
 SCHEMA = os.path.join(BASE, "db", "schema.sql")
 DB = os.path.join(BASE, "db", "tokiwa.db")
 
-# 読み込み元フォルダ(既定は data/real。--demo でデモ、パス指定も可)
-SRC = os.path.join(BASE, "data", "real")
+# 読み込み元フォルダ(既定は data/real/xlsx。--demo でデモ、パス指定も可)
+SRC = xlsx_dir(os.path.join(BASE, "data", "real"))
 
 
 def wb_rows(key):
@@ -81,13 +89,13 @@ def main():
     global SRC
     args = sys.argv[1:]
     if "--demo" in args:
-        SRC = os.path.join(BASE, "data", "demo")
+        SRC = xlsx_dir(os.path.join(BASE, "data", "demo"))
         args.remove("--demo")
     if args:
         SRC = args[0]
     if not os.path.isdir(SRC) or not glob.glob(os.path.join(SRC, "*.xlsx")):
         print(f"[エラー] xlsx が見つかりません: {SRC}")
-        print("  実データを data/real/ に置いてから実行してください(予行演習は --demo)。")
+        print("  実データを data/real/xlsx/ に置いてから実行してください(予行演習は --demo)。")
         sys.exit(1)
     print(f"読み込み元: {SRC}\n")
 

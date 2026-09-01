@@ -1,15 +1,24 @@
 # -*- coding: utf-8 -*-
-"""data/real/ の xlsx の「構造」だけを調べる診断ツール(個人情報は表示しない)。
+"""11台帳(xlsx)の「構造」だけを調べる診断ツール(個人情報は表示しない)。
 
 各ファイルのシート名・行数・列数と、1行目(見出し候補)のセル数だけを表示する。
-なぜ analyze_real_data.py が「0件」になるのかを切り分けるためのツール。
+中身の値は一切表示しないので、実データに対して実行しても安全。
+
+★取込のあとの「答え合わせ」に使う。ここで出る台帳ごとの行数と、
+import_csv.py が最後に出す取り込み件数を見比べれば、取りこぼしが分かる。
+(販売台帳・処方箋は数え方が違うのでズレて正常。docs/migration-guide.md 参照)
 
 使い方:
-  python3 scripts/diag_real_xlsx.py
+  python3 scripts/diag_real_xlsx.py            # data/real/xlsx(無ければ data/real 直下)
+  python3 scripts/diag_real_xlsx.py --demo     # data/demo で動作確認
+  python3 scripts/diag_real_xlsx.py <フォルダ>  # 任意フォルダ
 """
 import glob
 import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _paths import xlsx_dir   # noqa: E402  置き場の決め方は _paths.py にまとめてある
 
 try:
     import openpyxl
@@ -17,11 +26,20 @@ except ImportError:
     print("[エラー] openpyxl が必要です。 pip3 install openpyxl を実行してください。")
     sys.exit(1)
 
-target = "data/real"
+args = [a for a in sys.argv[1:] if a != "--demo"]
+if "--demo" in sys.argv:
+    target = xlsx_dir("data/demo")
+elif args:
+    target = args[0]
+else:
+    target = xlsx_dir("data/real")
+
 files = sorted(glob.glob(os.path.join(target, "*.xlsx")))
 if not files:
     print(f"[エラー] {target} に xlsx がありません。")
+    print("  11台帳の xlsx を data/real/xlsx/ に置いてから実行してください(確認は --demo)。")
     sys.exit(1)
+print(f"読み込み元: {target}  ({len(files)}ファイル)\n")
 
 for fn in files:
     print(f"■ {os.path.basename(fn)}")

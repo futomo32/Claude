@@ -8,7 +8,7 @@
 表示するのは【件数・店舗コードの値・列見出し名】だけ。顧客名や電話は出さない。
 
 使い方:
-  python3 scripts/diag_real_keys.py            # data/real を見る
+  python3 scripts/diag_real_keys.py            # data/real/xlsx を見る
   python3 scripts/diag_real_keys.py --demo     # data/demo で確認
 """
 import glob
@@ -16,15 +16,16 @@ import os
 import sys
 from collections import defaultdict
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _paths import xlsx_dir   # noqa: E402  置き場の決め方は _paths.py にまとめてある
+
 try:
     import openpyxl
 except ImportError:
     print("[エラー] openpyxl が必要です。 pip3 install openpyxl")
     sys.exit(1)
 
-target = "data/real"
-if "--demo" in sys.argv:
-    target = "data/demo"
+target = xlsx_dir("data/demo" if "--demo" in sys.argv else "data/real")
 
 
 def find(key):
