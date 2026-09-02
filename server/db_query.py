@@ -3291,9 +3291,14 @@ def _checkout_locked(con, payload):
     for l in lines:
         pk = l.get("product_key")
         amt = int(l.get("amount") or 0)
-        cur.execute("""INSERT INTO sale_lines(slip_id,product_key,free_name,amount,spec_pending)
-                       VALUES (?,?,?,?,?)""",
-                    (slip_id, pk, l.get("free_name"), amt, 1 if l.get("spec_pending") else 0))
+        # ★2026-09-02: 商品情報(info)を保存するようにした。画面からは前から送っていたのに
+        #   ここに入っておらず、**打った内容が黙って消えていた**。購入履歴・レシート・
+        #   保証書は sale_lines.info を見て出すので(取込データも同じ列に入れている)、
+        #   ここに入れないとその会計だけ空欄になる。
+        info = (str(l.get("info")).strip() or None) if l.get("info") is not None else None
+        cur.execute("""INSERT INTO sale_lines(slip_id,product_key,free_name,info,amount,spec_pending)
+                       VALUES (?,?,?,?,?,?)""",
+                    (slip_id, pk, l.get("free_name"), info, amt, 1 if l.get("spec_pending") else 0))
         line_id = cur.lastrowid
         name = l.get("free_name")
         cat = None
