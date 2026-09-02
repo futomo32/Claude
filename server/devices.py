@@ -181,8 +181,9 @@ def build_receipt_bytes(r):
         buf += sj(_center(f"登録番号 {STORE_REG_NO}") + "\n")
     buf += sj("-" * RECEIPT_WIDTH + "\n")
     buf += sj(f"日付: {r['sold_at']} 伝票#{r['slip_id']}\n")
-    if r.get("customer"):
-        buf += sj(_pad_line(f"{r['customer']} 様", "") + "\n")
+    # ★2026-09-02: お客様の名前は印字しない(店の指定)。レシートは店頭や袋の中で
+    #   人目に触れるため。誰の売上かは伝票#から辿れるので、控えとしては困らない。
+    #   ※領収書の宛名だけは別(宛名が無いと領収書として使えないため残す)。
     if r.get("staff"):
         buf += sj(f"担当: {r['staff']}\n")
     buf += sj("-" * RECEIPT_WIDTH + "\n")
@@ -335,7 +336,10 @@ def build_void_receipt_bytes(r):
         buf += GS + b"!" + b"\x00"
         buf += sj(_center(f"({kind})") + "\n")
         buf += sj("-" * RECEIPT_WIDTH + "\n")
-        if r.get("customer"):
+        # ★2026-09-02: お客様に渡す控には名前を印字しない(店の指定)。
+        #   店に残す「店控」だけは、誰の返品かが分かるように名前を残す
+        #   (サインをもらう紙なので、店内で保管するもの)。
+        if sign and r.get("customer"):
             buf += sj(f"{r['customer']} 様\n")
         buf += sj(f"元の売上: {r['sold_at']} 伝票#{r['slip_id']}\n")
         buf += sj(f"区分: {r['kind']}\n")
