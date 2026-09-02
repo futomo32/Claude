@@ -108,7 +108,8 @@ CREATE TABLE products (
   sub_category  TEXT,               -- 中分類。d_item.strcbuncode → m_cbunrui
   sub_stone     TEXT,               -- 脇石の石種。d_item.strsecode → m_ishi
   sub_carat1    TEXT,               -- 脇石1の重量。d_item.cursubjuryo1(0は無しとしてNULL)
-  sub_carat2    TEXT                -- 脇石2の重量。d_item.cursubjuryo2
+  sub_carat2    TEXT,               -- 脇石2の重量。d_item.cursubjuryo2
+  tax_rate      INTEGER             -- 消費税率(10 or 8)。空=10%として扱う(2026-09-02)
 );
 CREATE INDEX idx_products_no    ON products(product_no);
 CREATE INDEX idx_products_state ON products(state);
@@ -155,6 +156,8 @@ CREATE TABLE sale_lines (
   amount        INTEGER,           -- 買上金額(編集可)
   discount_rate REAL,              -- 割引率
   tax           INTEGER,
+  tax_rate      INTEGER,           -- 会計した時点の消費税率(10 or 8)。空=10%
+                                   -- ★商品の税率を後で直しても過去の伝票は変わらない
   spec_pending  INTEGER NOT NULL DEFAULT 0, -- 1=仕様未定(後日入力するレンズ等)
   voided        INTEGER NOT NULL DEFAULT 0  -- 1=取消(返品/訂正で無効化。集計・表示から除外)
 );

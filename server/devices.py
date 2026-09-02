@@ -23,6 +23,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "hardware"))
 
+import taxes   # 消費税の計算。★税率と税額の出し方は taxes.py 1か所にまとめてある
+
 # app.py の main() が起動引数に応じて True にする(既定は必ずOFF)
 ENABLED = False
 
@@ -30,6 +32,7 @@ ENABLED = False
 PRINTER_NAME = "CITIZEN CT-S601"   # Windowsスプーラーのプリンター名(RAW印字)
 PRINTER_COM = "COM7"               # 直接COMフォールバック用
 CARD_PORT = "COM3"                 # TCP300II
+
 RECEIPT_WIDTH = 34                 # 印字桁数。桁数テストでは36桁=432ドットまで出たが、432は印字幅の
                                    # 上限ちょうど(余白ゼロ)で、紙の左右の遊びで右端が欠けた(2026-07-31実測。
                                    # ¥998→¥99・109pt→109p 等)。安全マージン2桁を引いて34桁=408ドットに
@@ -187,10 +190,18 @@ def build_receipt_bytes(r):
     if r.get("staff"):
         buf += sj(f"担当: {r['staff']}\n")
     buf += sj("-" * RECEIPT_WIDTH + "\n")
+    # ★8%(軽減税率)が混ざる時だけ、その品名の頭に ※ を付ける(適格請求書の要件
+    #   「軽減税率の対象品目である旨」)。混ざっていない時は今までどおり付けない。
+    show_mark = bool(r.get("has_reduced"))
     for line in r["lines"]:
         name, amount = line[0], line[1]
         lp = line[2] if len(line) > 2 else None
+        # ★変数名を line_rate にしている。下の割引率も rate という名前を使っており、
+        #   同じ名前だと読む人が取り違える(税率と割引率は全くの別物)
+        line_rate = taxes.normalize_rate(line[3] if len(line) > 3 else None)
         nm = str(name or "お品物")
+        if show_mark and line_rate == taxes.REDUCED_RATE:
+            nm = taxes.REDUCED_MARK + nm
         amt = f"\\{amount:,}"
         wide = _w(nm) + len(amt) + 1 > RECEIPT_WIDTH
         if lp and amount < lp:
@@ -207,12 +218,18 @@ def build_receipt_bytes(r):
             buf += sj(_pad_line(nm, amt) + "\n")
     buf += sj("-" * RECEIPT_WIDTH + "\n")
     # 適格簡易請求書の記載要件: 税率ごとに区分した対価の額と消費税額。
-    # 現在の取扱商品は全て標準税率10%だが、「10%対象」と区分を明示する
-    # (将来8%(食品の贈答等)が混ざっても同じ形で並べられる)。
-    tax = r["total"] * 10 // 110
-    buf += sj(_pad_line("10%対象", f"\\{r['total']:,}") + "\n")
-    buf += sj(_pad_line("(内消費税)", f"\\{tax:,}") + "\n")
+    # ★2026-09-02: 8%(軽減税率)に対応。使われている税率ごとに1組ずつ並べる。
+    #   10%だけの時は今までと同じ見た目(「10%対象」1組)。
+    #   税額は**税率ごとに区切ってから**出す(まとめて割ると1円ずれる。taxes.py 参照)。
+    bd = r.get("tax_breakdown")
+    if not bd:   # 古い呼び出し(税率が無いデータ)への保険。全部10%とみなす
+        bd = taxes.split_by_rate([{"amount": r["total"], "tax_rate": taxes.STANDARD_RATE}])
+    for rate in sorted(bd, reverse=True):
+        buf += sj(_pad_line(f"{rate}%対象", f"\\{bd[rate]['total']:,}") + "\n")
+        buf += sj(_pad_line("(内消費税)", f"\\{bd[rate]['tax']:,}") + "\n")
     buf += sj(_pad_line("合計(税込)", f"\\{r['total']:,}") + "\n")
+    if show_mark:
+        buf += sj(taxes.REDUCED_NOTE + "\n")   # ※の凡例(これも要件)
     for method, amount in r["payments"]:
         label = f"{amount:,}pt" if method == "ポイント" else f"\\{amount:,}"
         buf += sj(_pad_line(f"  {method}", label) + "\n")
@@ -350,15 +367,31 @@ def build_void_receipt_bytes(r):
         buf += sj(f"元の売上: {r['sold_at']} 伝票#{r['slip_id']}\n")
         buf += sj(f"区分: {r['kind']}\n")
         buf += sj("-" * RECEIPT_WIDTH + "\n")
-        for name, amount in r["lines"]:
-            for seg in _wrap(str(name or "お品物")):
+        # ★8%が混ざる時だけ品名に ※(適格請求書の要件。売上のレシートと同じ扱い)
+        show_mark = bool(r.get("has_reduced"))
+        for ln in r["lines"]:
+            name, amount = ln[0], ln[1]
+            line_rate = taxes.normalize_rate(ln[2] if len(ln) > 2 else None)
+            nm = str(name or "お品物")
+            if show_mark and line_rate == taxes.REDUCED_RATE:
+                nm = taxes.REDUCED_MARK + nm
+            for seg in _wrap(nm):
                 buf += sj(seg + "\n")
             buf += sj(_pad_line("", f"-\\{amount:,}") + "\n")
         buf += sj("-" * RECEIPT_WIDTH + "\n")
         buf += GS + b"!" + b"\x01"          # 縦2倍(返金額を目立たせる)
         buf += sj(_pad_line("返金額", f"\\{r['total']:,}") + "\n")
         buf += GS + b"!" + b"\x00"
-        buf += sj(_pad_line("(内消費税)", f"\\{r['tax']:,}") + "\n")
+        # 税率ごとの内訳(返金も税率別に出す。元の売上と同じ税率で戻している)
+        bd = r.get("tax_breakdown")
+        if not bd:
+            bd = taxes.split_by_rate([{"amount": r["total"], "tax_rate": taxes.STANDARD_RATE}])
+        for rate in sorted(bd, reverse=True):
+            if len(bd) > 1:
+                buf += sj(_pad_line(f"{rate}%対象", f"\\{bd[rate]['total']:,}") + "\n")
+            buf += sj(_pad_line("(内消費税)", f"\\{bd[rate]['tax']:,}") + "\n")
+        if show_mark:
+            buf += sj(taxes.REDUCED_NOTE + "\n")
         # 元の支払方法(返金の手段の目安。クレジットはカード会社経由で現金は動かない)
         if r.get("payments"):
             buf += sj("元のお支払い:\n")

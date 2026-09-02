@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""画面の通し確認。v0.34.11〜v1.1.0 で入れた変更が生きているかを実ブラウザで見る。
+"""画面の通し確認。v0.34.11〜v1.2.0 で入れた変更が生きているかを実ブラウザで見る。
 
   python3 server/app.py &          # 先にサーバーを起動しておく
   python3 tests/ui_smoke.py
@@ -51,7 +51,7 @@ with sync_playwright() as p:
 
     # ── バージョン表示 ──
     ver = pg.inner_text("#app-ver")
-    check("バージョン表示が v1.1.0", ver.strip() == "v1.1.0", ver)
+    check("バージョン表示が v1.2.0", ver.strip() == "v1.2.0", ver)
 
     # ── 顧客画面へ ──
     pg.click('.nav-item[data-screen="customers"]')

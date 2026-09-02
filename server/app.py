@@ -1045,8 +1045,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/product":
                 con = connect()
-                result = db_query.add_product(con, payload)
-                con.close()
+                # ★2026-09-02: 個数(qty)に対応。同じ商品を10個仕入れる時に1回で登録できる
+                #   (トキワは1商品=1点なので、行を10本作る。数量の列は持たせない)。
+                try:
+                    result = db_query.add_products(con, payload)
+                finally:
+                    con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/product_update":
                 con = connect()

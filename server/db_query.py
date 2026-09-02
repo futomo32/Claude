@@ -4,6 +4,8 @@ UIの描画コードを変えずに済むよう、埋め込み版と同じ配列
 """
 import contextlib, hashlib, json, re, secrets, sqlite3, datetime, unicodedata
 
+import taxes   # 消費税の計算。★税率と税額の出し方はここ1か所。画面側(TAXブロック)と対で持つ
+
 
 @contextlib.contextmanager
 def write_lock(con):
@@ -189,6 +191,11 @@ def ensure_schema(con):
         ("products", "sub_category", "TEXT"),   # 中分類。d_item.strcbuncode → m_cbunrui
         ("customers", "dm_note", "TEXT"),       # DM備考。d_user.strbikname1(転居先不明/手紙出さない/受取拒否)
         ("products", "is_consignment", "INTEGER DEFAULT 0"),  # 受託品フラグ(売上になっても残す。後日精算の識別用)
+        # ★消費税(2026-09-02)。8%(軽減税率)の商品を扱うことになったので税率を持たせる。
+        #   products = その商品の税率 / sale_lines = 会計した時点の税率を焼き付けたもの。
+        #   明細に焼き付けるのは、あとで商品の税率を直しても**過去の伝票を変えない**ため。
+        ("products", "tax_rate", "INTEGER"),
+        ("sale_lines", "tax_rate", "INTEGER"),
         ("products", "consign_settled", "INTEGER DEFAULT 0"),  # 受託の後日精算(原価入力)が済んだか
         ("prescriptions", "frame_type", "TEXT"),  # フレームの種類(セル/メタル/ツーポ/ナイロール)
         ("receivables", "slip_id", "INTEGER"),    # 起票元の売上伝票(併用払いの内訳を辿るため)
@@ -1169,7 +1176,7 @@ def daily_sales(con, date):
     pay_texts = slip_pay_texts(con, "WHERE s.sold_at = ?", (str(date),))
     for r in con.execute(f"""
         SELECT s.slip_id, s.customer_id cid, c.name cname,
-               COALESCE(l.free_name, p.name) item, l.info, l.amount, s.pay_method, s.credit_kind,
+               COALESCE(l.free_name, p.name) item, l.info, l.amount, l.tax_rate, s.pay_method, s.credit_kind,
                s.staff_name, p.is_glasses ig, p.category cat, s.place place
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
@@ -1177,13 +1184,15 @@ def daily_sales(con, date):
         WHERE s.sold_at = ? AND NOT {_SAME_DAY_VOID}""", (str(date),)):
         out.append({"cid": r["cid"], "name": r["cname"] or r["cid"], "item": r["item"],
                     "info": r["info"], "amount": r["amount"] or 0,
+                    # 税率(2026-09-02)。日報の消費税を税率ごとに出すため
+                    "tax_rate": taxes.normalize_rate(r["tax_rate"]),
                     "pay": pay_texts.get(r["slip_id"]) or pay_fallback(r["pay_method"], r["credit_kind"]),
                     "staff": r["staff_name"],
                     "kind4": sale_kind4(r["ig"], r["cat"], r["place"])})
     # 返品行: この日に取り消された明細(当日訂正は除く)をマイナスで出す
     for r in con.execute(f"""
         SELECT s.customer_id cid, c.name cname,
-               COALESCE(l.free_name, p.name) item, l.info, l.amount,
+               COALESCE(l.free_name, p.name) item, l.info, l.amount, l.tax_rate,
                l.refund_method rm, s.pay_method, s.credit_kind,
                s.sold_at orig, l.voided_staff vstaff,
                p.is_glasses ig, p.category cat, s.place place
@@ -1195,6 +1204,7 @@ def daily_sales(con, date):
         method = r["rm"] or pay_fallback(r["pay_method"], r["credit_kind"])
         out.append({"cid": r["cid"], "name": r["cname"] or r["cid"], "item": r["item"],
                     "info": r["info"], "amount": -(r["amount"] or 0),
+                    "tax_rate": taxes.normalize_rate(r["tax_rate"]),   # 返品も元の税率で戻す
                     "pay": f"返金({method})", "refund_method": method,
                     "staff": r["vstaff"], "ret": 1,
                     "note": f"{r['orig']}購入分の返品",
@@ -2654,7 +2664,7 @@ def delete_family(con, family_id):
 PRODUCT_FIELDS = ("product_no", "name", "category", "brand", "metal", "supplier", "cost_price",
                   "list_price", "location", "center_stone", "center_carat",
                   "color", "clarity", "cut", "cert_no", "info", "fucho",
-                  "maker_no", "tag_name", "ring_fingers", "ring_size")
+                  "maker_no", "tag_name", "ring_fingers", "ring_size", "tax_rate")
 
 # 符丁(下代を隠す店内符牒)。数字→カナ「エビスアキナイカミ」対応表。
 _FUCHO_DIGITS = {"1": "ｴ", "2": "ﾋ", "3": "ｽ", "4": "ｱ", "5": "ｷ",
@@ -2684,10 +2694,34 @@ def fucho_encode(cost_price, head=""):
     return str(head or "") + "".join(out)
 
 
+def add_products(con, payload):
+    """商品(仕入)の登録。個数(qty)を指定すると、その数だけ同じ内容で作る(2026-09-02)。
+
+    ★同じお菓子を10個仕入れるようなケース用。トキワは「1商品=1点」で在庫を数えるので、
+      数量の列は持たせず**行を10本作る**(棚卸し・在庫一覧・レジの数え方を変えないため)。
+    ★商品番号を手で指定した場合は個数1だけ。番号が重複してしまうため。
+    戻り: {"count": 作った数, "first_no":, "last_no":, "products": [add_product と同じ形, ...]}
+    """
+    try:
+        qty = int(str(payload.get("qty") or 1).strip() or 1)
+    except (TypeError, ValueError):
+        raise ValueError("個数は数字で入力してください")
+    if qty < 1 or qty > 100:
+        raise ValueError("個数は1〜100で入力してください")
+    if qty > 1 and str(payload.get("product_no") or "").strip():
+        raise ValueError("商品番号を指定した場合、個数は1だけです"
+                         "(同じ番号の商品が増えてしまうため。空欄にすると自動採番で連番になります)")
+    out = [add_product(con, payload) for _ in range(qty)]
+    return {"count": len(out), "first_no": out[0]["product_no"], "last_no": out[-1]["product_no"],
+            "products": out}
+
+
 def add_product(con, payload):
     """商品(仕入)の新規登録。product_no 空なら自動採番。state は '在庫'。"""
     cur = con.cursor()
     vals = {k: (payload.get(k) or None) for k in PRODUCT_FIELDS}
+    # 消費税率。既定は10%。8%(軽減税率)を選べる(飲食料品など)
+    vals["tax_rate"] = taxes.normalize_rate(payload.get("tax_rate"))
     name = (vals["name"] or "").strip()
     if not name:
         raise ValueError("商品名は必須です")
@@ -3296,9 +3330,21 @@ def _checkout_locked(con, payload):
         #   保証書は sale_lines.info を見て出すので(取込データも同じ列に入れている)、
         #   ここに入れないとその会計だけ空欄になる。
         info = (str(l.get("info")).strip() or None) if l.get("info") is not None else None
-        cur.execute("""INSERT INTO sale_lines(slip_id,product_key,free_name,info,amount,spec_pending)
-                       VALUES (?,?,?,?,?,?)""",
-                    (slip_id, pk, l.get("free_name"), info, amt, 1 if l.get("spec_pending") else 0))
+        # ★消費税率(2026-09-02)。明細で指定されていればそれを、無ければ商品の税率を使う。
+        #   ★**会計した時点の税率をここで焼き付ける**のが肝。商品の税率を後で直しても
+        #   過去の伝票の内訳は変わらない(税務の記録としてそうでなければならない)。
+        if l.get("tax_rate") not in (None, ""):
+            rate = taxes.normalize_rate(l.get("tax_rate"))
+        elif pk:
+            prow0 = con.execute("SELECT tax_rate FROM products WHERE product_key=?", (pk,)).fetchone()
+            rate = taxes.normalize_rate(prow0[0] if prow0 else None)
+        else:
+            rate = taxes.DEFAULT_RATE
+        cur.execute("""INSERT INTO sale_lines(slip_id,product_key,free_name,info,amount,
+                                              tax,tax_rate,spec_pending)
+                       VALUES (?,?,?,?,?,?,?,?)""",
+                    (slip_id, pk, l.get("free_name"), info, amt,
+                     taxes.tax_of(amt, rate), rate, 1 if l.get("spec_pending") else 0))
         line_id = cur.lastrowid
         name = l.get("free_name")
         cat = None
@@ -3375,15 +3421,18 @@ def receipt_data(con, slip_id, deposit=None):
     if not s:
         raise ValueError("伝票が見つかりません")
     # (品名, 売価, 定価)。定価があり売価が下回る明細は、レシートに定価と割引率を印字する
-    lines = [(r["nm"], int(r["amount"] or 0), int(r["lp"]) if r["lp"] else None)
-             for r in con.execute(
-        """SELECT COALESCE(l.free_name, p.name) nm, l.amount, p.list_price lp
+    # ★2026-09-02: 税率(4つ目)も返す。8%が混ざる時はレシートを税率別に刷るため。
+    rows_l = list(con.execute(
+        """SELECT COALESCE(l.free_name, p.name) nm, l.amount, p.list_price lp, l.tax_rate
            FROM sale_lines l
            LEFT JOIN products p ON p.product_key = l.product_key
-           WHERE l.slip_id=? AND COALESCE(l.voided,0)=0 ORDER BY l.line_id""", (s["slip_id"],))]
+           WHERE l.slip_id=? AND COALESCE(l.voided,0)=0 ORDER BY l.line_id""", (s["slip_id"],)))
+    lines = [(r["nm"], int(r["amount"] or 0), int(r["lp"]) if r["lp"] else None,
+              taxes.normalize_rate(r["tax_rate"])) for r in rows_l]
+    tax_lines = [{"amount": int(r["amount"] or 0), "tax_rate": r["tax_rate"]} for r in rows_l]
     payments = [(r["method"] or "現金", int(r["amount"] or 0)) for r in con.execute(
         "SELECT method, amount FROM sale_payments WHERE slip_id=? ORDER BY id", (s["slip_id"],))]
-    total = sum(a for _, a, _lp in lines)
+    total = sum(a for _, a, _lp, _r in lines)
     bal_row = con.execute("SELECT balance FROM point_balances WHERE customer_id=?",
                           (str(s["customer_id"]),)).fetchone()
     cash_due = sum(a for m, a in payments if m == "現金")
@@ -3395,6 +3444,10 @@ def receipt_data(con, slip_id, deposit=None):
         deposit = None  # 不正な預り額は印字しない
     return {"slip_id": s["slip_id"], "sold_at": s["sold_at"], "staff": shorten_staff(s["staff_name"]),
             "customer": s["cname"], "lines": lines, "payments": payments, "total": total,
+            # 税率ごとの内訳 {10: {"total":, "tax":}, 8: {...}}。レシートはこれを見て刷る
+            "tax_breakdown": taxes.split_by_rate(tax_lines),
+            "tax": taxes.total_tax(tax_lines),
+            "has_reduced": taxes.has_reduced(tax_lines),
             "earned": int(s["earned_points"] or 0), "points_used": int(s["used_points"] or 0),
             "point_balance": int(bal_row[0] or 0) if bal_row else 0,
             "deposit": deposit, "cash_due": cash_due,
@@ -3435,7 +3488,11 @@ def receipt_doc_data(con, slip_id, to_name=None, note=None, reissue=False):
     cash_amount = sum(a for m, a in payments if m in STAMP_CASH_METHODS)
     credit_methods = [m for m, a in payments if m not in STAMP_CASH_METHODS and a > 0]
     stamp_required = cash_amount >= STAMP_THRESHOLD
-    tax = total * 10 // 110
+    # ★2026-09-02: 領収書の税額も税率ごとに出す(まとめて割ると1円ずれる)
+    tax_rows = [{"amount": int(r["amount"] or 0), "tax_rate": r["tax_rate"]} for r in con.execute(
+        """SELECT amount, tax_rate FROM sale_lines
+           WHERE slip_id=? AND COALESCE(voided,0)=0""", (s["slip_id"],))]
+    tax = taxes.total_tax(tax_rows)
 
     name = str(to_name or "").strip() or (s["cname"] or "").strip() or "上様"
     return {"slip_id": s["slip_id"], "issued_at": datetime.date.today().isoformat(),
@@ -3457,7 +3514,7 @@ def void_receipt_data(con, line_id=None, slip_id=None):
     if line_id is not None:
         rows = con.execute("""SELECT l.line_id, l.slip_id, l.amount,
                                      COALESCE(l.free_name, p.name) nm,
-                                     l.voided_at, l.voided_staff, l.voided_reason, l.voided_by
+                                     l.voided_at, l.voided_staff, l.voided_reason, l.voided_by, l.tax_rate
                               FROM sale_lines l LEFT JOIN products p ON p.product_key = l.product_key
                               WHERE l.line_id=? AND COALESCE(l.voided,0)=1""", (int(line_id),)).fetchall()
         if not rows:
@@ -3467,7 +3524,7 @@ def void_receipt_data(con, line_id=None, slip_id=None):
     else:
         rows = con.execute("""SELECT l.line_id, l.slip_id, l.amount,
                                      COALESCE(l.free_name, p.name) nm,
-                                     l.voided_at, l.voided_staff, l.voided_reason, l.voided_by
+                                     l.voided_at, l.voided_staff, l.voided_reason, l.voided_by, l.tax_rate
                               FROM sale_lines l LEFT JOIN products p ON p.product_key = l.product_key
                               WHERE l.slip_id=? AND COALESCE(l.voided,0)=1
                               ORDER BY l.line_id""", (int(slip_id),)).fetchall()
@@ -3495,8 +3552,17 @@ def void_receipt_data(con, line_id=None, slip_id=None):
         point_balance = int(bal[0] or 0) if bal else None
     return {"kind": kind, "slip_id": int(slip_id), "sold_at": s["sold_at"] if s else "",
             "customer": (s["cname"] if s else "") or "", "staff": shorten_staff(s["staff_name"] if s else ""),
-            "lines": [(r["nm"] or "お品物", int(r["amount"] or 0)) for r in rows],
-            "total": total, "tax": total * 10 // 110, "payments": payments,
+            # ★2026-09-02: 返品も税率別に(元の売上と同じ税率で戻す)。3つ目が税率
+            "lines": [(r["nm"] or "お品物", int(r["amount"] or 0),
+                       taxes.normalize_rate(r["tax_rate"])) for r in rows],
+            "total": total,
+            "tax_breakdown": taxes.split_by_rate(
+                [{"amount": int(r["amount"] or 0), "tax_rate": r["tax_rate"]} for r in rows]),
+            "tax": taxes.total_tax(
+                [{"amount": int(r["amount"] or 0), "tax_rate": r["tax_rate"]} for r in rows]),
+            "has_reduced": taxes.has_reduced(
+                [{"amount": int(r["amount"] or 0), "tax_rate": r["tax_rate"]} for r in rows]),
+            "payments": payments,
             "cash_refund": any(m == "現金" and a > 0 for m, a in payments),
             "point_delta": point_delta, "point_balance": point_balance,
             "voided_at": first["voided_at"] or "", "voided_staff": first["voided_staff"] or "",
