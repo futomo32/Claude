@@ -1374,6 +1374,20 @@ def prescription_search(con, frm="", to="", purpose="", misassign_only=False):
     return out
 
 
+def _dm_ok_conds():
+    """「DM可のみ」の絞り込み条件を (SQL群, 引数) で返す。
+    DM可 = DM区分が「送らない」系でなく、住所の先頭にDM不可の印(ＴＴＴ等)も無い顧客。
+    空欄は「可」として残す(店の運用で、出したくない時だけ値を入れているため)。
+    ★詳細検索と複合検索の両方が呼ぶ。判定を変えるならここだけを直せば両方に効く
+      (以前は詳細検索にしか無く、片方だけ直す危険があった。2026-09-02 集約)。"""
+    conds = ["normjp(COALESCE(c.dm_ok,'')) NOT IN (%s)" % ",".join("?" for _ in _DM_NO_NORM)]
+    args = list(_DM_NO_NORM)
+    conds.append("(%s)" % " AND ".join(
+        "normjp(COALESCE(c.address,'')) NOT LIKE ?" for _ in DM_BLOCK_REASONS))
+    args.extend(normjp(k * 3) + "%" for k in DM_BLOCK_REASONS)
+    return conds, args
+
+
 def detailed_customer_search(con, p):
     """顧客の横断詳細検索(B-4拡張)。顧客属性＋購入商品属性＋処方箋属性をANDで絞り込み、
     条件に合う顧客の一覧を返す(DM・お声がけ抽出用)。
@@ -1410,16 +1424,11 @@ def detailed_customer_search(con, p):
     if g("gender"):
         where.append("c.gender = ?"); args.append(g("gender"))
     if g("dm_ok") == "1":
-        # 「DM可のみ」= DM区分が「送らない」でなく、住所の先頭にDM不可の記号も無い顧客。
-        # 空欄は「可」として残す(店の運用で、出したくない時だけ値を入れているため)。
+        # 判定は _dm_ok_conds() に集約(複合検索と共通)。
         # 従来は `COALESCE(c.dm_ok,0)=1` と数値の1を比べていたが、実際に入っている値は
         # 「送る/送らない」「可/不可」等の文字列で、一件も一致せず絞れていなかった。
-        where.append("normjp(COALESCE(c.dm_ok,'')) NOT IN (%s)"
-                     % ",".join("?" for _ in _DM_NO_NORM))
-        args.extend(_DM_NO_NORM)
-        where.append("(%s)" % " AND ".join(
-            "normjp(COALESCE(c.address,'')) NOT LIKE ?" for _ in DM_BLOCK_REASONS))
-        args.extend(normjp(k * 3) + "%" for k in DM_BLOCK_REASONS)
+        dmc, dma = _dm_ok_conds()
+        where.extend(dmc); args.extend(dma)
 
     # 最終購入(購入の最新日)。none=購入履歴なし / N=N年以上購入なし(購入はあるが古い)
     lb = g("last_buy")
@@ -1512,6 +1521,191 @@ def detailed_customer_search(con, p):
     if truncated:
         rows = rows[:LIMIT]
     return {"rows": rows, "count": len(rows), "truncated": truncated}
+
+
+# ══ 複合検索(宝飾ナビの「多目的複合検索」に相当。2026-09-02 第1段)══════════════
+# 条件を「行」で足していく検索。詳細検索と違い、同じ項目を何度でも足せる。
+#   ・同じ項目を2回足す  → OR (担当者 1〜100 「または」 200〜250)
+#   ・違う項目どうし     → AND(担当者の条件 「かつ」 ランクの条件)
+# 店の使い方: 担当者コードを「からまで」で何区間も足してDMの宛先を作る。
+#
+# ★項目の定義(MULTI_FIELDS)は**ここが唯一の正**。画面は /api/multi_search_fields で
+#   受け取って描くだけなので、項目を足す時はここだけを直せばよい(画面と対で持たない)。
+#   第2段で購入まわり(買上日・回数・金額・地金・宝石名・製品・ジャンル)、
+#   第3段で残り(転居・備考3・度数SPH)を足す予定。no は宝飾ナビの項目番号に合わせている。
+MULTI_FIELDS = [
+    {"no": 1, "key": "postal", "label": "郵便番号", "type": "range_text",
+     "hint": "ハイフンは無視して数字だけで比べます"},
+    {"no": 2, "key": "district", "label": "地区区分", "type": "like"},
+    {"no": 3, "key": "staff_code", "label": "担当者", "type": "range_num",
+     "hint": "担当者番号。番号が数字でない担当者は範囲に入りません"},
+    {"no": 4, "key": "rank", "label": "顧客ランク", "type": "choice"},
+    {"no": 5, "key": "gender", "label": "性別", "type": "choice"},
+    {"no": 6, "key": "age", "label": "年齢", "type": "range_num",
+     "hint": "今日時点の満年齢。生年月日が空の人は該当しません"},
+    {"no": 7, "key": "birth_month", "label": "誕生月", "type": "range_month"},
+    {"no": 8, "key": "wedding_month", "label": "結婚記念月", "type": "range_month"},
+    {"no": 9, "key": "pierce", "label": "ピアス穴", "type": "choice"},
+    {"no": 13, "key": "registered_at", "label": "登録日", "type": "range_date"},
+]
+MULTI_BY_KEY = {f["key"]: f for f in MULTI_FIELDS}
+
+# 年齢は「今日のYYYYMMDD − 誕生日のYYYYMMDD」を10000で割って出す。
+# 365.25で割る書き方は誕生日の前後で1歳ずれるため使わない。
+_AGE_EXPR = ("(CAST(strftime('%Y%m%d','now','localtime') AS INTEGER) "
+             "- CAST(strftime('%Y%m%d', c.birthday) AS INTEGER)) / 10000")
+
+# 比べる対象のSQL式(範囲条件で使う)
+_MULTI_EXPR = {
+    "postal": "replace(replace(COALESCE(c.postal,''),'-',''),'ー','')",
+    "staff_code": "CAST(c.staff_code AS INTEGER)",
+    "age": _AGE_EXPR,
+    "birth_month": "CAST(substr(c.birthday,6,2) AS INTEGER)",
+    "wedding_month": "CAST(substr(c.wedding_day,6,2) AS INTEGER)",
+    "registered_at": "c.registered_at",
+}
+# ★空欄よけ。これが無いと「登録日 〜2020-01-01」で**登録日が空の人まで**該当してしまう
+#   (空文字はどんな文字列より小さいため)。範囲条件は必ず値がある人だけを対象にする。
+_MULTI_GUARD = {
+    "postal": "COALESCE(c.postal,'')<>''",
+    "staff_code": "c.staff_code GLOB '[0-9]*'",
+    "age": "COALESCE(c.birthday,'')<>''",
+    "birth_month": "COALESCE(c.birthday,'')<>''",
+    "wedding_month": "COALESCE(c.wedding_day,'')<>''",
+    "registered_at": "COALESCE(c.registered_at,'')<>''",
+}
+
+
+def _multi_num(f, v):
+    """範囲欄の数字を読む。全角で打たれても拾う(NFKC)。"""
+    try:
+        return int(unicodedata.normalize("NFKC", str(v)).strip())
+    except ValueError:
+        raise ValueError("「%s」には数字を入れてください(入力: %s)" % (f["label"], v))
+
+
+def _multi_condition(f, row):
+    """条件1行を (SQL, 引数) にする。空欄の行は (None, []) を返して無視する。
+    「から」だけ=以上 / 「まで」だけ=以下 / 両方=その範囲。逆に入れても入れ替えて通す。"""
+    t, key = f["type"], f["key"]
+    if t in ("like", "choice"):
+        v = str(row.get("value") or "").strip()
+        if not v:
+            return None, []
+        if t == "like":
+            return "(normjp(COALESCE(c.%s,'')) LIKE ?)" % key, ["%" + normjp(v) + "%"]
+        return "(c.%s = ?)" % key, [v]
+
+    lo, hi = str(row.get("from") or "").strip(), str(row.get("to") or "").strip()
+    if not lo and not hi:
+        return None, []
+    if t in ("range_num", "range_month"):
+        lov = _multi_num(f, lo) if lo else None
+        hiv = _multi_num(f, hi) if hi else None
+    elif key == "postal":
+        cv = lambda x: re.sub(r"\D", "", unicodedata.normalize("NFKC", x))
+        lov, hiv = (cv(lo) or None) if lo else None, (cv(hi) or None) if hi else None
+        if lov is None and hiv is None:
+            return None, []
+    else:
+        lov, hiv = (lo or None), (hi or None)
+
+    expr = _MULTI_EXPR[key]
+    parts = [_MULTI_GUARD[key]] if key in _MULTI_GUARD else []
+    args = []
+    if lov is not None and hiv is not None:
+        if lov > hiv:
+            lov, hiv = hiv, lov
+        parts.append("%s BETWEEN ? AND ?" % expr); args += [lov, hiv]
+    elif lov is not None:
+        parts.append("%s >= ?" % expr); args.append(lov)
+    else:
+        parts.append("%s <= ?" % expr); args.append(hiv)
+    return "(" + " AND ".join(parts) + ")", args
+
+
+def _multi_choices(con, col, limit=200):
+    """選択肢を実データから作る。マスタ未登録の値も拾えるようにDISTINCTで取る。"""
+    return [r[0] for r in con.execute(
+        "SELECT DISTINCT %s v FROM customers WHERE COALESCE(%s,'')<>'' "
+        "AND COALESCE(is_test,0)=0 ORDER BY v LIMIT ?" % (col, col), (limit,))]
+
+
+def multi_search_fields(con):
+    """複合検索の項目一覧を画面へ渡す。選択肢もここで埋める。"""
+    out = []
+    for f in MULTI_FIELDS:
+        d = dict(f)
+        if f["type"] == "choice":
+            d["options"] = _multi_choices(con, f["key"])
+        out.append(d)
+    return {"fields": out}
+
+
+MULTI_PAGE_MAX = 500    # 1ページに出す最大件数(画面が重くなるのを防ぐ)
+MULTI_IDS_MAX = 50000   # 「全選択」やラベル印刷に渡す顧客IDの上限(顧客総数は約2.5万)
+
+
+def multi_customer_search(con, payload):
+    """複合検索。条件行を項目ごとにまとめ、同じ項目はOR・違う項目はANDで絞る。
+      payload: {conditions:[{field, from, to, value}], exclude:'1'(既定・集計対象外を除く),
+                dm_ok:1(DM可のみ), limit, offset}
+      戻り値: {rows: 表示するページぶん, count: 該当総数, ids: 該当者すべての顧客ID,
+               offset, limit, ids_truncated}
+    ★rows はページぶんだけ、ids は全件。「全選択」で1ページ目以外も選べるようにするため。"""
+    con.row_factory = sqlite3.Row
+    p = payload or {}
+    where, args = ["COALESCE(c.is_test,0)=0"], []
+    if str(p.get("exclude") or "1") != "0":
+        where.append("COALESCE(c.exclude_stats,0)=0")
+    if str(p.get("dm_ok") or "") in ("1", "True", "true"):
+        dmc, dma = _dm_ok_conds()
+        where.extend(dmc); args.extend(dma)
+
+    # 項目ごとにまとめる(同じ項目の行は OR でつなぐ)。dict は入れた順を保つので、
+    # 画面に並べた順のままSQLになる
+    groups = {}
+    for row in (p.get("conditions") or []):
+        f = MULTI_BY_KEY.get(str(row.get("field") or ""))
+        if not f:
+            continue        # 知らない項目は黙って無視(画面の作り替え中でも落ちないように)
+        sql, a = _multi_condition(f, row)
+        if sql:
+            groups.setdefault(f["key"], []).append((sql, a))
+    for lst in groups.values():
+        where.append("(" + " OR ".join(s for s, _ in lst) + ")")
+        for _, a in lst:
+            args += a
+
+    w = " AND ".join(where)
+    ids = [r[0] for r in con.execute(
+        "SELECT c.customer_id FROM customers c WHERE " + w + " LIMIT ?",
+        args + [MULTI_IDS_MAX + 1])]
+    ids_truncated = len(ids) > MULTI_IDS_MAX
+    if ids_truncated:
+        ids = ids[:MULTI_IDS_MAX]
+
+    try:
+        limit = max(1, min(int(p.get("limit") or 200), MULTI_PAGE_MAX))
+    except (TypeError, ValueError):
+        limit = 200
+    try:
+        offset = max(0, int(p.get("offset") or 0))
+    except (TypeError, ValueError):
+        offset = 0
+
+    total_sub = ("(SELECT COALESCE(SUM(sl.amount),0) FROM sale_lines sl "
+                 "JOIN sales_slips ss ON sl.slip_id=ss.slip_id "
+                 "WHERE ss.customer_id=c.customer_id AND COALESCE(sl.voided,0)=0 "
+                 "AND COALESCE(ss.voided,0)=0)")
+    rows = [[r["id"], r["name"], r["kana"], r["tel"], r["rank"], r["district"],
+             r["total"] or 0, r["staff"]]
+            for r in con.execute(
+                "SELECT c.customer_id id, c.name, c.kana, c.tel, c.rank, c.district, "
+                "c.staff_name staff, " + total_sub + " total FROM customers c WHERE " + w
+                + " ORDER BY total DESC LIMIT ? OFFSET ?", args + [limit, offset])]
+    return {"rows": rows, "count": len(ids), "ids": ids, "offset": offset,
+            "limit": limit, "ids_truncated": ids_truncated}
 
 
 # ── ポイント設定(ルールマスタ) ──

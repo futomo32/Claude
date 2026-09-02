@@ -439,7 +439,8 @@ class Handler(BaseHTTPRequestHandler):
                         "/api/product", "/api/daily_sales", "/api/slip_lines", "/api/documents",
                         "/api/customer_ranking", "/api/prescription_search", "/api/rank_preview",
                         "/api/rank_rules", "/api/receivables_summary", "/api/stock_stats",
-                        "/api/search_options", "/api/detailed_search", "/api/stocktake_summary"):
+                        "/api/search_options", "/api/detailed_search", "/api/stocktake_summary",
+                        "/api/multi_search_fields"):
                 qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
 
                 def q1(name, default=""):
@@ -501,6 +502,9 @@ class Handler(BaseHTTPRequestHandler):
                         result = db_query.stocktake_summary(con)
                     elif path == "/api/search_options":
                         result = db_query.search_options(con)
+                    elif path == "/api/multi_search_fields":
+                        # 複合検索で選べる項目と選択肢(定義は db_query.MULTI_FIELDS が唯一の正)
+                        result = db_query.multi_search_fields(con)
                     elif path == "/api/detailed_search":
                         # 詳細検索(顧客属性＋購入商品＋処方箋のAND)。全パラメータをそのまま渡す
                         result = db_query.detailed_customer_search(
@@ -651,6 +655,16 @@ class Handler(BaseHTTPRequestHandler):
                 # ポイントの行を刷るかどうか(レジ画面の指定。既定は刷らない。2026-09-02)
                 receipt["show_points"] = bool(payload.get("show_points"))
                 result = devices.print_receipt(receipt, drawer=payload.get("drawer", True))
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/multi_search":
+                # 複合検索(条件を行で足していく)。条件が多く入れ子になるのでPOSTで受ける
+                con = connect()
+                try:
+                    result = db_query.multi_customer_search(con, payload)
+                except ValueError as e:
+                    return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                finally:
+                    con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/customer_dup_check":
                 # 登録前の重複警告(登録は止めない。同じ電話番号のご家族もあるため)
