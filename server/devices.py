@@ -221,10 +221,16 @@ def build_receipt_bytes(r):
         buf += sj(_pad_line("お釣り", f"\\{r['deposit'] - r['cash_due']:,}") + "\n")
     buf += sj("-" * RECEIPT_WIDTH + "\n")
     # ポイント(使用/加算/残高)。カード券面の代わりに残高が分かる(レシート残高印字)
-    if r.get("points_used"):
-        buf += sj(_pad_line("ご使用ポイント", f"{r['points_used']:,}pt") + "\n")
-    buf += sj(_pad_line("加算ポイント", f"{r.get('earned', 0):,}pt") + "\n")
-    buf += sj(_pad_line("ポイント残高", f"{r.get('point_balance', 0):,}pt") + "\n")
+    # ★2026-09-02: 既定では刷らない。ポイントは「カードが無いと使えない」運用のため、
+    #   カードを入れていない会計に出しても意味がない。レジ画面で指定された時だけ出す
+    #   (カードを保持すると自動でON。カード無しでも手で出せる)。
+    #   ★ただし**ポイントを実際に使った会計は必ず出す**。使ったのに紙に残らないと、
+    #     お客様と残高の行き違いが起きるため(返品明細と同じ考え方)。
+    if r.get("show_points") or r.get("points_used"):
+        if r.get("points_used"):
+            buf += sj(_pad_line("ご使用ポイント", f"{r['points_used']:,}pt") + "\n")
+        buf += sj(_pad_line("加算ポイント", f"{r.get('earned', 0):,}pt") + "\n")
+        buf += sj(_pad_line("ポイント残高", f"{r.get('point_balance', 0):,}pt") + "\n")
     buf += sj("-" * RECEIPT_WIDTH + "\n")
     # 感謝の一文(設定画面で変更可。修理のお客様向けに中立な文言に変える等。空=印字なし)
     thanks = str(r.get("thanks", "お買上げありがとうございます") or "").strip()

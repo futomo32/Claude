@@ -648,6 +648,8 @@ class Handler(BaseHTTPRequestHandler):
                     receipt = db_query.receipt_data(con, payload.get("slip_id"), payload.get("deposit"))
                 finally:
                     con.close()
+                # ポイントの行を刷るかどうか(レジ画面の指定。既定は刷らない。2026-09-02)
+                receipt["show_points"] = bool(payload.get("show_points"))
                 result = devices.print_receipt(receipt, drawer=payload.get("drawer", True))
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/customer_dup_check":
