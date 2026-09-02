@@ -1580,6 +1580,27 @@ MULTI_FIELDS = [
      "hint": "番号なしの明細(修理・電池など)は、その品名で探します"},
     {"key": "genre", "label": "ジャンル", "type": "genre", "group": "購入", "scope": "customer",
      "hint": "「それだけしか買っていない」は、修理・電池など番号なしの明細を数えません"},
+    {"key": "last_buy", "label": "最終購入日", "type": "range_date", "group": "購入",
+     "scope": "customer",
+     "hint": "一度も買っていない人は該当しません(その人を探す時は「回数」を 0 〜 0 に)"},
+    # ── その他の顧客の条件(第3段) ──
+    {"no": 10, "key": "dm_mark", "label": "転居・DM不可の印", "type": "choice", "group": "顧客",
+     "scope": "customer", "hint": "住所の先頭に付けている記号(ＴＴＴ=転居 等)で判定します"},
+    {"no": 12, "key": "memo3", "label": "備考3", "type": "like", "group": "顧客",
+     "scope": "customer"},
+    {"key": "memo_any", "label": "顧客メモ(どれでも)", "type": "like", "group": "顧客",
+     "scope": "customer", "hint": "メモ01〜10のどれかに含まれていれば該当します"},
+    {"key": "store", "label": "店舗", "type": "choice", "group": "顧客", "scope": "customer"},
+    {"key": "points", "label": "現残ポイント", "type": "range_num", "group": "顧客",
+     "scope": "customer", "hint": "ポイントの記録が無い人は 0 として扱います"},
+    # ── メガネ処方箋の条件(第3段) ──
+    {"no": 23, "key": "sph", "label": "度数(SPH)", "type": "range_dec", "group": "処方箋",
+     "scope": "rx", "hint": "右目・左目のどちらかが範囲に入れば該当。小数・マイナスで入れます(例 -3.00 〜 -1.00)"},
+    {"key": "rx_purpose", "label": "用途(レンズ種類)", "type": "choice", "group": "処方箋",
+     "scope": "rx"},
+    {"key": "rx_name", "label": "レンズ・フレーム名", "type": "like", "group": "処方箋",
+     "scope": "rx"},
+    {"key": "rx_date", "label": "処方日", "type": "range_date", "group": "処方箋", "scope": "rx"},
 ]
 MULTI_BY_KEY = {f["key"]: f for f in MULTI_FIELDS}
 
@@ -1604,7 +1625,12 @@ _MULTI_EXPR = {
     # 回数=買物の回数(伝票の数)。同じ日に2点買っても1回と数える
     "buy_count": "(SELECT COUNT(DISTINCT ss.slip_id) " + _LIVE_LINES + ")",
     "buy_total": "(SELECT COALESCE(SUM(sl.amount),0) " + _LIVE_LINES + ")",
+    "last_buy": "(SELECT MAX(ss.sold_at) " + _LIVE_LINES + ")",
+    # ポイントの記録が無い人は 0(残高0と同じ扱い。記録の有無で漏れないように)
+    "points": ("COALESCE((SELECT pb.balance FROM point_balances pb "
+               "WHERE pb.customer_id=c.customer_id),0)"),
 }
+MULTI_NO_MARK = "印なし"   # 転居・DM不可の印が付いていない人
 # ★空欄よけ。これが無いと「登録日 〜2020-01-01」で**登録日が空の人まで**該当してしまう
 #   (空文字はどんな文字列より小さいため)。範囲条件は必ず値がある人だけを対象にする。
 _MULTI_GUARD = {
@@ -1614,6 +1640,8 @@ _MULTI_GUARD = {
     "birth_month": "COALESCE(c.birthday,'')<>''",
     "wedding_month": "COALESCE(c.wedding_day,'')<>''",
     "registered_at": "COALESCE(c.registered_at,'')<>''",
+    # 一度も買っていない人を「最終購入日 〜◯年前」に混ぜない(MAXがNULLになるため)
+    "last_buy": "EXISTS(SELECT 1 " + _LIVE_LINES + ")",
 }
 
 
@@ -1625,10 +1653,51 @@ def _multi_num(f, v):
         raise ValueError("「%s」には数字を入れてください(入力: %s)" % (f["label"], v))
 
 
+def _multi_special(f, row):
+    """列をそのまま比べられない顧客の条件(住所の印・顧客メモ・店舗)。
+    扱わない項目なら (None, []) を返し、呼び出し側の通常処理に任せる。"""
+    key = f["key"]
+    if key not in ("dm_mark", "memo3", "memo_any", "store"):
+        return None, []
+    v = str(row.get("value") or "").strip()
+    if not v:
+        return None, []
+    if key == "dm_mark":
+        # 店の運用: DMを出さない相手は住所の先頭に記号を3つ重ねて書いている(ＴＴＴ=転居 等)
+        marks = [normjp(k * 3) + "%" for k in DM_BLOCK_REASONS]
+        if v == MULTI_NO_MARK:
+            return ("(" + " AND ".join("normjp(COALESCE(c.address,'')) NOT LIKE ?"
+                                       for _ in marks) + ")", marks)
+        k = next((k for k, name in DM_BLOCK_REASONS.items() if name == v), None)
+        if not k:
+            return None, []
+        return "(normjp(COALESCE(c.address,'')) LIKE ?)", [normjp(k * 3) + "%"]
+    if key == "store":
+        return "(c.store_code = ?)", [v]
+    inner = "normjp(COALESCE(m.body,'')) LIKE ?"
+    if key == "memo3":
+        inner += " AND m.seq=3"
+    return ("(EXISTS(SELECT 1 FROM customer_memos m WHERE m.customer_id=c.customer_id AND "
+            + inner + "))", ["%" + normjp(v) + "%"])
+
+
+def _multi_dec(f, v):
+    """小数の入る範囲欄(度数など)を読む。全角やプラス記号付きでも拾う。"""
+    try:
+        return float(unicodedata.normalize("NFKC", str(v)).strip())
+    except ValueError:
+        raise ValueError("「%s」には数字を入れてください(入力: %s)" % (f["label"], v))
+
+
 def _multi_condition(f, row):
     """条件1行を (SQL, 引数) にする。空欄の行は (None, []) を返して無視する。
     「から」だけ=以上 / 「まで」だけ=以下 / 両方=その範囲。逆に入れても入れ替えて通す。"""
     t, key = f["type"], f["key"]
+    sp = _multi_special(f, row)
+    if sp[0]:
+        return sp
+    if key in ("dm_mark", "memo3", "memo_any", "store"):
+        return None, []      # 上で扱う項目。空欄だっただけなので無視する
     if t in ("like", "choice"):
         v = str(row.get("value") or "").strip()
         if not v:
@@ -1725,6 +1794,62 @@ def _genre_condition(row):
     return "(" + has + " AND NOT " + other + ")", [v, v]
 
 
+# ── メガネ処方箋の条件(EXISTS の中身)──────────────────────────────
+_RX_EXISTS = ("EXISTS(SELECT 1 FROM prescriptions rx "
+              "WHERE rx.customer_id=c.customer_id AND %s)")
+
+
+def _sph_sql(op, args):
+    """度数(SPH)。右目・左目のどちらかが範囲に入れば該当。
+    ★度数は文字列で入っている('-2.25' 等)。空欄や 'S-2.00' のような数でない値は
+      CAST すると 0 になり、「-1.00〜1.00」の範囲に**空欄の人が全員入ってしまう**ので、
+      数字らしい形のものだけを対象にする。"""
+    parts = []
+    for side in ("r", "l"):
+        col = "rx.sph_" + side
+        parts.append("(COALESCE(%s,'') <> '' AND %s GLOB '[-+.0-9]*' AND %s GLOB '*[0-9]*' "
+                     "AND CAST(%s AS REAL) %s)" % (col, col, col, col, op))
+    return "(" + " OR ".join(parts) + ")", args + args
+
+
+def _rx_condition(f, row):
+    """処方箋の条件1行を、EXISTS の中に入れる SQL にする。空欄なら (None, [])。"""
+    key = f["key"]
+    if key == "rx_date":
+        lo, hi = str(row.get("from") or "").strip(), str(row.get("to") or "").strip()
+        parts, args = [], []
+        if lo:
+            parts.append("rx.rx_date >= ?"); args.append(lo)
+        if hi:
+            parts.append("rx.rx_date <= ?"); args.append(hi)
+        return ("(" + " AND ".join(parts) + ")", args) if parts else (None, [])
+    if key == "sph":
+        lo, hi = str(row.get("from") or "").strip(), str(row.get("to") or "").strip()
+        lov = _multi_dec(f, lo) if lo else None
+        hiv = _multi_dec(f, hi) if hi else None
+        if lov is None and hiv is None:
+            return None, []
+        if lov is not None and hiv is not None:
+            if lov > hiv:
+                lov, hiv = hiv, lov
+            return _sph_sql("BETWEEN ? AND ?", [lov, hiv])
+        if lov is not None:
+            return _sph_sql(">= ?", [lov])
+        return _sph_sql("<= ?", [hiv])
+    v = str(row.get("value") or "").strip()
+    if not v:
+        return None, []
+    if key == "rx_purpose":
+        return "(rx.purpose = ?)", [v]
+    nv = "%" + normjp(v) + "%"      # rx_name: レンズ名・フレーム名のどちらか
+    return ("(normjp(COALESCE(rx.lens_name,'')) LIKE ? "
+            "OR normjp(COALESCE(rx.frame_name,'')) LIKE ?)", [nv, nv])
+
+
+# 「1つ上と同じ〜」でまとめられる条件の種類。product=同じ1点の商品 / rx=同じ1枚の処方箋
+MULTI_SCOPES = {"product": _PROD_EXISTS, "rx": _RX_EXISTS}
+
+
 def _multi_chunks(rows):
     """買ったものの条件を「かたまり」に分ける。
     「1つ上と同じ商品」にチェックが無い行が新しいかたまりの始まり、
@@ -1738,7 +1863,7 @@ def _multi_chunks(rows):
     return out
 
 
-def _chunk_sql(chunk):
+def _chunk_sql(chunk, tmpl):
     """かたまり1つを EXISTS 1つにする。かたまりの中は
     「同じ項目どうしは OR、違う項目どうしは AND」(画面全体の規則と同じ)。"""
     by_field, args = {}, []
@@ -1749,7 +1874,7 @@ def _chunk_sql(chunk):
         parts.append("(" + " OR ".join(x["sql"] for x in lst) + ")")
         for x in lst:
             args += x["args"]
-    return _PROD_EXISTS % " AND ".join(parts), args
+    return tmpl % " AND ".join(parts), args
 
 
 def _multi_choices(con, col, limit=200):
@@ -1778,6 +1903,12 @@ def multi_search_fields(con):
         "category": lambda: product_categories(con),
         "brand": lambda: product_brands(con),
         "supplier": lambda: product_suppliers(con),
+        "rx_purpose": lambda: prescription_purposes(con),
+        # 住所の印。「印なし」も選べるようにする(印が付いていない人を探せる)
+        "dm_mark": lambda: list(DM_BLOCK_REASONS.values()) + [MULTI_NO_MARK],
+        # 店舗はコードで絞るが、画面には名前を出す({v:値, t:表示})
+        "store": lambda: [{"v": r[0], "t": "%s: %s" % (r[0], r[1])} for r in con.execute(
+            "SELECT store_code, name FROM stores ORDER BY store_code")],
     }
     out = []
     for f in MULTI_FIELDS:
@@ -1801,7 +1932,9 @@ def multi_customer_search(con, payload):
                 exclude:'1'(既定・集計対象外を除く), dm_ok:1(DM可のみ), limit, offset}
         ・from/to … 範囲の項目 / value … 選ぶ・部分一致の項目
         ・mode      … ジャンルだけ。'any'=買ったことがある / 'only'=それだけしか買っていない
-        ・same_prev … 買ったものの条件だけ。true=1つ上の行と**同じ1点の商品**で満たす
+        ・same_prev … 買ったもの/処方箋の条件だけ。true=1つ上の行と同じ1点の商品
+                      (処方箋なら同じ1枚)で満たす
+        ・include_family … 1=当たった人の家族(顧客として登録され、つながっている人)も含める
       戻り値: {rows: 表示するページぶん, count: 該当総数, ids: 該当者すべての顧客ID,
                offset, limit, ids_truncated}
     ★rows はページぶんだけ、ids は全件。「全選択」で1ページ目以外も選べるようにするため。"""
@@ -1816,45 +1949,62 @@ def multi_customer_search(con, payload):
 
     # 顧客の条件は項目ごとにまとめる(同じ項目の行は OR でつなぐ)。
     # dict は入れた順を保つので、画面に並べた順のままSQLになる
-    groups, prod = {}, []
+    groups = {}
+    scoped = {sc: [] for sc in MULTI_SCOPES}     # product / rx はまとめられるので別に持つ
+    builders = {"product": _prod_condition, "rx": _rx_condition}
     for row in (p.get("conditions") or []):
         f = MULTI_BY_KEY.get(str(row.get("field") or ""))
         if not f:
             continue        # 知らない項目は黙って無視(画面の作り替え中でも落ちないように)
+        sc = f.get("scope", "customer")
         if f["type"] == "genre":
             sql, a = _genre_condition(row)
             if sql:
                 groups.setdefault(f["key"], []).append((sql, a))
-        elif f.get("scope") == "product":
-            sql, a = _prod_condition(f, row)
+        elif sc in MULTI_SCOPES:
+            sql, a = builders[sc](f, row)
             if sql:
-                prod.append({"field": f["key"], "sql": sql, "args": a,
-                             "same_prev": bool(row.get("same_prev"))})
+                scoped[sc].append({"field": f["key"], "sql": sql, "args": a,
+                                   "same_prev": bool(row.get("same_prev"))})
         else:
             sql, a = _multi_condition(f, row)
             if sql:
                 groups.setdefault(f["key"], []).append((sql, a))
 
-    # 買ったものの条件。「1つ上と同じ商品」でまとめた行は1つの EXISTS(＝同じ1点の商品が
-    # 全部を満たす)。まとめていない1行だけの条件は、同じ項目どうしを OR でつなぐ
-    # (地金PT / 地金K18 を2行足したら「どちらかを買った人」になるように)。
-    for chunk in _multi_chunks(prod):
-        if len(chunk) > 1:
-            sql, a = _chunk_sql(chunk)
-            where.append(sql); args += a
-        else:
-            r = chunk[0]
-            groups.setdefault("prod:" + r["field"], []).append(
-                (_PROD_EXISTS % r["sql"], r["args"]))
+    # 買ったもの・処方箋の条件。「1つ上と同じ〜」でまとめた行は1つの EXISTS
+    # (＝同じ1点の商品 / 同じ1枚の処方箋が全部を満たす)。まとめていない1行だけの条件は、
+    # 同じ項目どうしを OR でつなぐ(地金PT / 地金K18 の2行=「どちらかを買った人」)。
+    for sc, tmpl in MULTI_SCOPES.items():
+        for chunk in _multi_chunks(scoped[sc]):
+            if len(chunk) > 1:
+                sql, a = _chunk_sql(chunk, tmpl)
+                where.append(sql); args += a
+            else:
+                r = chunk[0]
+                groups.setdefault(sc + ":" + r["field"], []).append(
+                    (tmpl % r["sql"], r["args"]))
 
     for lst in groups.values():
         where.append("(" + " OR ".join(s for s, _ in lst) + ")")
         for _, a in lst:
             args += a
 
-    w = " AND ".join(where)
+    w, pre = " AND ".join(where), ""
+    if str(p.get("include_family") or "") in ("1", "True", "true"):
+        # 「家族を含む」= 条件に当たった人 ＋ その人と家族としてつながっている顧客。
+        # ★つながりが登録されている家族(相互リンク)だけが増える。手入力しただけの
+        #   家族(顧客として登録されていない人)は宛先にできないので増えない。
+        # 条件は base に1回だけ書く(引数も1回だけで済むように WITH を使う)
+        pre = "WITH base AS (SELECT c.customer_id FROM customers c WHERE " + w + ") "
+        w = ("COALESCE(c.is_test,0)=0 AND (c.customer_id IN (SELECT customer_id FROM base) "
+             "OR EXISTS(SELECT 1 FROM customer_families cf WHERE "
+             "(cf.linked_customer_id = c.customer_id "
+             "AND cf.customer_id IN (SELECT customer_id FROM base)) "
+             "OR (cf.customer_id = c.customer_id "
+             "AND cf.linked_customer_id IN (SELECT customer_id FROM base))))")
+
     ids = [r[0] for r in con.execute(
-        "SELECT c.customer_id FROM customers c WHERE " + w + " LIMIT ?",
+        pre + "SELECT c.customer_id FROM customers c WHERE " + w + " LIMIT ?",
         args + [MULTI_IDS_MAX + 1])]
     ids_truncated = len(ids) > MULTI_IDS_MAX
     if ids_truncated:
@@ -1876,7 +2026,7 @@ def multi_customer_search(con, payload):
     rows = [[r["id"], r["name"], r["kana"], r["tel"], r["rank"], r["district"],
              r["total"] or 0, r["staff"]]
             for r in con.execute(
-                "SELECT c.customer_id id, c.name, c.kana, c.tel, c.rank, c.district, "
+                pre + "SELECT c.customer_id id, c.name, c.kana, c.tel, c.rank, c.district, "
                 "c.staff_name staff, " + total_sub + " total FROM customers c WHERE " + w
                 + " ORDER BY total DESC LIMIT ? OFFSET ?", args + [limit, offset])]
     return {"rows": rows, "count": len(ids), "ids": ids, "offset": offset,
