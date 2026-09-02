@@ -1533,20 +1533,53 @@ def detailed_customer_search(con, p):
 #   受け取って描くだけなので、項目を足す時はここだけを直せばよい(画面と対で持たない)。
 #   第2段で購入まわり(買上日・回数・金額・地金・宝石名・製品・ジャンル)、
 #   第3段で残り(転居・備考3・度数SPH)を足す予定。no は宝飾ナビの項目番号に合わせている。
+#
+# scope … "customer" = 顧客そのものの条件 / "product" = 買った品の条件。
+#          product の行だけが「1つ上と同じ商品」でまとめられる(下の _multi_chunks)。
 MULTI_FIELDS = [
-    {"no": 1, "key": "postal", "label": "郵便番号", "type": "range_text",
-     "hint": "ハイフンは無視して数字だけで比べます"},
-    {"no": 2, "key": "district", "label": "地区区分", "type": "like"},
-    {"no": 3, "key": "staff_code", "label": "担当者", "type": "range_num",
-     "hint": "担当者番号。番号が数字でない担当者は範囲に入りません"},
-    {"no": 4, "key": "rank", "label": "顧客ランク", "type": "choice"},
-    {"no": 5, "key": "gender", "label": "性別", "type": "choice"},
-    {"no": 6, "key": "age", "label": "年齢", "type": "range_num",
-     "hint": "今日時点の満年齢。生年月日が空の人は該当しません"},
-    {"no": 7, "key": "birth_month", "label": "誕生月", "type": "range_month"},
-    {"no": 8, "key": "wedding_month", "label": "結婚記念月", "type": "range_month"},
-    {"no": 9, "key": "pierce", "label": "ピアス穴", "type": "choice"},
-    {"no": 13, "key": "registered_at", "label": "登録日", "type": "range_date"},
+    # ── 顧客の条件 ──
+    {"no": 1, "key": "postal", "label": "郵便番号", "type": "range_text", "group": "顧客",
+     "scope": "customer", "hint": "ハイフンは無視して数字だけで比べます"},
+    {"no": 2, "key": "district", "label": "地区区分", "type": "like", "group": "顧客",
+     "scope": "customer"},
+    {"no": 3, "key": "staff_code", "label": "担当者", "type": "range_num", "group": "顧客",
+     "scope": "customer", "hint": "担当者番号。番号が数字でない担当者は範囲に入りません"},
+    {"no": 4, "key": "rank", "label": "顧客ランク", "type": "choice", "group": "顧客",
+     "scope": "customer"},
+    {"no": 5, "key": "gender", "label": "性別", "type": "choice", "group": "顧客",
+     "scope": "customer"},
+    {"no": 6, "key": "age", "label": "年齢", "type": "range_num", "group": "顧客",
+     "scope": "customer", "hint": "今日時点の満年齢。生年月日が空の人は該当しません"},
+    {"no": 7, "key": "birth_month", "label": "誕生月", "type": "range_month", "group": "顧客",
+     "scope": "customer"},
+    {"no": 8, "key": "wedding_month", "label": "結婚記念月", "type": "range_month", "group": "顧客",
+     "scope": "customer"},
+    {"no": 9, "key": "pierce", "label": "ピアス穴", "type": "choice", "group": "顧客",
+     "scope": "customer"},
+    {"no": 13, "key": "registered_at", "label": "登録日", "type": "range_date", "group": "顧客",
+     "scope": "customer"},
+    # ── 買ったものの条件(第2段) ──
+    {"no": 14, "key": "buy_date", "label": "買上日", "type": "range_date", "group": "購入",
+     "scope": "product"},
+    {"no": 15, "key": "buy_count", "label": "回数", "type": "range_num", "group": "購入",
+     "scope": "customer", "hint": "買物の回数(伝票の数)。累計で数えます(買上日の指定とは連動しません)"},
+    {"no": 16, "key": "buy_total", "label": "金額", "type": "range_num", "group": "購入",
+     "scope": "customer", "hint": "累計の買上金額(円)。取消した売上は数えません"},
+    {"no": 18, "key": "motive", "label": "用途(購入動機)", "type": "choice", "group": "購入",
+     "scope": "product"},
+    {"no": 19, "key": "metal", "label": "地金", "type": "choice", "group": "購入",
+     "scope": "product"},
+    {"no": 20, "key": "stone", "label": "宝石名", "type": "like", "group": "購入",
+     "scope": "product", "hint": "中石・脇石のどちらかに含まれていれば該当します"},
+    {"no": 22, "key": "category", "label": "製品(分類)", "type": "choice", "group": "購入",
+     "scope": "product"},
+    # ↓宝飾ナビには無いが、今の「詳細検索」にはある項目。これが無いと詳細検索を畳めない
+    {"key": "brand", "label": "ブランド", "type": "choice", "group": "購入", "scope": "product"},
+    {"key": "supplier", "label": "仕入先", "type": "choice", "group": "購入", "scope": "product"},
+    {"key": "pname", "label": "品名", "type": "like", "group": "購入", "scope": "product",
+     "hint": "番号なしの明細(修理・電池など)は、その品名で探します"},
+    {"key": "genre", "label": "ジャンル", "type": "genre", "group": "購入", "scope": "customer",
+     "hint": "「それだけしか買っていない」は、修理・電池など番号なしの明細を数えません"},
 ]
 MULTI_BY_KEY = {f["key"]: f for f in MULTI_FIELDS}
 
@@ -1554,6 +1587,11 @@ MULTI_BY_KEY = {f["key"]: f for f in MULTI_FIELDS}
 # 365.25で割る書き方は誕生日の前後で1歳ずれるため使わない。
 _AGE_EXPR = ("(CAST(strftime('%Y%m%d','now','localtime') AS INTEGER) "
              "- CAST(strftime('%Y%m%d', c.birthday) AS INTEGER)) / 10000")
+
+# 生きている売上明細(取消したものは数えない)。回数・金額の集計に使う
+_LIVE_LINES = ("FROM sale_lines sl JOIN sales_slips ss ON sl.slip_id=ss.slip_id "
+               "WHERE ss.customer_id=c.customer_id "
+               "AND COALESCE(sl.voided,0)=0 AND COALESCE(ss.voided,0)=0")
 
 # 比べる対象のSQL式(範囲条件で使う)
 _MULTI_EXPR = {
@@ -1563,6 +1601,9 @@ _MULTI_EXPR = {
     "birth_month": "CAST(substr(c.birthday,6,2) AS INTEGER)",
     "wedding_month": "CAST(substr(c.wedding_day,6,2) AS INTEGER)",
     "registered_at": "c.registered_at",
+    # 回数=買物の回数(伝票の数)。同じ日に2点買っても1回と数える
+    "buy_count": "(SELECT COUNT(DISTINCT ss.slip_id) " + _LIVE_LINES + ")",
+    "buy_total": "(SELECT COALESCE(SUM(sl.amount),0) " + _LIVE_LINES + ")",
 }
 # ★空欄よけ。これが無いと「登録日 〜2020-01-01」で**登録日が空の人まで**該当してしまう
 #   (空文字はどんな文字列より小さいため)。範囲条件は必ず値がある人だけを対象にする。
@@ -1624,6 +1665,93 @@ def _multi_condition(f, row):
     return "(" + " AND ".join(parts) + ")", args
 
 
+# ── 買ったものの条件(EXISTS の中身)────────────────────────────────
+# EXISTS の外枠。sl=売上明細 / ss=伝票 / pr=商品(番号なし品は pr が無いので LEFT JOIN)
+_PROD_EXISTS = ("EXISTS(SELECT 1 FROM sale_lines sl "
+                "JOIN sales_slips ss ON sl.slip_id=ss.slip_id "
+                "LEFT JOIN products pr ON sl.product_key=pr.product_key "
+                "WHERE ss.customer_id=c.customer_id "
+                "AND COALESCE(sl.voided,0)=0 AND COALESCE(ss.voided,0)=0 AND %s)")
+
+# ジャンルの判定。★日報の4分類(sale_kind4)とは別もの。
+#   日報は「どこで売ったか」を優先して 催事/メガネ/時計/店頭 に振り分けるが、
+#   ここは「何を買ったか」で見る(催事で買った指輪も宝石として扱いたいため)。
+#   番号なしの明細(修理・電池・レンズ等)は商品が無いので「その他」にまとめる。
+_GENRE_EXPR = ("CASE WHEN sl.product_key IS NULL OR pr.product_key IS NULL THEN 'その他' "
+               "WHEN COALESCE(pr.is_glasses,0)=1 THEN 'メガネ' "
+               "WHEN COALESCE(pr.category,'') LIKE '%時計%' THEN '時計' "
+               "ELSE '宝石' END")
+MULTI_GENRES = ["宝石", "メガネ", "時計", "その他"]
+
+
+def _prod_condition(f, row):
+    """買ったものの条件1行を、EXISTS の中に入れる SQL にする。空欄なら (None, [])。"""
+    key = f["key"]
+    if key == "buy_date":
+        lo, hi = str(row.get("from") or "").strip(), str(row.get("to") or "").strip()
+        parts, args = [], []
+        if lo:
+            parts.append("ss.sold_at >= ?"); args.append(lo)
+        if hi:
+            parts.append("ss.sold_at <= ?"); args.append(hi)
+        return ("(" + " AND ".join(parts) + ")", args) if parts else (None, [])
+    v = str(row.get("value") or "").strip()
+    if not v:
+        return None, []
+    if key == "stone":     # 中石と脇石の両方を見る
+        nv = "%" + normjp(v) + "%"
+        return ("(normjp(COALESCE(pr.center_stone,'')) LIKE ? "
+                "OR normjp(COALESCE(pr.sub_stone,'')) LIKE ?)", [nv, nv])
+    if key == "pname":     # 番号なし品は free_name が品名
+        return ("(normjp(COALESCE(sl.free_name, pr.name, '')) LIKE ?)",
+                ["%" + normjp(v) + "%"])
+    col = {"motive": "ss.motive", "metal": "pr.metal", "category": "pr.category",
+           "brand": "pr.brand", "supplier": "pr.supplier"}[key]
+    return "(%s = ?)" % col, [v]
+
+
+def _genre_condition(row):
+    """ジャンルの条件。
+       買ったことがある … そのジャンルの明細が1つでもある
+       それだけしか…    … そのジャンルがあり、かつ**他のジャンル**が1つも無い
+                          (「その他」=修理・電池などは数えない。買物のうちに入れないため)"""
+    v = str(row.get("value") or "").strip()
+    if not v:
+        return None, []
+    has = _PROD_EXISTS % (_GENRE_EXPR + " = ?")
+    if str(row.get("mode") or "any") != "only":
+        return "(" + has + ")", [v]
+    other = _PROD_EXISTS % (_GENRE_EXPR + " NOT IN (?, 'その他')")
+    return "(" + has + " AND NOT " + other + ")", [v, v]
+
+
+def _multi_chunks(rows):
+    """買ったものの条件を「かたまり」に分ける。
+    「1つ上と同じ商品」にチェックが無い行が新しいかたまりの始まり、
+    チェックがある行は直前のかたまりに加わる。かたまり=同じ1点の商品で全部を満たす。"""
+    out = []
+    for r in rows:
+        if r.get("same_prev") and out:
+            out[-1].append(r)
+        else:
+            out.append([r])
+    return out
+
+
+def _chunk_sql(chunk):
+    """かたまり1つを EXISTS 1つにする。かたまりの中は
+    「同じ項目どうしは OR、違う項目どうしは AND」(画面全体の規則と同じ)。"""
+    by_field, args = {}, []
+    for r in chunk:
+        by_field.setdefault(r["field"], []).append(r)
+    parts = []
+    for lst in by_field.values():
+        parts.append("(" + " OR ".join(x["sql"] for x in lst) + ")")
+        for x in lst:
+            args += x["args"]
+    return _PROD_EXISTS % " AND ".join(parts), args
+
+
 def _multi_choices(con, col, limit=200):
     """選択肢を実データから作る。マスタ未登録の値も拾えるようにDISTINCTで取る。"""
     return [r[0] for r in con.execute(
@@ -1631,13 +1759,34 @@ def _multi_choices(con, col, limit=200):
         "AND COALESCE(is_test,0)=0 ORDER BY v LIMIT ?" % (col, col), (limit,))]
 
 
+def _motive_choices(con):
+    """購入動機。マスタと実データの両方から集める(取込済みで未登録の値も選べるように)。"""
+    vals = {r[0] for r in con.execute(
+        "SELECT DISTINCT motive FROM sales_slips WHERE COALESCE(motive,'')<>'' LIMIT 300")}
+    with contextlib.suppress(sqlite3.Error):
+        vals |= {r[0] for r in con.execute(
+            "SELECT name FROM master_items WHERE master_type='motive'")}
+    return sorted(vals)
+
+
 def multi_search_fields(con):
     """複合検索の項目一覧を画面へ渡す。選択肢もここで埋める。"""
+    # 顧客の欄は customers から、買ったものの欄は商品・伝票から作る
+    getters = {
+        "motive": lambda: _motive_choices(con),
+        "metal": lambda: product_metals(con),
+        "category": lambda: product_categories(con),
+        "brand": lambda: product_brands(con),
+        "supplier": lambda: product_suppliers(con),
+    }
     out = []
     for f in MULTI_FIELDS:
         d = dict(f)
         if f["type"] == "choice":
-            d["options"] = _multi_choices(con, f["key"])
+            d["options"] = getters[f["key"]]() if f["key"] in getters \
+                else _multi_choices(con, f["key"])
+        elif f["type"] == "genre":
+            d["options"] = MULTI_GENRES
         out.append(d)
     return {"fields": out}
 
@@ -1648,8 +1797,11 @@ MULTI_IDS_MAX = 50000   # 「全選択」やラベル印刷に渡す顧客IDの�
 
 def multi_customer_search(con, payload):
     """複合検索。条件行を項目ごとにまとめ、同じ項目はOR・違う項目はANDで絞る。
-      payload: {conditions:[{field, from, to, value}], exclude:'1'(既定・集計対象外を除く),
-                dm_ok:1(DM可のみ), limit, offset}
+      payload: {conditions:[{field, from, to, value, mode, same_prev}],
+                exclude:'1'(既定・集計対象外を除く), dm_ok:1(DM可のみ), limit, offset}
+        ・from/to … 範囲の項目 / value … 選ぶ・部分一致の項目
+        ・mode      … ジャンルだけ。'any'=買ったことがある / 'only'=それだけしか買っていない
+        ・same_prev … 買ったものの条件だけ。true=1つ上の行と**同じ1点の商品**で満たす
       戻り値: {rows: 表示するページぶん, count: 該当総数, ids: 該当者すべての顧客ID,
                offset, limit, ids_truncated}
     ★rows はページぶんだけ、ids は全件。「全選択」で1ページ目以外も選べるようにするため。"""
@@ -1662,16 +1814,39 @@ def multi_customer_search(con, payload):
         dmc, dma = _dm_ok_conds()
         where.extend(dmc); args.extend(dma)
 
-    # 項目ごとにまとめる(同じ項目の行は OR でつなぐ)。dict は入れた順を保つので、
-    # 画面に並べた順のままSQLになる
-    groups = {}
+    # 顧客の条件は項目ごとにまとめる(同じ項目の行は OR でつなぐ)。
+    # dict は入れた順を保つので、画面に並べた順のままSQLになる
+    groups, prod = {}, []
     for row in (p.get("conditions") or []):
         f = MULTI_BY_KEY.get(str(row.get("field") or ""))
         if not f:
             continue        # 知らない項目は黙って無視(画面の作り替え中でも落ちないように)
-        sql, a = _multi_condition(f, row)
-        if sql:
-            groups.setdefault(f["key"], []).append((sql, a))
+        if f["type"] == "genre":
+            sql, a = _genre_condition(row)
+            if sql:
+                groups.setdefault(f["key"], []).append((sql, a))
+        elif f.get("scope") == "product":
+            sql, a = _prod_condition(f, row)
+            if sql:
+                prod.append({"field": f["key"], "sql": sql, "args": a,
+                             "same_prev": bool(row.get("same_prev"))})
+        else:
+            sql, a = _multi_condition(f, row)
+            if sql:
+                groups.setdefault(f["key"], []).append((sql, a))
+
+    # 買ったものの条件。「1つ上と同じ商品」でまとめた行は1つの EXISTS(＝同じ1点の商品が
+    # 全部を満たす)。まとめていない1行だけの条件は、同じ項目どうしを OR でつなぐ
+    # (地金PT / 地金K18 を2行足したら「どちらかを買った人」になるように)。
+    for chunk in _multi_chunks(prod):
+        if len(chunk) > 1:
+            sql, a = _chunk_sql(chunk)
+            where.append(sql); args += a
+        else:
+            r = chunk[0]
+            groups.setdefault("prod:" + r["field"], []).append(
+                (_PROD_EXISTS % r["sql"], r["args"]))
+
     for lst in groups.values():
         where.append("(" + " OR ".join(s for s, _ in lst) + ")")
         for _, a in lst:
