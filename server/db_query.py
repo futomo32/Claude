@@ -1608,10 +1608,13 @@ MULTI_FIELDS = [
     # ── 顧客の条件 ──
     {"no": 1, "key": "postal", "label": "郵便番号", "type": "range_text", "group": "顧客",
      "scope": "customer", "hint": "ハイフンは無視して数字だけで比べます"},
-    {"no": 2, "key": "district", "label": "地区区分", "type": "like", "group": "顧客",
+    # 地区区分はマスタの値なので一覧から「から〜まで」で選ぶ(2026-09-03。以前は部分一致)
+    {"no": 2, "key": "district", "label": "地区区分", "type": "choice", "group": "顧客",
      "scope": "customer"},
     {"no": 3, "key": "staff_code", "label": "担当者", "type": "range_num", "group": "顧客",
-     "scope": "customer", "hint": "担当者番号。番号が数字でない担当者は範囲に入りません"},
+     "scope": "customer",
+     "hint": "担当者番号。欄をクリックすると「番号: 名前」の一覧から選べます。"
+             "番号が数字でない担当者は範囲に入りません"},
     {"no": 4, "key": "rank", "label": "顧客ランク", "type": "choice", "group": "顧客",
      "scope": "customer"},
     {"no": 5, "key": "gender", "label": "性別", "type": "choice", "group": "顧客",
@@ -1727,26 +1730,52 @@ def _multi_special(f, row):
     key = f["key"]
     if key not in ("dm_mark", "memo3", "memo_any", "store"):
         return None, []
-    v = str(row.get("value") or "").strip()
-    if not v:
+    vals = _row_values(row)
+    if not vals:
         return None, []
     if key == "dm_mark":
         # 店の運用: DMを出さない相手は住所の先頭に記号を3つ重ねて書いている(ＴＴＴ=転居 等)
         marks = [normjp(k * 3) + "%" for k in DM_BLOCK_REASONS]
-        if v == MULTI_NO_MARK:
-            return ("(" + " AND ".join("normjp(COALESCE(c.address,'')) NOT LIKE ?"
-                                       for _ in marks) + ")", marks)
-        k = next((k for k, name in DM_BLOCK_REASONS.items() if name == v), None)
-        if not k:
-            return None, []
-        return "(normjp(COALESCE(c.address,'')) LIKE ?)", [normjp(k * 3) + "%"]
+        parts, args = [], []
+        for v in vals:      # 「から〜まで」で複数選ばれたら、どれかに当たれば該当(OR)
+            if v == MULTI_NO_MARK:
+                parts.append("(" + " AND ".join("normjp(COALESCE(c.address,'')) NOT LIKE ?"
+                                                for _ in marks) + ")")
+                args += marks
+                continue
+            k = next((k for k, name in DM_BLOCK_REASONS.items() if name == v), None)
+            if k:
+                parts.append("normjp(COALESCE(c.address,'')) LIKE ?")
+                args.append(normjp(k * 3) + "%")
+        return ("(" + " OR ".join(parts) + ")", args) if parts else (None, [])
     if key == "store":
-        return "(c.store_code = ?)", [v]
+        return _in_sql("c.store_code", vals)
     inner = "normjp(COALESCE(m.body,'')) LIKE ?"
     if key == "memo3":
         inner += " AND m.seq=3"
-    return ("(EXISTS(SELECT 1 FROM customer_memos m WHERE m.customer_id=c.customer_id AND "
-            + inner + "))", ["%" + normjp(v) + "%"])
+    return ("(" + " OR ".join(
+        "EXISTS(SELECT 1 FROM customer_memos m WHERE m.customer_id=c.customer_id AND " + inner + ")"
+        for _ in vals) + ")", ["%" + normjp(v) + "%" for v in vals])
+
+
+def _row_values(row):
+    """選択式の項目が送ってくる値。画面で「から〜まで」を選ぶと、その間にある選択肢を
+    画面側が並べて `values` で送ってくる(★一覧の**並び順**で切り出す。文字コード順で
+    比べると、画面に見えている並びと結果がずれるため)。`value` は1つだけ選んだ時の形。"""
+    vs = row.get("values")
+    if isinstance(vs, list):
+        vs = [str(x) for x in vs if str(x or "").strip() != ""]
+        if vs:
+            return vs
+    v = str(row.get("value") or "").strip()
+    return [v] if v else []
+
+
+def _in_sql(expr, vals):
+    """値が1つなら =、複数なら IN。"""
+    if len(vals) == 1:
+        return "(%s = ?)" % expr, list(vals)
+    return "(%s IN (%s))" % (expr, ",".join("?" for _ in vals)), list(vals)
 
 
 def _multi_dec(f, v):
@@ -1767,12 +1796,14 @@ def _multi_condition(f, row):
     if key in ("dm_mark", "memo3", "memo_any", "store"):
         return None, []      # 上で扱う項目。空欄だっただけなので無視する
     if t in ("like", "choice"):
-        v = str(row.get("value") or "").strip()
-        if not v:
+        vals = _row_values(row)
+        if not vals:
             return None, []
-        if t == "like":
-            return "(normjp(COALESCE(c.%s,'')) LIKE ?)" % key, ["%" + normjp(v) + "%"]
-        return "(c.%s = ?)" % key, [v]
+        # 選択肢が多すぎて一覧にできなかった項目は、文字の一部で探す(row の like フラグ)
+        if t == "like" or row.get("like"):
+            return ("(" + " OR ".join("normjp(COALESCE(c.%s,'')) LIKE ?" % key for _ in vals) + ")",
+                    ["%" + normjp(v) + "%" for v in vals])
+        return _in_sql("c." + key, vals)
 
     lo, hi = str(row.get("from") or "").strip(), str(row.get("to") or "").strip()
     if not lo and not hi:
@@ -1832,19 +1863,26 @@ def _prod_condition(f, row):
         if hi:
             parts.append("ss.sold_at <= ?"); args.append(hi)
         return ("(" + " AND ".join(parts) + ")", args) if parts else (None, [])
-    v = str(row.get("value") or "").strip()
-    if not v:
+    vals = _row_values(row)
+    if not vals:
         return None, []
     if key == "stone":     # 中石と脇石の両方を見る
-        nv = "%" + normjp(v) + "%"
-        return ("(normjp(COALESCE(pr.center_stone,'')) LIKE ? "
-                "OR normjp(COALESCE(pr.sub_stone,'')) LIKE ?)", [nv, nv])
+        parts, args = [], []
+        for v in vals:
+            nv = "%" + normjp(v) + "%"
+            parts.append("(normjp(COALESCE(pr.center_stone,'')) LIKE ? "
+                         "OR normjp(COALESCE(pr.sub_stone,'')) LIKE ?)")
+            args += [nv, nv]
+        return "(" + " OR ".join(parts) + ")", args
     if key == "pname":     # 番号なし品は free_name が品名
-        return ("(normjp(COALESCE(sl.free_name, pr.name, '')) LIKE ?)",
-                ["%" + normjp(v) + "%"])
+        return ("(" + " OR ".join("normjp(COALESCE(sl.free_name, pr.name, '')) LIKE ?"
+                                  for _ in vals) + ")", ["%" + normjp(v) + "%" for v in vals])
     col = {"motive": "ss.motive", "metal": "pr.metal", "category": "pr.category",
            "brand": "pr.brand", "supplier": "pr.supplier"}[key]
-    return "(%s = ?)" % col, [v]
+    if row.get("like"):    # 選択肢が多すぎて一覧にできなかった項目
+        return ("(" + " OR ".join("normjp(COALESCE(%s,'')) LIKE ?" % col for _ in vals) + ")",
+                ["%" + normjp(v) + "%" for v in vals])
+    return _in_sql(col, vals)
 
 
 def _genre_condition(row):
@@ -1904,14 +1942,22 @@ def _rx_condition(f, row):
         if lov is not None:
             return _sph_sql(">= ?", [lov])
         return _sph_sql("<= ?", [hiv])
-    v = str(row.get("value") or "").strip()
-    if not v:
+    vals = _row_values(row)
+    if not vals:
         return None, []
-    if key == "rx_purpose":
-        return "(rx.purpose = ?)", [v]
-    nv = "%" + normjp(v) + "%"      # rx_name: レンズ名・フレーム名のどちらか
-    return ("(normjp(COALESCE(rx.lens_name,'')) LIKE ? "
-            "OR normjp(COALESCE(rx.frame_name,'')) LIKE ?)", [nv, nv])
+    if key == "rx_purpose" and not row.get("like"):
+        return _in_sql("rx.purpose", vals)
+    col = "rx.purpose" if key == "rx_purpose" else None
+    if col:
+        return ("(" + " OR ".join("normjp(COALESCE(%s,'')) LIKE ?" % col for _ in vals) + ")",
+                ["%" + normjp(v) + "%" for v in vals])
+    parts, args = [], []            # rx_name: レンズ名・フレーム名のどちらか
+    for v in vals:
+        nv = "%" + normjp(v) + "%"
+        parts.append("(normjp(COALESCE(rx.lens_name,'')) LIKE ? "
+                     "OR normjp(COALESCE(rx.frame_name,'')) LIKE ?)")
+        args += [nv, nv]
+    return "(" + " OR ".join(parts) + ")", args
 
 
 # 「1つ上と同じ〜」でまとめられる条件の種類。product=同じ1点の商品 / rx=同じ1枚の処方箋
@@ -1945,11 +1991,14 @@ def _chunk_sql(chunk, tmpl):
     return tmpl % " AND ".join(parts), args
 
 
-def _multi_choices(con, col, limit=200):
+MULTI_CHOICE_MAX = 1000   # 一覧(プルダウン)に出せる選択肢の上限
+
+
+def _multi_choices(con, col):
     """選択肢を実データから作る。マスタ未登録の値も拾えるようにDISTINCTで取る。"""
     return [r[0] for r in con.execute(
         "SELECT DISTINCT %s v FROM customers WHERE COALESCE(%s,'')<>'' "
-        "AND COALESCE(is_test,0)=0 ORDER BY v LIMIT ?" % (col, col), (limit,))]
+        "AND COALESCE(is_test,0)=0 ORDER BY v LIMIT ?" % (col, col), (MULTI_CHOICE_MAX + 1,))]
 
 
 def _motive_choices(con):
@@ -1981,11 +2030,25 @@ def multi_search_fields(con):
     out = []
     for f in MULTI_FIELDS:
         d = dict(f)
-        if f["type"] == "choice":
-            d["options"] = getters[f["key"]]() if f["key"] in getters \
-                else _multi_choices(con, f["key"])
-        elif f["type"] == "genre":
+        if f["type"] == "genre":
             d["options"] = MULTI_GENRES
+        elif f["type"] == "choice":
+            opts = getters[f["key"]]() if f["key"] in getters else _multi_choices(con, f["key"])
+            if len(opts) > MULTI_CHOICE_MAX:
+                # ★種類が多すぎて一覧にできない場合は、黙って切り詰めない。
+                #   切り詰めると「選べない値がある」ことに気づけず、DMの宛先が
+                #   静かに漏れる。文字の一部で探す欄に切り替えて、理由も画面に出す。
+                d["type"] = "like"
+                d["like"] = True
+                d["hint"] = ((d.get("hint", "") + " ※種類が%d以上あり一覧にできないため、"
+                              "文字の一部で探してください") % MULTI_CHOICE_MAX).strip()
+            else:
+                d["options"] = opts
+        if f["key"] == "staff_code":
+            # 番号だけでは誰か分からないので、番号と名前の一覧を添える(入力欄の候補に出す)
+            d["list"] = [{"v": r[0], "t": "%s: %s" % (r[0], r[1])} for r in con.execute(
+                "SELECT staff_code, name FROM staff WHERE COALESCE(staff_code,'')<>'' "
+                "ORDER BY (staff_code GLOB '[0-9]*') DESC, CAST(staff_code AS INTEGER), staff_code")]
         out.append(d)
     return {"fields": out}
 
