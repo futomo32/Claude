@@ -2053,6 +2053,28 @@ def multi_search_fields(con):
     return {"fields": out}
 
 
+def _this_year():
+    """今年(暦年)。「今年の購入金額」の対象。"""
+    return datetime.date.today().strftime("%Y")
+
+
+# 一覧に出す列と、その並べ替えに使うSQL。★画面の列と対になっているので、
+# 列を足す時は両方(ここと tokiwa-ui.html の MS_COLS)を直すこと。
+MULTI_SORTS = {
+    "name": "c.name", "kana": "c.kana", "tel": "c.tel", "rank": "c.rank",
+    "address": "c.address", "staff": "c.staff_name", "age": _AGE_EXPR,
+    "total": ("(SELECT COALESCE(SUM(sl.amount),0) FROM sale_lines sl "
+              "JOIN sales_slips ss ON sl.slip_id=ss.slip_id "
+              "WHERE ss.customer_id=c.customer_id AND COALESCE(sl.voided,0)=0 "
+              "AND COALESCE(ss.voided,0)=0)"),
+    # 今年の購入金額。暦年(1月〜12月)で数える
+    "year_total": ("(SELECT COALESCE(SUM(sl.amount),0) FROM sale_lines sl "
+                   "JOIN sales_slips ss ON sl.slip_id=ss.slip_id "
+                   "WHERE ss.customer_id=c.customer_id AND COALESCE(sl.voided,0)=0 "
+                   "AND COALESCE(ss.voided,0)=0 "
+                   "AND substr(ss.sold_at,1,4) = strftime('%Y','now','localtime'))"),
+}
+
 MULTI_PAGE_MAX = 500    # 1ページに出す最大件数(画面が重くなるのを防ぐ)
 MULTI_IDS_MAX = 50000   # 「全選択」やラベル印刷に渡す顧客IDの上限(顧客総数は約2.5万)
 
@@ -2060,14 +2082,16 @@ MULTI_IDS_MAX = 50000   # 「全選択」やラベル印刷に渡す顧客IDの�
 def multi_customer_search(con, payload):
     """複合検索。条件行を項目ごとにまとめ、同じ項目はOR・違う項目はANDで絞る。
       payload: {conditions:[{field, from, to, value, mode, same_prev}],
-                exclude:'1'(既定・集計対象外を除く), dm_ok:1(DM可のみ), limit, offset}
+                exclude:'1'(既定・集計対象外を除く), dm_ok:1(DM可のみ), limit, offset,
+                sort(MULTI_SORTSのキー・既定 total), order('asc'/'desc'・既定 desc)}
         ・from/to … 範囲の項目 / value … 選ぶ・部分一致の項目
         ・mode      … ジャンルだけ。'any'=買ったことがある / 'only'=それだけしか買っていない
         ・same_prev … 買ったもの/処方箋の条件だけ。true=1つ上の行と同じ1点の商品
                       (処方箋なら同じ1枚)で満たす
         ・include_family … 1=当たった人の家族(顧客として登録され、つながっている人)も含める
       戻り値: {rows: 表示するページぶん, count: 該当総数, ids: 該当者すべての顧客ID,
-               offset, limit, ids_truncated}
+               offset, limit, ids_truncated, sort, order, year}
+        rows の並び: [ID, 顧客名, カナ, 電話, 年齢, ランク, 住所, 今年の購入, 累計購入, 担当]
     ★rows はページぶんだけ、ids は全件。「全選択」で1ページ目以外も選べるようにするため。"""
     con.row_factory = sqlite3.Row
     p = payload or {}
@@ -2150,18 +2174,30 @@ def multi_customer_search(con, payload):
     except (TypeError, ValueError):
         offset = 0
 
-    total_sub = ("(SELECT COALESCE(SUM(sl.amount),0) FROM sale_lines sl "
-                 "JOIN sales_slips ss ON sl.slip_id=ss.slip_id "
-                 "WHERE ss.customer_id=c.customer_id AND COALESCE(sl.voided,0)=0 "
-                 "AND COALESCE(ss.voided,0)=0)")
-    rows = [[r["id"], r["name"], r["kana"], r["tel"], r["rank"], r["district"],
-             r["total"] or 0, r["staff"]]
+    # 並べ替え。ページ送りがあるので**サーバー側で並べる**(画面で並べ替えると
+    # 今出ている200件の中だけが並び替わり、「1位」が本当の1位でなくなる)
+    sort = str(p.get("sort") or "total")
+    if sort not in MULTI_SORTS:
+        sort = "total"
+    desc = str(p.get("order") or "desc").lower() != "asc"
+    expr = MULTI_SORTS[sort]
+    # 空欄(未入力)は昇順でも降順でも**必ず最後**にする。先頭に来ると一覧が読みにくいため。
+    # 最後に顧客IDを添えて、同じ値の時の並びが毎回同じになるようにする(ページ送りで
+    # 同じ人が2回出たり抜けたりしないため)
+    order_sql = ("ORDER BY (%s IS NULL OR %s = '') , %s %s, c.customer_id"
+                 % (expr, expr, expr, "DESC" if desc else "ASC"))
+    rows = [[r["id"], r["name"], r["kana"], r["tel"], r["age"], r["rank"], r["address"],
+             r["ytotal"] or 0, r["total"] or 0, r["staff"]]
             for r in con.execute(
-                pre + "SELECT c.customer_id id, c.name, c.kana, c.tel, c.rank, c.district, "
-                "c.staff_name staff, " + total_sub + " total FROM customers c WHERE " + w
-                + " ORDER BY total DESC LIMIT ? OFFSET ?", args + [limit, offset])]
+                pre + "SELECT c.customer_id id, c.name, c.kana, c.tel, c.rank, "
+                "c.address, c.staff_name staff, " + _AGE_EXPR + " age, "
+                + MULTI_SORTS["year_total"] + " ytotal, " + MULTI_SORTS["total"] + " total "
+                "FROM customers c WHERE " + w + " " + order_sql
+                + " LIMIT ? OFFSET ?", args + [limit, offset])]
     return {"rows": rows, "count": len(ids), "ids": ids, "offset": offset,
-            "limit": limit, "ids_truncated": ids_truncated}
+            "limit": limit, "ids_truncated": ids_truncated,
+            "sort": sort, "order": "desc" if desc else "asc",
+            "year": _this_year()}
 
 
 # ── ポイント設定(ルールマスタ) ──
