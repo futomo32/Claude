@@ -819,6 +819,57 @@ def pay_fallback(pay_method, credit_kind=None):
     return "現金"
 
 
+# ── 日報CSVの「支払方法ごとの列」(2026-09-03)────────────────────────
+# Excelで方法ごとに縦に足せるように、金額を方法別の列に分ける。
+# ★列と、支払方法→列 の対応は**ここが唯一の正**。画面は daily_sales の応答で
+#   受け取って列を作るだけなので、方法が増えた時もここだけを直せばよい。
+# ★カードとクレジットは同じ列にまとめる(店の指定 2026-09-03)。
+#   売掛入金は「カード」、レジ売上は「クレジット」と呼び名が違うだけで同じ支払いのため。
+PAY_COLUMNS = ["現金", "カード・クレジット", "PayPay", "振込", "掛売", "分割", "その他"]
+PAY_COLUMN_OF = {
+    "現金": "現金",
+    "クレジット": "カード・クレジット", "カード": "カード・クレジット",
+    "PayPay": "PayPay", "ペイペイ": "PayPay",
+    "銀行振込": "振込", "振込": "振込",
+    "掛売": "掛売", "分割": "分割",
+}
+
+
+def pay_column(method):
+    """支払方法の名前を、日報CSVの列名に直す。知らない方法は「その他」へ。
+    ★カード会社名などの括弧書きは落としてから照合する。表示用の文字列は
+      「クレジット(VISA)」の形になることがあり、そのままだと**クレジットが
+      「その他」に落ちる**(2026-09-03 の検算で実際に見つけた)。"""
+    m = re.sub(r"[(（].*$", "", str(method or "")).strip()
+    return PAY_COLUMN_OF.get(m, "その他")
+
+
+def _allocate_pay(rows, parts, fallback):
+    """1つの会計で受け取った金額を、その会計の明細に順に割り当てて rows[i]["pay_split"] に入れる。
+    ★「按分」ではなく「順に埋める」方式にしている。按分だと端数の丸めで、
+      列の合計(方法ごとの受取)か行の合計(明細の金額)のどちらかが必ず1円ずれるため。
+      この方式なら**両方ぴったり合う**(整数のまま引き算するだけなので丸めが起きない)。
+      どの明細にどの方法を当てるかは順番次第で、そこに意味は無い。合計だけが意味を持つ。
+      ※明細が1本 or 支払方法が1つの会計(ほとんどがこれ)では、素直に全額が入る。"""
+    if not parts:      # 支払の内訳が無い古いデータ。伝票の支払方法で全額を1つの列に
+        parts = [(fallback, sum(r["amount"] for r in rows))]
+    rest = [[pay_column(m), a] for m, a in parts]
+    for r in rows:
+        need, split = r["amount"], {}
+        for p in rest:
+            if need <= 0:
+                break
+            if p[1] <= 0:
+                continue
+            take = min(need, p[1])
+            split[p[0]] = split.get(p[0], 0) + take
+            p[1] -= take
+            need -= take
+        if need > 0:   # 受取の記録が売上に足りない(データの不整合)。落とさず「その他」に出す
+            split["その他"] = split.get("その他", 0) + need
+        r["pay_split"] = split
+
+
 def slip_pay_texts(con, where_sql="", args=()):
     """伝票ごとの支払表示 {slip_id: "現金 ¥50,000 / クレジット ¥50,000"} を返す。
     現金＋クレジットの併用払いは sale_payments に内訳が入っているので、
@@ -1174,6 +1225,15 @@ def daily_sales(con, date):
     out = []
     # 現金＋クレジット併用の内訳(sale_payments)を先に引いておき、支払欄に金額つきで出す
     pay_texts = slip_pay_texts(con, "WHERE s.sold_at = ?", (str(date),))
+    # 支払方法ごとの列(CSV)に使う内訳。伝票単位で入っているので、あとで明細へ割り当てる
+    pay_parts = {}
+    for r in con.execute(
+            "SELECT sp.slip_id, sp.method, sp.amount FROM sale_payments sp "
+            "JOIN sales_slips s ON s.slip_id = sp.slip_id WHERE s.sold_at = ? "
+            "ORDER BY sp.slip_id, sp.id", (str(date),)):
+        if r["amount"]:
+            pay_parts.setdefault(r["slip_id"], []).append((r["method"] or "現金", int(r["amount"])))
+    by_slip = {}      # 割り当ては会計(伝票)ごとに行うので、いったん伝票でまとめる
     for r in con.execute(f"""
         SELECT s.slip_id, s.customer_id cid, c.name cname,
                COALESCE(l.free_name, p.name) item, l.info, l.amount, l.tax_rate, s.pay_method, s.credit_kind,
@@ -1182,13 +1242,19 @@ def daily_sales(con, date):
         LEFT JOIN products p ON l.product_key = p.product_key
         LEFT JOIN customers c ON c.customer_id = s.customer_id
         WHERE s.sold_at = ? AND NOT {_SAME_DAY_VOID}""", (str(date),)):
-        out.append({"cid": r["cid"], "name": r["cname"] or r["cid"], "item": r["item"],
-                    "info": r["info"], "amount": r["amount"] or 0,
-                    # 税率(2026-09-02)。日報の消費税を税率ごとに出すため
-                    "tax_rate": taxes.normalize_rate(r["tax_rate"]),
-                    "pay": pay_texts.get(r["slip_id"]) or pay_fallback(r["pay_method"], r["credit_kind"]),
-                    "staff": r["staff_name"],
-                    "kind4": sale_kind4(r["ig"], r["cat"], r["place"])})
+        row = {"cid": r["cid"], "name": r["cname"] or r["cid"], "item": r["item"],
+               "info": r["info"], "amount": r["amount"] or 0,
+               # 税率(2026-09-02)。日報の消費税を税率ごとに出すため
+               "tax_rate": taxes.normalize_rate(r["tax_rate"]),
+               "pay": pay_texts.get(r["slip_id"]) or pay_fallback(r["pay_method"], r["credit_kind"]),
+               "staff": r["staff_name"],
+               "kind4": sale_kind4(r["ig"], r["cat"], r["place"])}
+        # 列に振り分ける時は**素の支払方法**を使う(表示用の「クレジット(VISA)」ではなく)
+        by_slip.setdefault(r["slip_id"], {"fallback": r["pay_method"],
+                                          "rows": []})["rows"].append(row)
+    for sid, g in by_slip.items():
+        _allocate_pay(g["rows"], pay_parts.get(sid, []), g["fallback"])
+        out.extend(g["rows"])
     # 返品行: この日に取り消された明細(当日訂正は除く)をマイナスで出す
     for r in con.execute(f"""
         SELECT s.customer_id cid, c.name cname,
@@ -1206,6 +1272,8 @@ def daily_sales(con, date):
                     "info": r["info"], "amount": -(r["amount"] or 0),
                     "tax_rate": taxes.normalize_rate(r["tax_rate"]),   # 返品も元の税率で戻す
                     "pay": f"返金({method})", "refund_method": method,
+                    # 返品は1明細=1方法なので割り当ては不要。マイナスのまま同じ列へ
+                    "pay_split": {pay_column(method): -(r["amount"] or 0)},
                     "staff": r["vstaff"], "ret": 1,
                     "note": f"{r['orig']}購入分の返品",
                     "kind4": sale_kind4(r["ig"], r["cat"], r["place"])})

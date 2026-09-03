@@ -516,7 +516,11 @@ class Handler(BaseHTTPRequestHandler):
                     elif path == "/api/daily_sales":
                         # payMethods=支払方法別の内訳(現金がいくら/クレジットがいくら)
                         result = {"lines": db_query.daily_sales(con, q1("date")),
-                                  "payMethods": db_query.payment_totals(con, q1("date"))}
+                                  "payMethods": db_query.payment_totals(con, q1("date")),
+                                  # CSVの「支払方法ごとの列」。定義は db_query が持ち、
+                                  # 画面はこれを受け取って列を作る(対で持たないため)
+                                  "payColumns": db_query.PAY_COLUMNS,
+                                  "payColumnOf": db_query.PAY_COLUMN_OF}
                     elif path == "/api/documents":
                         result = {"documents": db_query.list_documents(con, q1("limit", "100"))}
                     else:  # /api/slip_lines
