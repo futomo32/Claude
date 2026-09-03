@@ -2083,6 +2083,10 @@ MULTI_SORTS = {
                    "AND substr(ss.sold_at,1,4) = strftime('%Y','now','localtime'))"),
 }
 
+# チェックの有無で並べる時のキー。他と違って画面が持っている情報(選んだ顧客ID)が要るので、
+# MULTI_SORTS には入れず、payload の selected を使って組み立てる
+MULTI_SORT_CHECKED = "checked"
+
 MULTI_PAGE_MAX = 500    # 1ページに出す最大件数(画面が重くなるのを防ぐ)
 MULTI_IDS_MAX = 50000   # 「全選択」やラベル印刷に渡す顧客IDの上限(顧客総数は約2.5万)
 
@@ -2185,15 +2189,25 @@ def multi_customer_search(con, payload):
     # 並べ替え。ページ送りがあるので**サーバー側で並べる**(画面で並べ替えると
     # 今出ている200件の中だけが並び替わり、「1位」が本当の1位でなくなる)
     sort = str(p.get("sort") or "total")
-    if sort not in MULTI_SORTS:
+    if sort != MULTI_SORT_CHECKED and sort not in MULTI_SORTS:
         sort = "total"
     desc = str(p.get("order") or "desc").lower() != "asc"
-    expr = MULTI_SORTS[sort]
-    # 空欄(未入力)は昇順でも降順でも**必ず最後**にする。先頭に来ると一覧が読みにくいため。
-    # 最後に顧客IDを添えて、同じ値の時の並びが毎回同じになるようにする(ページ送りで
-    # 同じ人が2回出たり抜けたりしないため)
-    order_sql = ("ORDER BY (%s IS NULL OR %s = '') , %s %s, c.customer_id"
-                 % (expr, expr, expr, "DESC" if desc else "ASC"))
+    dirn = "DESC" if desc else "ASC"
+    order_args = []
+    if sort == MULTI_SORT_CHECKED:
+        # チェックの付いた人でまとめる。選んだ顧客IDは数万件になり得るので、
+        # ★JSONの配列を**1つの引数**で渡す(IN (?,?,…) だと引数の数の上限に当たる)
+        sel = [str(x) for x in (p.get("selected") or [])]
+        order_sql = ("ORDER BY (c.customer_id IN (SELECT value FROM json_each(?))) %s, "
+                     "c.customer_id" % dirn)
+        order_args = [json.dumps(sel)]
+    else:
+        expr = MULTI_SORTS[sort]
+        # 空欄(未入力)は昇順でも降順でも**必ず最後**にする。先頭に来ると一覧が読みにくいため。
+        # 最後に顧客IDを添えて、同じ値の時の並びが毎回同じになるようにする(ページ送りで
+        # 同じ人が2回出たり抜けたりしないため)
+        order_sql = ("ORDER BY (%s IS NULL OR %s = '') , %s %s, c.customer_id"
+                     % (expr, expr, expr, dirn))
     rows = [[r["id"], r["name"], r["kana"], r["tel"], r["age"], r["rank"], r["address"],
              r["ytotal"] or 0, r["total"] or 0, r["staff"]]
             for r in con.execute(
@@ -2201,7 +2215,7 @@ def multi_customer_search(con, payload):
                 "c.address, c.staff_name staff, " + _AGE_EXPR + " age, "
                 + MULTI_SORTS["year_total"] + " ytotal, " + MULTI_SORTS["total"] + " total "
                 "FROM customers c WHERE " + w + " " + order_sql
-                + " LIMIT ? OFFSET ?", args + [limit, offset])]
+                + " LIMIT ? OFFSET ?", args + order_args + [limit, offset])]
     return {"rows": rows, "count": len(ids), "ids": ids, "offset": offset,
             "limit": limit, "ids_truncated": ids_truncated,
             "sort": sort, "order": "desc" if desc else "asc",

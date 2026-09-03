@@ -61,7 +61,7 @@ with sync_playwright() as p:
         pg.click("#btn")
     pg.wait_for_selector("#app.active", timeout=20000)
     pg.wait_for_timeout(1500)
-    check("バージョン表示が v1.3.1", pg.inner_text("#app-ver").strip() == "v1.3.1",
+    check("バージョン表示が v1.3.2", pg.inner_text("#app-ver").strip() == "v1.3.2",
           pg.inner_text("#app-ver").strip())
 
     # ── 複合検索のタブを開く ──
@@ -286,7 +286,7 @@ with sync_playwright() as p:
         msRows = [{field:'staff_code', from:'103', to:'103', value:''}];
         paintMsRows();
     }""")
-    search()
+    n_ref = search()["count"]      # このあとの並べ替えで件数が変わらないことの基準
     after = pg.evaluate("""() => ({n: msSelected.size,
         label: document.getElementById('ms-sel-count').textContent,
         btn: document.getElementById('ms-label-btn').style.display !== 'none'})""")
@@ -294,6 +294,42 @@ with sync_playwright() as p:
           after["n"] == sel["n"] == 3, f'{sel["label"]} → {after["label"]}')
     check("「選択中 N件」とラベル印刷のボタンが出る",
           "選択中 3件" in after["label"] and after["btn"], after)
+
+    # ★この検索結果の中の内訳(チェック/未チェック)が出る(v1.3.2)
+    here = pg.evaluate("""() => {
+        msSelected.clear();
+        msIds.slice(0, 4).forEach(id => msSelected.add(String(id)));   // 今の結果から4人
+        msSelected.add('存在しないID');                                // 別の条件で選んだ分
+        updateMsSelCount();
+        var n = msIds.length;
+        return {text: document.getElementById('ms-sel-here').textContent,
+                all: document.getElementById('ms-sel-count').textContent, n: n};
+    }""")
+    check("★この検索結果のチェック/未チェックの件数が出る",
+          ("チェック 4件" in here["text"]
+           and ("未チェック %d件" % (here["n"] - 4)) in here["text"]), here["text"])
+    check("「選択中」は検索をまたいだ累計のまま(5件)",
+          "選択中 5件" in here["all"], here["all"])
+
+    # ★チェックの有無で並べ替えられる(v1.3.2)
+    chk = pg.evaluate("""async () => {
+        msSort_('checked');
+        await new Promise(r => setTimeout(r, 1600));
+        var top = msResults.slice(0, 4).map(r => msSelected.has(String(r[0])));
+        var d = {order: msOrder, top: top};
+        msSort_('checked');                       // もう一度で逆順
+        await new Promise(r => setTimeout(r, 1600));
+        d.order2 = msOrder;
+        d.top2 = msResults.slice(0, 4).map(r => msSelected.has(String(r[0])));
+        d.n = msCount;
+        return d;
+    }""")
+    check("★チェックした人を上にまとめられる",
+          chk["order"] == "desc" and all(chk["top"]), chk["top"])
+    check("★もう一度押すと未チェックが上になる",
+          chk["order2"] == "asc" and not any(chk["top2"]), chk["top2"])
+    check("チェックで並べ替えても該当件数は変わらない", chk["n"] == n_ref, chk["n"])
+    pg.evaluate("() => { msSelected.clear(); updateMsSelCount(); }")
 
     # 全選択は「表示中のページ」ではなく「該当者すべて」
     allsel = pg.evaluate("""() => {
