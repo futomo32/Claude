@@ -1717,11 +1717,13 @@ _MULTI_GUARD = {
 
 
 def _multi_num(f, v):
-    """範囲欄の数字を読む。全角で打たれても拾う(NFKC)。"""
-    try:
-        return int(unicodedata.normalize("NFKC", str(v)).strip())
-    except ValueError:
+    """範囲欄の数字を読む。全角で打たれても拾う(NFKC)。
+    ★先頭の数字だけを見る。担当者の欄は候補から選ぶと「001: 簗瀬 允則」のように
+      名前ごと入るため(「30歳」「1000円」のような打ち方も通る)。"""
+    m = re.match(r"[+-]?\d+", unicodedata.normalize("NFKC", str(v)).strip())
+    if not m:
         raise ValueError("「%s」には数字を入れてください(入力: %s)" % (f["label"], v))
+    return int(m.group(0))
 
 
 def _multi_special(f, row):
@@ -1779,11 +1781,12 @@ def _in_sql(expr, vals):
 
 
 def _multi_dec(f, v):
-    """小数の入る範囲欄(度数など)を読む。全角やプラス記号付きでも拾う。"""
-    try:
-        return float(unicodedata.normalize("NFKC", str(v)).strip())
-    except ValueError:
+    """小数の入る範囲欄(度数など)を読む。全角やプラス記号付きでも拾う。
+    _multi_num と同じく、先頭の数字だけを見る(「-3.00D」のような打ち方も通す)。"""
+    m = re.match(r"[+-]?\d+(\.\d+)?", unicodedata.normalize("NFKC", str(v)).strip())
+    if not m:
         raise ValueError("「%s」には数字を入れてください(入力: %s)" % (f["label"], v))
+    return float(m.group(0))
 
 
 def _multi_condition(f, row):
@@ -2045,8 +2048,13 @@ def multi_search_fields(con):
             else:
                 d["options"] = opts
         if f["key"] == "staff_code":
-            # 番号だけでは誰か分からないので、番号と名前の一覧を添える(入力欄の候補に出す)
-            d["list"] = [{"v": r[0], "t": "%s: %s" % (r[0], r[1])} for r in con.execute(
+            # 番号だけでは誰か分からないので、番号と名前の一覧を添える(入力欄の候補に出す)。
+            # ★候補は「001: 簗瀬 允則」の1行だけにする。value と label を別にすると
+            #   ブラウザが2行(値の行と説明の行)で描き、同じ内容が重なって見えるうえ、
+            #   一度に出る候補の数が半分になる(2026-09-03 店の指摘)。
+            #   入力欄には名前ごと入るが、範囲の判定は先頭の数字だけを見る(_multi_num)。
+            d["list"] = [{"v": "%s: %s" % (r[0], r[1]), "t": "%s: %s" % (r[0], r[1])}
+                         for r in con.execute(
                 "SELECT staff_code, name FROM staff WHERE COALESCE(staff_code,'')<>'' "
                 "ORDER BY (staff_code GLOB '[0-9]*') DESC, CAST(staff_code AS INTEGER), staff_code")]
         out.append(d)

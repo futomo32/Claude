@@ -61,7 +61,7 @@ with sync_playwright() as p:
         pg.click("#btn")
     pg.wait_for_selector("#app.active", timeout=20000)
     pg.wait_for_timeout(1500)
-    check("バージョン表示が v1.3.0", pg.inner_text("#app-ver").strip() == "v1.3.0",
+    check("バージョン表示が v1.3.1", pg.inner_text("#app-ver").strip() == "v1.3.1",
           pg.inner_text("#app-ver").strip())
 
     # ── 複合検索のタブを開く ──
@@ -91,12 +91,32 @@ with sync_playwright() as p:
 
     # ── 担当者の「番号: 名前」一覧(v1.2.5)──
     dl = pg.evaluate("""() => {
-        var f = msFields.find(x => x.key === 'staff_code');
         var d = document.getElementById('ms-list-staff_code');
-        return {list: f && f.list, opts: d ? Array.from(d.options).map(o => o.value + '=' + o.label) : null};
+        return {opts: d ? Array.from(d.options).map(o => o.value) : null,
+                labels: d ? Array.from(d.options).map(o => o.label) : null};
     }""")
     check("★担当者が「番号: 名前」で選べる(候補一覧がある)",
-          bool(dl["opts"]) and len(dl["opts"]) >= 2 and "101" in dl["opts"][0], dl["opts"])
+          bool(dl["opts"]) and len(dl["opts"]) >= 2 and dl["opts"][0].startswith("101:"),
+          dl["opts"])
+    # ★候補は1件=1行。value と label を別にするとブラウザが2行で描き、
+    #   同じ内容が重なって見え、一度に出る候補の数も半分になる(v1.3.1で修正)
+    check("★候補が1件1行になっている(値と説明が二重に出ない)",
+          all(l == v for l, v in zip(dl["labels"], dl["opts"])), dl["labels"][:2])
+    # 名前ごと入っても番号として読める
+    nm = pg.evaluate("""async () => {
+        var r = await fetch('/api/multi_search', {method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({conditions:[{field:'staff_code',
+                   from:'101: 三輪 祐加', to:'102: 簗瀬 智宏'}], exclude:'1'})});
+        var a = await r.json();
+        var r2 = await fetch('/api/multi_search', {method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({conditions:[{field:'staff_code', from:'101', to:'102'}], exclude:'1'})});
+        var b = await r2.json();
+        return {withName: a.count, numOnly: b.count};
+    }""")
+    check("★名前ごと入った欄でも番号として引ける",
+          nm["withName"] == nm["numOnly"] and nm["numOnly"] > 0, nm)
 
     # ── 担当者の範囲を2行足す = OR(v1.2.1 の核心)──
     def set_rows(js):
