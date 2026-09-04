@@ -181,6 +181,11 @@ def ensure_schema(con):
         ("products", "maker_no", "TEXT"),  # 品番(仕入先の商品コード)。宝飾ナビ d_siire.strsirsycode
         ("products", "tag_name", "TEXT"),  # タグ用の短い品名。宝飾ナビ d_item.strtaghinname
         ("supplier_master", "fucho_head", "TEXT"),  # 仕入先ごとの符丁頭カナ(漢字名対策)
+        # 仕入先コード(宝飾ナビ m_siiresaki.strsircode)。2026-09-03 追加。
+        # ★取込時は「コード→名前」の変換に使うだけで**保存していなかった**ため、
+        #   既存DBには入っていない。scripts/fill_supplier_codes.py で後から埋める
+        #   (再取込は不要)。空のままでも画面は動く(コード順では末尾に並ぶ)。
+        ("supplier_master", "code", "TEXT"),
         # ログイン画面・ユーザー管理での並び順(小さい順)。未設定(NULL)は末尾＝新しく作った人は下に付く
         ("app_users", "sort_order", "INTEGER"),
         # 2026-09-01の最終取込で宝飾ナビから引き継ぐ項目(2026-08-29 実データ診断で列を特定)。
@@ -1113,18 +1118,36 @@ def sync_supplier_master(con):
 
 
 def list_supplier_master(con):
-    """仕入先マスタ一覧(分類割り当て画面用)。名前・ジャンル・商品件数・在庫数を返す。
+    """仕入先マスタ一覧(分類割り当て画面用)。コード・名前・ジャンル・商品件数・在庫数を返す。
     在庫数は state='在庫' の商品のみを数える(現在店頭にある枠)。並び替えはUI側で行う。"""
     sync_supplier_master(con)
     con.row_factory = sqlite3.Row
     rows = []
-    for r in con.execute("""SELECT m.name, m.genre, m.fucho_head,
+    for r in con.execute("""SELECT m.name, m.code, m.genre, m.fucho_head,
                                    (SELECT COUNT(*) FROM products p WHERE p.supplier = m.name) cnt,
                                    (SELECT COUNT(*) FROM products p WHERE p.supplier = m.name AND p.state='在庫') stock
                             FROM supplier_master m ORDER BY m.name"""):
-        rows.append({"name": r["name"], "genre": r["genre"], "fucho_head": r["fucho_head"],
-                     "count": r["cnt"], "stock": r["stock"]})
+        rows.append({"name": r["name"], "code": r["code"], "genre": r["genre"],
+                     "fucho_head": r["fucho_head"], "count": r["cnt"], "stock": r["stock"]})
     return rows
+
+
+def set_supplier_code(con, name, code):
+    """仕入先コードを設定/変更する。空で解除。
+    ★同じコードを2つの仕入先に付けると、コード順に並べた時に見分けが付かなくなるので断る。"""
+    name = str(name or "").strip()
+    if not name:
+        raise ValueError("仕入先が指定されていません")
+    code = norm_code(code)[:20] or None
+    if code:
+        dup = con.execute("SELECT name FROM supplier_master WHERE code=? AND name<>?",
+                          (code, name)).fetchone()
+        if dup:
+            raise ValueError(f"そのコードは「{dup[0]}」で既に使われています")
+    con.execute("""INSERT INTO supplier_master(name, code) VALUES(?,?)
+                   ON CONFLICT(name) DO UPDATE SET code=excluded.code""", (name, code))
+    con.commit()
+    return {"name": name, "code": code}
 
 
 def product_brands(con):

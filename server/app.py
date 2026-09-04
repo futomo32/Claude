@@ -565,7 +565,7 @@ class Handler(BaseHTTPRequestHandler):
         "/api/product", "/api/product_update", "/api/product_delete",
         "/api/product_image", "/api/product_image_clear",
         "/api/photo_pool", "/api/photo_pool_assign", "/api/photo_pool_delete",
-        "/api/supplier_genre", "/api/supplier_fucho", "/api/master_item", "/api/rank_apply", "/api/rank_rules",
+        "/api/supplier_genre", "/api/supplier_fucho", "/api/supplier_code", "/api/master_item", "/api/rank_apply", "/api/rank_rules",
         "/api/stocktake_scan", "/api/stocktake_reset", "/api/settle_consignment",
         "/api/point_settings", "/api/point_adjust", "/api/tag_settings",
     }
@@ -952,6 +952,16 @@ class Handler(BaseHTTPRequestHandler):
                 con = connect()
                 result = db_query.set_supplier_fucho(con, payload.get("name"), payload.get("head"))
                 con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/supplier_code":
+                # 仕入先コード(宝飾ナビの仕入先コード)。同じコードの重複は断る
+                con = connect()
+                try:
+                    result = db_query.set_supplier_code(con, payload.get("name"), payload.get("code"))
+                except ValueError as e:
+                    return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                finally:
+                    con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/consignment_add":
                 # 受託品をレジに通すための商品作成(催事)。原価は出さないためパートも可(会計操作の一部)
