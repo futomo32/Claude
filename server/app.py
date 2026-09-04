@@ -795,6 +795,18 @@ class Handler(BaseHTTPRequestHandler):
                     finally:
                         con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/card_declined":
+                # 「ポイントカードは要らない」の記録。on=0 で解除(やっぱり作る時)
+                con = connect()
+                try:
+                    result = db_query.set_card_declined(
+                        con, payload.get("customer_id"),
+                        on=bool(payload.get("on", True)), staff=user.get("name") or "")
+                except ValueError as e:
+                    return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                finally:
+                    con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/card_read_cancel":
                 result = devices.card_eject()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))

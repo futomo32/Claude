@@ -190,6 +190,10 @@ def ensure_schema(con):
         # これが入っていれば「確実に持っている」。空でも、宝飾ナビ由来のポイント履歴が
         # あれば「昔のカードを持っているはず」と推測できる(card_state_map を参照)。
         ("customers", "card_written_at", "TEXT"),
+        # ★お客様が「ポイントカードは要らない」とおっしゃった記録(2026-09-04)。
+        #   これが無いと、来店のたびに毎回お尋ねしてしまう(お客様は毎回断ることになる)。
+        #   「まだ聞いていない人」と「断られた人」を区別するために持つ。
+        ("customers", "card_declined_at", "TEXT"),
         # ログイン画面・ユーザー管理での並び順(小さい順)。未設定(NULL)は末尾＝新しく作った人は下に付く
         ("app_users", "sort_order", "INTEGER"),
         # 2026-09-01の最終取込で宝飾ナビから引き継ぐ項目(2026-08-29 実データ診断で列を特定)。
@@ -893,18 +897,41 @@ def _allocate_pay(rows, parts, fallback):
 #   (無し) … どちらも無い＝カードを持っていない見込み(新規)
 CARD_STATE_TOKIWA = "T"
 CARD_STATE_NAVI = "N"
+CARD_STATE_DECLINED = "X"   # お客様が「要らない」とおっしゃった(次回から聞かない)
 
 
 def card_state_map(con):
-    """{顧客ID: "T"/"N"} を返す。どちらでもない人は入れない(通信量を抑えるため)。"""
+    """{顧客ID: "T"/"N"/"X"} を返す。どれでもない人は入れない(通信量を抑えるため)。
+    ★優先順は T > N > X。カードを持っているなら「不要」より「持っている」が大事で、
+      書いた事実(T)は推測(N)より確か。"""
     out = {}
     for r in con.execute("SELECT DISTINCT customer_id FROM point_transactions "
                          "WHERE ref_slip_id IS NULL"):
         out[str(r[0])] = CARD_STATE_NAVI
     for r in con.execute("SELECT customer_id FROM customers "
+                         "WHERE COALESCE(card_declined_at,'')<>''"):
+        out.setdefault(str(r[0]), CARD_STATE_DECLINED)   # 持っていない人だけ「不要」
+    for r in con.execute("SELECT customer_id FROM customers "
                          "WHERE COALESCE(card_written_at,'')<>''"):
-        out[str(r[0])] = CARD_STATE_TOKIWA      # 書いた事実が優先
+        out[str(r[0])] = CARD_STATE_TOKIWA      # 書いた事実が最優先
     return out
+
+
+def set_card_declined(con, customer_id, on=True, staff=""):
+    """「ポイントカードは要らない」の記録を付ける/外す。
+    ★外せるようにしておく(「やっぱり作る」は普通にあるため)。"""
+    cid = str(customer_id or "").strip()
+    if not cid:
+        raise ValueError("顧客が指定されていません")
+    if on:
+        val = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if staff:
+            val += " " + str(staff)
+    else:
+        val = None
+    con.execute("UPDATE customers SET card_declined_at=? WHERE customer_id=?", (val, cid))
+    con.commit()
+    return {"customer_id": cid, "card_declined_at": val}
 
 
 def mark_card_written(con, customer_id):
