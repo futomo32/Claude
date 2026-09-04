@@ -186,6 +186,10 @@ def ensure_schema(con):
         #   既存DBには入っていない。scripts/fill_supplier_codes.py で後から埋める
         #   (再取込は不要)。空のままでも画面は動く(コード順では末尾に並ぶ)。
         ("supplier_master", "code", "TEXT"),
+        # トキワでポイントカードを書いた日(2026-09-04)。★カードの重複発行を防ぐため。
+        # これが入っていれば「確実に持っている」。空でも、宝飾ナビ由来のポイント履歴が
+        # あれば「昔のカードを持っているはず」と推測できる(card_state_map を参照)。
+        ("customers", "card_written_at", "TEXT"),
         # ログイン画面・ユーザー管理での並び順(小さい順)。未設定(NULL)は末尾＝新しく作った人は下に付く
         ("app_users", "sort_order", "INTEGER"),
         # 2026-09-01の最終取込で宝飾ナビから引き継ぐ項目(2026-08-29 実データ診断で列を特定)。
@@ -573,6 +577,7 @@ def build_blob(con):
                         FROM point_transactions ORDER BY occurred_at DESC""")
     points = {str(r["customer_id"]): r["balance"]
               for r in cur.execute("SELECT customer_id, balance FROM point_balances")}
+    card_state = card_state_map(con)
 
     approach = group("""SELECT customer_id, approach_date, kind, title, staff_name
                         FROM approach_history ORDER BY approach_date DESC""")
@@ -655,6 +660,7 @@ def build_blob(con):
         tenders.append([r["sold_at"], r["method"], r["amount"], str(r["customer_id"])])
 
     return dict(customers=customers, sales=sales, families=families, points=points,
+                cardState=card_state,
                 pointTx=point_tx, urikake=urikake, urikakeHist=urikake_hist,
                 approach=approach, rx=rx, rxCandidates=rx_candidates, products=products,
                 repairs=repairs, tenders=tenders, stockStats=stock_summary,
@@ -725,6 +731,7 @@ def build_blob_light(con):
                             FROM receivable_entries ORDER BY entry_date DESC""")
     points = {str(r["customer_id"]): r["balance"]
               for r in cur.execute("SELECT customer_id, balance FROM point_balances")}
+    card_state = card_state_map(con)
 
     repairs = []
     for r in cur.execute("""SELECT id,repair_no,customer_id,item_name,issue,estimate,
@@ -768,6 +775,7 @@ def build_blob_light(con):
         "SELECT staff_code, name FROM staff WHERE active=1")]
 
     return dict(customers=customers, families=families, points=points,
+                cardState=card_state,
                 urikake=urikake, urikakeHist=urikake_hist,
                 repairs=repairs, tenders=tenders, stockStats=stock_summary, staff=staff,
                 registerStaff=register_staff, staffCodes=staff_codes,
@@ -873,6 +881,42 @@ def _allocate_pay(rows, parts, fallback):
         if need > 0:   # 受取の記録が売上に足りない(データの不整合)。落とさず「その他」に出す
             split["その他"] = split.get("その他", 0) + need
         r["pay_split"] = split
+
+
+# ── ポイントカードの持ち有無(2026-09-04)────────────────────────────
+# 同じお客様にカードを2枚渡してしまうのを防ぐための判定。3つの状態がある。
+#   "T" … トキワでカードを書いた(customers.card_written_at)。★確実
+#   "N" … 宝飾ナビ時代のカードを持っているはず。★ほぼ確実
+#         判定: ポイント履歴に **ref_slip_id が空の行**がある。
+#         取込(import_csv)は伝票と紐付けずに入れ、トキワの会計(checkout)は必ず
+#         伝票IDを入れるので、空＝宝飾ナビ由来と言い切れる(日付に頼らない)。
+#   (無し) … どちらも無い＝カードを持っていない見込み(新規)
+CARD_STATE_TOKIWA = "T"
+CARD_STATE_NAVI = "N"
+
+
+def card_state_map(con):
+    """{顧客ID: "T"/"N"} を返す。どちらでもない人は入れない(通信量を抑えるため)。"""
+    out = {}
+    for r in con.execute("SELECT DISTINCT customer_id FROM point_transactions "
+                         "WHERE ref_slip_id IS NULL"):
+        out[str(r[0])] = CARD_STATE_NAVI
+    for r in con.execute("SELECT customer_id FROM customers "
+                         "WHERE COALESCE(card_written_at,'')<>''"):
+        out[str(r[0])] = CARD_STATE_TOKIWA      # 書いた事実が優先
+    return out
+
+
+def mark_card_written(con, customer_id):
+    """カードを書いたことを記録する(磁気を書けた時点で呼ぶ)。
+    ★券面の印字に失敗しても磁気は書けているので「持っている」として扱う。"""
+    cid = str(customer_id or "").strip()
+    if not cid:
+        return None
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    con.execute("UPDATE customers SET card_written_at=? WHERE customer_id=?", (now, cid))
+    con.commit()
+    return now
 
 
 def slip_pay_texts(con, where_sql="", args=()):

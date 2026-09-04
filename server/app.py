@@ -786,6 +786,14 @@ class Handler(BaseHTTPRequestHandler):
                 # keep=1 … 書いたあと排出せず装置内に保持する(レジでそのまま会計に進む時)
                 result = devices.card_link(payload.get("customer_id"),
                                            keep=bool(payload.get("keep")))
+                # ★磁気が書けたら「カードを持っている」と記録する(重複発行の防止)
+                if result.get("ok"):
+                    con = connect()
+                    try:
+                        result["card_written_at"] = db_query.mark_card_written(
+                            con, payload.get("customer_id"))
+                    finally:
+                        con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/card_read_cancel":
                 result = devices.card_eject()
@@ -802,6 +810,13 @@ class Handler(BaseHTTPRequestHandler):
                 finally:
                     con.close()
                 result = devices.card_issue(cid, face)
+                # ★券面の印字に失敗しても磁気は書けているので「持っている」として記録する
+                if result.get("ok"):
+                    con = connect()
+                    try:
+                        result["card_written_at"] = db_query.mark_card_written(con, cid)
+                    finally:
+                        con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/card_face":
                 # 会計確定後の券面リライト(保持中カードのポイント等を書き換えて排出)。

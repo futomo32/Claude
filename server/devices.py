@@ -595,7 +595,7 @@ def card_link(customer_id, timeout=30.0, keep=False):
 
 
 def card_issue(customer_id, face, timeout=60.0):
-    """カードに書き込む: 1回の挿入で「磁気書込(TKW+顧客ID)→券面印字→排出」まで行う。
+    """ポイントカードに書き込む: 1回の挿入で「磁気書込(TKW+顧客ID)→券面印字→排出」まで行う。
     ★新品のカードにも、既に持っているカードの書き直しにも同じ処理を使う
       (画面の「💳 カードに書き込む」。以前は「会員証発行」という名前だった)。
 
@@ -639,7 +639,7 @@ def card_issue(customer_id, face, timeout=60.0):
                         "customer_id": cid, "written": CARD_PREFIX + cid}
             return {"ok": True, "customer_id": cid, "written": CARD_PREFIX + cid}
     except Exception as e:  # noqa: BLE001
-        return {"error": f"カードへの書き込みに失敗: {e}"}
+        return {"error": f"ポイントカードへの書き込みに失敗: {e}"}
 
 
 # ── 券面リライト印字(カード表面の文字の書き換え) ──
