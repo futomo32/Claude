@@ -789,7 +789,7 @@ class Handler(BaseHTTPRequestHandler):
                 result = devices.card_eject()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/card_issue":
-                # 会員証発行: 1回の挿入で 磁気書込(TKW+顧客ID)→券面印字→排出。
+                # カードに書き込む: 1回の挿入で 磁気書込(TKW+顧客ID)→券面印字→排出。
                 # 新品(磁気が空)のカードでも使える。★挿入カードの磁気を上書きする
                 cid = payload.get("customer_id")
                 con = connect()
