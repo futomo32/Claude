@@ -783,7 +783,9 @@ class Handler(BaseHTTPRequestHandler):
                         result = {"error": f"カードの顧客ID({result['customer_id']})が台帳にありません"}
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/card_link":
-                result = devices.card_link(payload.get("customer_id"))
+                # keep=1 … 書いたあと排出せず装置内に保持する(レジでそのまま会計に進む時)
+                result = devices.card_link(payload.get("customer_id"),
+                                           keep=bool(payload.get("keep")))
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/card_read_cancel":
                 result = devices.card_eject()

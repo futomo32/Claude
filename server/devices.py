@@ -562,9 +562,16 @@ def card_read(timeout=30.0):
         return {"error": f"カード読取に失敗: {e}"}
 
 
-def card_link(customer_id, timeout=30.0):
+def card_link(customer_id, timeout=30.0, keep=False):
     """装置内のカード(または新たに挿入されたカード)へ、トキワ形式
-    ("TKW"+顧客ID)を逆7bitで磁気書込して排出する。初回紐付け(方式B)と再発行の両方に使う。"""
+    ("TKW"+顧客ID)を逆7bitで磁気書込する。初回紐付け(方式B)と再発行の両方に使う。
+
+    keep=True … 書いたあと**排出せずに装置内へ保持する**(2026-09-04 店の指定)。
+      レジで宝飾ナビ形式のカードを紐付けた直後は、そのまま会計に進みたい。
+      ここで一度出すと、券面をポイント入りで書くために**もう一度入れ直す**ことになる。
+      保持したままなら、会計確定時にいつもの流れ(券面書換→排出)に合流でき、
+      **カードの出し入れは1回で済む**うえ、券面のポイントも**会計後の残高**になる。
+    """
     if not ENABLED:
         return _skip()
     cid = str(customer_id or "").strip()
@@ -576,9 +583,13 @@ def card_link(customer_id, timeout=30.0):
         with TCP300II(CARD_PORT) as dev:
             status = dev.write_track2(data, dataset_cmd=TCP300II.DATASET_REV7)
             if status != 0x20:
+                # ★書けなかった時は必ず出す。装置に残すと次のお客様が使えない
+                _eject_safe(dev)
                 return {"error": "磁気書込に失敗: " + status_text(status)}
-            _eject_safe(dev)
-            return {"ok": True, "customer_id": cid, "written": CARD_PREFIX + cid}
+            if not keep:
+                _eject_safe(dev)
+            return {"ok": True, "customer_id": cid, "written": CARD_PREFIX + cid,
+                    "held": bool(keep)}
     except Exception as e:  # noqa: BLE001
         return {"error": f"カード書込に失敗: {e}"}
 
