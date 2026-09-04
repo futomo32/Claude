@@ -51,7 +51,7 @@ with sync_playwright() as p:
 
     # ── バージョン表示 ──
     ver = pg.inner_text("#app-ver")
-    check("バージョン表示が v1.3.4", ver.strip() == "v1.3.4", ver)
+    check("バージョン表示が v1.3.5", ver.strip() == "v1.3.5", ver)
 
     # ── 顧客画面へ ──
     pg.click('.nav-item[data-screen="customers"]')
