@@ -61,7 +61,7 @@ with sync_playwright() as p:
         pg.click("#btn")
     pg.wait_for_selector("#app.active", timeout=20000)
     pg.wait_for_timeout(1500)
-    check("バージョン表示が v1.3.15", pg.inner_text("#app-ver").strip() == "v1.3.15",
+    check("バージョン表示が v1.4.0", pg.inner_text("#app-ver").strip() == "v1.4.0",
           pg.inner_text("#app-ver").strip())
 
     # ── 複合検索のタブを開く ──
@@ -92,8 +92,12 @@ with sync_playwright() as p:
     # ── 担当者の「番号: 名前」一覧(v1.2.5)──
     dl = pg.evaluate("""() => {
         var d = document.getElementById('ms-list-staff_code');
-        return {opts: d ? Array.from(d.options).map(o => o.value) : null,
-                labels: d ? Array.from(d.options).map(o => o.label) : null};
+        if (!d) return {opts: null};
+        return {opts: Array.from(d.options).map(o => o.value),
+                // ★1行になる条件は「label属性も中の文字も無い」こと。
+                //   どちらかがあると、ブラウザが値の行と説明の行の2行で描く
+                labelAttrs: Array.from(d.options).filter(o => o.hasAttribute('label')).length,
+                texts: Array.from(d.options).filter(o => o.text !== '').length};
     }""")
     check("★担当者が「番号: 名前」で選べる(候補一覧がある)",
           bool(dl["opts"]) and len(dl["opts"]) >= 2 and dl["opts"][0].startswith("101:"),
@@ -101,7 +105,8 @@ with sync_playwright() as p:
     # ★候補は1件=1行。value と label を別にするとブラウザが2行で描き、
     #   同じ内容が重なって見え、一度に出る候補の数も半分になる(v1.3.1で修正)
     check("★候補が1件1行になっている(値と説明が二重に出ない)",
-          all(l == v for l, v in zip(dl["labels"], dl["opts"])), dl["labels"][:2])
+          dl["labelAttrs"] == 0 and dl["texts"] == 0,
+          "label属性 %s件 / 中の文字あり %s件" % (dl["labelAttrs"], dl["texts"]))
     # 名前ごと入っても番号として読める
     nm = pg.evaluate("""async () => {
         var r = await fetch('/api/multi_search', {method:'POST',
@@ -225,8 +230,13 @@ with sync_playwright() as p:
     # ── 一覧の列と並べ替え(v1.2.7)──
     set_rows("""() => { msRows = [{field:'', from:'', to:'', value:''}]; paintMsRows(); }""")
     allc = search()
-    head = pg.eval_on_selector_all("#ms-thead th",
-                                   "es => es.map(e => e.textContent.trim()).filter(t => t)")
+    # ★先頭はチェック欄の見出し。v1.3.2 で「☑」の文字が入り押せるようになったので、
+    #   データの列(9つ)と分けて数える
+    head_all = pg.eval_on_selector_all("#ms-thead th",
+                                       "es => es.map(e => e.textContent.trim())")
+    head = [h for h in head_all[1:] if h]
+    check("先頭がチェック欄の見出し(☑・押すとチェックした人でまとまる)",
+          head_all[0].startswith("☑"), head_all[0])
     check("一覧の列が9つ(年齢・住所・今年の購入を含む)",
           len(head) == 9 and any("年齢" in h for h in head) and any("住所" in h for h in head)
           and any("今年の購入" in h for h in head), head)
@@ -330,7 +340,7 @@ with sync_playwright() as p:
           chk["order2"] == "asc" and not any(chk["top2"]), chk["top2"])
     check("チェックで並べ替えても該当件数は変わらない", chk["n"] == n_ref, chk["n"])
 
-    # ★「選択中だけ表示」(v1.3.15)。選択は検索をまたいで積み上がるので、印刷・書き出しの
+    # ★「選択中だけ表示」(v1.4.0)。選択は検索をまたいで積み上がるので、印刷・書き出しの
     #   前に中身を確かめられること。★別画面ではなく**同じ一覧**に出るのが肝
     sl = pg.evaluate("""async () => {
         msSelected.clear();
