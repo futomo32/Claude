@@ -51,7 +51,7 @@ with sync_playwright() as p:
 
     # ── バージョン表示 ──
     ver = pg.inner_text("#app-ver")
-    check("バージョン表示が v1.4.0", ver.strip() == "v1.4.0", ver)
+    check("バージョン表示が v1.4.1", ver.strip() == "v1.4.1", ver)
 
     # ── 顧客画面へ ──
     pg.click('.nav-item[data-screen="customers"]')
@@ -94,6 +94,38 @@ with sync_playwright() as p:
               info["labels"][4:8] == ["電話", "携帯電話", "DM送付", "登録日"], info["labels"][4:8])
         check("3段目が住所(郵便番号/住所1/住所2)",
               info["addr"][:1] == ["郵便番号"] and len(info["addr"]) == 3, info["addr"])
+
+        # ★名前の横に年齢を出す(v1.4.1 店の指定)。基本情報の生年月日まで目を下ろさずに分かる
+        agechip = pg.evaluate("""() => {
+            var el = document.getElementById('cd-age');
+            if (!el) return null;
+            var c = findCust(window.__curCust);
+            var st = getComputedStyle(el);
+            return {text: el.textContent.trim(), shown: st.display !== 'none',
+                    birth: c ? c[6] : null, age: c ? ageFrom(c[6]) : null,
+                    // 名前と同じ行に並んでいるか(上下がずれていない)
+                    sameRow: Math.abs(el.getBoundingClientRect().top
+                             - document.getElementById('cd-name').getBoundingClientRect().top) < 30,
+                    // ★値は <input value="…"> に入っているので textContent では取れない
+                    birthRow: (function () {
+                        var f = Array.from(document.querySelectorAll(
+                                '[data-screen="customer-detail"] .kv4 .field'))
+                            .find(function (x) {
+                                return x.querySelector('label').textContent.trim() === '生年月日'; });
+                        return f ? f.querySelector('input').value : '';
+                    })()};
+        }""")
+        if agechip and agechip["age"] is not None:
+            check("★名前の横に「〇〇歳」が出る",
+                  agechip["shown"] and agechip["text"] == "%d歳" % agechip["age"], agechip)
+            check("名前と同じ行に並んでいる", agechip["sameRow"], agechip["sameRow"])
+            check("生年月日の欄はそのまま(年齢つき)",
+                  "歳)" in agechip["birthRow"], agechip["birthRow"])
+        elif agechip:
+            check("生年月日が無い方には年齢を出さない",
+                  not agechip["shown"] and agechip["text"] == "", agechip)
+        else:
+            check("名前の横の年齢", False, "cd-age の要素が見つかりません")
 
         # 顧客メモの枠(スクロール)。メモを持つ顧客でしか出ないので存在すれば見る
         memo = pg.evaluate("""() => {

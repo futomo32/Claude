@@ -61,7 +61,7 @@ with sync_playwright() as p:
         pg.click("#btn")
     pg.wait_for_selector("#app.active", timeout=20000)
     pg.wait_for_timeout(1500)
-    check("バージョン表示が v1.4.0", pg.inner_text("#app-ver").strip() == "v1.4.0",
+    check("バージョン表示が v1.4.1", pg.inner_text("#app-ver").strip() == "v1.4.1",
           pg.inner_text("#app-ver").strip())
 
     # ── 複合検索のタブを開く ──
@@ -245,6 +245,53 @@ with sync_playwright() as p:
           [h for h in head if "今年" in h])
     check("地区の列は無くなっている", not any(h.startswith("地区") for h in head), head)
 
+    # ★住所は「住所1＋住所2」をつないで出す / 年齢は「生年月日(年齢)」で1列(v1.4.1)
+    check("見出しが「生年月日・年齢」になっている",
+          any(h == "生年月日・年齢" for h in head), head)
+    look = pg.evaluate("""() => {
+        var ai = MS_COLS.findIndex(c => c.k === 'address') + 1;   // +1 = 先頭のチェック欄
+        var gi = MS_COLS.findIndex(c => c.k === 'age') + 1;
+        var td = document.querySelectorAll('#ms-tbody tr:first-child td');
+        return {ids: msResults.slice(0, 30).map(r => String(r[0])),
+                addrs: msResults.slice(0, 30).map(r => r[6]),
+                cellAddr: td[ai].textContent.trim(),
+                cellAge: td[gi].textContent.trim(),
+                first: {addr: msResults[0][6], age: msResults[0][4], birth: msResults[0][10]}};
+    }""")
+    want = {str(r["customer_id"]): (" ".join(
+                x for x in [(r["address"] or "").strip(), (r["address2"] or "").strip()] if x))
+            for r in rows("SELECT customer_id, address, address2 FROM customers "
+                          "WHERE customer_id IN (%s)" % ",".join("?" * len(look["ids"])),
+                          look["ids"])}
+    check("★住所が「住所1＋住所2(建物名など)」でつながっている",
+          all((a or "") == want.get(i, "") for i, a in zip(look["ids"], look["addrs"])),
+          [(i, look["addrs"][n], want.get(i)) for n, i in enumerate(look["ids"])
+           if (look["addrs"][n] or "") != want.get(i, "")][:3] or "全%d件一致" % len(look["ids"]))
+    check("住所2のある人は建物名まで表の枠に出る",
+          look["cellAddr"] == (look["first"]["addr"] or ""), look["cellAddr"])
+    f = look["first"]
+    exp = (f["birth"] + ("(%d歳)" % f["age"] if f["age"] is not None else "")) if f["birth"] \
+        else ("%d歳" % f["age"] if f["age"] is not None else "—")
+    check("★年齢の枠が「生年月日(年齢)」になっている", look["cellAge"] == exp,
+          "%s / 期待 %s" % (look["cellAge"], exp))
+    # CSVも画面と同じ文字で出る(exportMultiCsv は自分でBlobを作るので、そこを横取りする)
+    mc = pg.evaluate("""async () => {
+        var blob = null, realCreate = URL.createObjectURL, realRevoke = URL.revokeObjectURL;
+        var realClick = HTMLAnchorElement.prototype.click;
+        URL.createObjectURL = function (b) { blob = b; return 'blob:test'; };
+        URL.revokeObjectURL = function () {};
+        HTMLAnchorElement.prototype.click = function () {};
+        try { exportMultiCsv(); } catch (e) { /* 下で null として扱う */ }
+        for (var i = 0; i < 80 && !blob; i++) await new Promise(r => setTimeout(r, 200));
+        URL.createObjectURL = realCreate; URL.revokeObjectURL = realRevoke;
+        HTMLAnchorElement.prototype.click = realClick;
+        return blob ? (await blob.text()).split('\\r\\n').slice(0, 2) : null;
+    }""")
+    check("複合検索のCSVの見出しに「生年月日・年齢」がある",
+          bool(mc) and "生年月日・年齢" in mc[0], mc[0] if mc else None)
+    check("★CSVの年齢も画面と同じ「生年月日(年齢)」の形",
+          bool(mc) and len(mc) > 1 and "歳)" in mc[1], mc[1] if mc and len(mc) > 1 else None)
+
     # 年齢で昇順・降順(★ページをまたいで並ぶこと=サーバー側で並べていること)
     def sort_by(label):
         pg.click('#ms-thead th:has-text("%s")' % label)
@@ -340,7 +387,7 @@ with sync_playwright() as p:
           chk["order2"] == "asc" and not any(chk["top2"]), chk["top2"])
     check("チェックで並べ替えても該当件数は変わらない", chk["n"] == n_ref, chk["n"])
 
-    # ★「選択中だけ表示」(v1.4.0)。選択は検索をまたいで積み上がるので、印刷・書き出しの
+    # ★「選択中だけ表示」(v1.4.1)。選択は検索をまたいで積み上がるので、印刷・書き出しの
     #   前に中身を確かめられること。★別画面ではなく**同じ一覧**に出るのが肝
     sl = pg.evaluate("""async () => {
         msSelected.clear();

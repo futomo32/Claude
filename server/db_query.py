@@ -2175,11 +2175,16 @@ def _this_year():
     return datetime.date.today().strftime("%Y")
 
 
+# 住所は「住所1＋住所2(建物名など)」をつないで1つの住所として出す(2026-09-05 店の指定)。
+# ★宛名や訪問に使うので、建物名まで入って初めて住所として役に立つ。
+#   どちらかが空でも余分な空白が残らないよう TRIM する(両方空なら空欄=並べ替えでは最後)。
+_ADDR_EXPR = "TRIM(COALESCE(c.address,'') || ' ' || COALESCE(c.address2,''))"
+
 # 一覧に出す列と、その並べ替えに使うSQL。★画面の列と対になっているので、
 # 列を足す時は両方(ここと tokiwa-ui.html の MS_COLS)を直すこと。
 MULTI_SORTS = {
     "name": "c.name", "kana": "c.kana", "tel": "c.tel", "rank": "c.rank",
-    "address": "c.address", "staff": "c.staff_name", "age": _AGE_EXPR,
+    "address": _ADDR_EXPR, "staff": "c.staff_name", "age": _AGE_EXPR,
     "total": ("(SELECT COALESCE(SUM(sl.amount),0) FROM sale_lines sl "
               "JOIN sales_slips ss ON sl.slip_id=ss.slip_id "
               "WHERE ss.customer_id=c.customer_id AND COALESCE(sl.voided,0)=0 "
@@ -2214,7 +2219,9 @@ def multi_customer_search(con, payload):
                       ★この時は DM可のみ・集計対象外・家族を含める も効かせない
       戻り値: {rows: 表示するページぶん, count: 該当総数, ids: 該当者すべての顧客ID,
                offset, limit, ids_truncated, sort, order, year}
-        rows の並び: [ID, 顧客名, カナ, 電話, 年齢, ランク, 住所, 今年の購入, 累計購入, 担当]
+        rows の並び: [ID, 顧客名, カナ, 電話, 年齢, ランク, 住所, 今年の購入, 累計購入, 担当, 生年月日]
+          ・住所 … 住所1＋住所2(建物名など)をつないだもの
+          ・年齢と生年月日は対で返す(画面は「1975-03-08(50歳)」の形で1列に出す)
     ★rows はページぶんだけ、ids は全件。「全選択」で1ページ目以外も選べるようにするため。"""
     con.row_factory = sqlite3.Row
     p = payload or {}
@@ -2332,10 +2339,11 @@ def multi_customer_search(con, payload):
         order_sql = ("ORDER BY (%s IS NULL OR %s = '') , %s %s, c.customer_id"
                      % (expr, expr, expr, dirn))
     rows = [[r["id"], r["name"], r["kana"], r["tel"], r["age"], r["rank"], r["address"],
-             r["ytotal"] or 0, r["total"] or 0, r["staff"]]
+             r["ytotal"] or 0, r["total"] or 0, r["staff"], r["birthday"]]
             for r in con.execute(
                 pre + "SELECT c.customer_id id, c.name, c.kana, c.tel, c.rank, "
-                "c.address, c.staff_name staff, " + _AGE_EXPR + " age, "
+                + _ADDR_EXPR + " address, c.staff_name staff, "
+                + _AGE_EXPR + " age, c.birthday, "
                 + MULTI_SORTS["year_total"] + " ytotal, " + MULTI_SORTS["total"] + " total "
                 "FROM customers c WHERE " + w + " " + order_sql
                 + " LIMIT ? OFFSET ?", args + order_args + [limit, offset])]
