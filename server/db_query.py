@@ -645,7 +645,8 @@ def build_blob(con):
         WHERE s.customer_id IS NOT NULL
               AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0""", (GLASSES_GENRE,)):
         nm = r["nm"] or ""
-        is_glass = r["g"] == 1 or r["gsup"] == 1 or bool(GLASS_PAT.search(nm))
+        is_glass = (r["g"] == 1 or r["gsup"] == 1 or bool(GLASS_PAT.search(nm))
+                    or free_name_genre(nm) == "メガネ")
         if is_glass and r["line_id"] not in linked and (r["amount"] or 0) >= 0:
             rx_candidates.setdefault(str(r["cid"]), []).append(
                 [r["line_id"], r["sold_at"], nm, r["amount"], glass_kind(r["cat"], nm), 1])
@@ -1091,7 +1092,9 @@ def customer_detail(con, cid):
         if r["line_id"] in linked or (r["amount"] or 0) < 0:
             continue
         nm = r["nm"] or ""
-        is_glass = r["g"] == 1 or r["gsup"] == 1 or bool(GLASS_PAT.search(nm))
+        # ★番号なしの明細は品名の決め打ちでも見る(仕入先が無いのでこれしか手がかりが無い)
+        is_glass = (r["g"] == 1 or r["gsup"] == 1 or bool(GLASS_PAT.search(nm))
+                    or free_name_genre(nm) == "メガネ")
         row = [r["line_id"], r["sold_at"], nm, r["amount"], glass_kind(r["cat"], nm),
                1 if is_glass else 0]
         (rx_candidates if is_glass else rx_others).append(row)
@@ -1992,7 +1995,44 @@ _PROD_EXISTS = ("EXISTS(SELECT 1 FROM sale_lines sl "
 #   日報は「どこで売ったか」を優先して 催事/メガネ/時計/店頭 に振り分けるが、
 #   ここは「何を買ったか」で見る(催事で買った指輪も宝石として扱いたいため)。
 #   番号なしの明細(修理・電池・レンズ等)は商品が無いので「その他」にまとめる。
-_GENRE_EXPR = ("CASE WHEN sl.product_key IS NULL OR pr.product_key IS NULL THEN 'その他' "
+# ── 番号なしの明細(修理・電池・レンズ等)のジャンル判定 ────────────────────
+# ★番号なしの明細は商品マスタを作らないので、**仕入先もジャンルも持てない**。
+#   商品名の文字だけが手がかりなので、店の運用に合わせて決め打ちする(2026-09-05 店の指定)。
+#   → 仕入先の設定は関係なく効く。番号なしでも分類されるようになる。
+# ★上から順に見て、最初に当たったものを採る。並び順に意味がある:
+#   「メガネ修理」は"修理"ではなく**メガネ**、「時計修理」は**時計**にしたいため。
+# ★ここが唯一の正。複合検索のジャンル絞り込みと、処方箋の紐付け候補の
+#   メガネ判定が、どちらもこの表を使う(2か所に書き写さない)。
+FREE_NAME_GENRE = [
+    (("電池",), "時計"),                                          # 電池交換
+    (("レンズ", "ﾚﾝｽﾞ", "メガネ", "眼鏡", "ﾒｶﾞﾈ", "フレーム", "ﾌﾚｰﾑ"), "メガネ"),
+    (("時計", "ﾄｹｲ", "バンド", "ﾊﾞﾝﾄﾞ"), "時計"),
+    (("宝石", "ジュエリー", "ｼﾞｭｴﾘｰ", "指輪", "リング", "ネックレス", "ピアス"), "宝石"),
+]
+
+
+def free_name_genre(name):
+    """番号なしの明細の品名から宝石/メガネ/時計を決める。当たらなければ「その他」。"""
+    t = str(name or "")
+    for words, genre in FREE_NAME_GENRE:
+        if any(w in t for w in words):
+            return genre
+    return "その他"
+
+
+def _free_genre_sql(col):
+    """上の表を SQL の CASE 式にする。★画面・検索で判定がずれないよう1か所から作る。
+    ※当てる語は上の定数だけ(利用者の入力は入らない)ので、そのまま埋め込んでよい。"""
+    parts = []
+    for words, genre in FREE_NAME_GENRE:
+        cond = " OR ".join("%s LIKE '%%%s%%'" % (col, w) for w in words)
+        parts.append("WHEN (%s) THEN '%s'" % (cond, genre))
+    return "CASE " + " ".join(parts) + " ELSE 'その他' END"
+
+
+# 番号なしは品名の決め打ちで、在庫品はメガネフラグと分類で分ける
+_GENRE_EXPR = ("CASE WHEN sl.product_key IS NULL OR pr.product_key IS NULL THEN "
+               + _free_genre_sql("COALESCE(sl.free_name,'')") + " "
                "WHEN COALESCE(pr.is_glasses,0)=1 THEN 'メガネ' "
                "WHEN COALESCE(pr.category,'') LIKE '%時計%' THEN '時計' "
                "ELSE '宝石' END")
