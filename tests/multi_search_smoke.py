@@ -61,7 +61,7 @@ with sync_playwright() as p:
         pg.click("#btn")
     pg.wait_for_selector("#app.active", timeout=20000)
     pg.wait_for_timeout(1500)
-    check("バージョン表示が v1.3.12", pg.inner_text("#app-ver").strip() == "v1.3.12",
+    check("バージョン表示が v1.3.14", pg.inner_text("#app-ver").strip() == "v1.3.14",
           pg.inner_text("#app-ver").strip())
 
     # ── 複合検索のタブを開く ──
@@ -329,6 +329,50 @@ with sync_playwright() as p:
     check("★もう一度押すと未チェックが上になる",
           chk["order2"] == "asc" and not any(chk["top2"]), chk["top2"])
     check("チェックで並べ替えても該当件数は変わらない", chk["n"] == n_ref, chk["n"])
+
+    # ★「選択中の一覧を見る」(v1.3.14)。選択は検索をまたいで積み上がるので、
+    #   印刷・書き出しの前に中身を確かめて、その場で外せることを見る
+    sl = pg.evaluate("""async () => {
+        msSelected.clear();
+        msIds.slice(0, 3).forEach(id => msSelected.add(String(id)));  // 今の結果から3人
+        msSelected.add('存在しないID');                               // 顧客一覧に居ない相手
+        updateMsSelCount();
+        var d = {btn: document.getElementById('ms-sel-list-btn').style.display !== 'none'};
+        openMsSelList();
+        await new Promise(r => setTimeout(r, 300));
+        d.open = document.getElementById('ms-sel-modal').classList.contains('show');
+        d.count = document.getElementById('mssel-count').textContent;
+        d.rows = document.querySelectorAll('#mssel-tbody tr').length;
+        d.missing = document.getElementById('mssel-tbody').innerHTML.indexOf('顧客情報が見つかりません') >= 0;
+        d.sorts = Array.from(document.getElementById('mssel-sort').options).map(o => o.value);
+        // 1人「外す」→ 一覧も、後ろの検索結果のチェックも減る
+        var target = Array.from(msSelected)[0];
+        msSelUnpick(target);
+        await new Promise(r => setTimeout(r, 300));
+        d.after = msSelected.size;
+        d.rows2 = document.querySelectorAll('#mssel-tbody tr').length;
+        d.stillOpen = document.getElementById('ms-sel-modal').classList.contains('show');
+        d.unchecked = !Array.from(document.querySelectorAll('#ms-tbody tr[data-cust]'))
+            .some(tr => tr.getAttribute('data-cust') === String(target)
+                        && tr.querySelector('input[type=checkbox]').checked);
+        d.label = document.getElementById('ms-sel-count').textContent;
+        closeMsSelList();
+        await new Promise(r => setTimeout(r, 200));
+        d.closed = !document.getElementById('ms-sel-modal').classList.contains('show');
+        return d;
+    }""")
+    check("★「選択中の一覧を見る」ボタンが出て、一覧が開く",
+          sl["btn"] and sl["open"], sl)
+    check("一覧に選択中の4件が並ぶ", sl["rows"] == 4 and "選択中 4件" in sl["count"], sl)
+    check("★顧客一覧に居ない相手もIDだけ出る(外せるように)", sl["missing"], sl["missing"])
+    check("並びを 追加した順/顧客ID順/カナ順 で選べる",
+          sl["sorts"] == ["add", "id", "kana"], sl["sorts"])
+    check("★「外す」でその場で減る(一覧も件数も)",
+          sl["after"] == 3 and sl["rows2"] == 3 and "選択中 3件" in sl["label"], sl)
+    check("★外すと後ろの検索結果のチェックも外れる", sl["unchecked"], sl["unchecked"])
+    check("外したあとも一覧は開いたまま / 閉じるで閉じる",
+          sl["stillOpen"] and sl["closed"], sl)
+
     pg.evaluate("() => { msSelected.clear(); updateMsSelCount(); }")
 
     # 全選択は「表示中のページ」ではなく「該当者すべて」
