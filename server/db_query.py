@@ -649,7 +649,8 @@ def build_blob(con):
                     or free_name_genre(nm) == "メガネ")
         if is_glass and r["line_id"] not in linked and (r["amount"] or 0) >= 0:
             rx_candidates.setdefault(str(r["cid"]), []).append(
-                [r["line_id"], r["sold_at"], nm, r["amount"], glass_kind(r["cat"], nm), 1])
+                [r["line_id"], r["sold_at"], nm, r["amount"], glass_kind(r["cat"], nm), 1,
+                 RX_BUCKET_GLASS])
 
     products = []
     # ★並びは search_products の rows と同じにする(画面が同じ番号で読むため)。
@@ -699,6 +700,8 @@ def build_blob(con):
                 repairs=repairs, tenders=tenders, stockStats=stock_summary,
                 care=care_list(con),
                 pointSettings=point_settings(con),
+                # 本番運用の開始日。処方箋の紐付け候補で「これより前を隠す」判定に使う
+                opStart=OPERATION_START,
                 tagSettings=tag_settings(con))
 
 
@@ -814,6 +817,8 @@ def build_blob_light(con):
                 registerStaff=register_staff, staffCodes=staff_codes,
                 cashMovements=list_cash_movements(con),
                 pointSettings=point_settings(con),
+                # 本番運用の開始日。処方箋の紐付け候補で「これより前を隠す」判定に使う
+                opStart=OPERATION_START,
                 tagSettings=tag_settings(con),
                 lite=True)  # lite=True で「明細は遅延取得」とUIに知らせる
 
@@ -1096,9 +1101,12 @@ def customer_detail(con, cid):
         is_glass = (r["g"] == 1 or r["gsup"] == 1 or bool(GLASS_PAT.search(nm))
                     or free_name_genre(nm) == "メガネ")
         row = [r["line_id"], r["sold_at"], nm, r["amount"], glass_kind(r["cat"], nm),
-               1 if is_glass else 0]
+               1 if is_glass else 0, rx_bucket(is_glass, nm, r["cat"])]
         (rx_candidates if is_glass else rx_others).append(row)
-    # その他は新しい順に上限まで(何百件も並べると、肝心のメガネが探しにくくなるため)
+    # その他は新しい順に上限まで(何百件も並べると、肝心のメガネが探しにくくなるため)。
+    # ★「メガネか分からないもの」を先に入れる。宝石・時計と分かったものに枠を食われると、
+    #   本当に選びたい品(型番だけのレンズ等)が上限で切られてしまう
+    rx_others.sort(key=lambda x: 0 if x[6] == RX_BUCKET_UNKNOWN else 1)
     rx_candidates += rx_others[:RX_OTHER_MAX]
 
     # 顧客メモ(宝飾ナビ d_user_memo の memo01〜10 を取り込んだもの)。
@@ -2009,6 +2017,31 @@ FREE_NAME_GENRE = [
     (("時計", "ﾄｹｲ", "バンド", "ﾊﾞﾝﾄﾞ"), "時計"),
     (("宝石", "ジュエリー", "ｼﾞｭｴﾘｰ", "指輪", "リング", "ネックレス", "ピアス"), "宝石"),
 ]
+
+
+# トキワで本番運用を始めた日。これより前の購入は宝飾ナビからの移行データで、
+# ★赤黒(訂正の打ち消し)が相殺されていないなど、そのままでは扱いにくい。
+# 処方箋の紐付け候補では既定でこの日より前を隠す(チェックを入れれば出せる)。
+OPERATION_START = "2026-09-01"
+
+# 処方箋の紐付け候補の仕分け(3段階)。
+#   glass   … メガネと分かったもの(既定で表示)
+#   unknown … メガネか分からないもの(既定で表示。型番だけの品名はここ)
+#   other   … 宝石・時計と分かったもの(既定で隠す。電池交換などが並んで邪魔になるため)
+# ★「隠す」だけで消しはしない。出ないと手の打ちようが無くなるため、
+#   画面の「すべて表示」で必ず出せるようにしてある。
+RX_BUCKET_GLASS, RX_BUCKET_UNKNOWN, RX_BUCKET_OTHER = "glass", "unknown", "other"
+
+
+def rx_bucket(is_glass, name, category=""):
+    """処方箋の紐付け候補を3段階に仕分ける。"""
+    if is_glass:
+        return RX_BUCKET_GLASS
+    if free_name_genre(name) in ("宝石", "時計"):
+        return RX_BUCKET_OTHER
+    if category and "時計" in str(category):
+        return RX_BUCKET_OTHER
+    return RX_BUCKET_UNKNOWN
 
 
 def free_name_genre(name):
