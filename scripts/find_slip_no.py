@@ -119,22 +119,63 @@ def read_csv(path, limit=SAMPLE_LIMIT):
     return [], []
 
 
-def col_stats(head, rows):
-    """列ごとに 入力率・種類数・値の形 を集める。★値そのものは持たない。"""
-    n = len(rows)
+KINDS_CAP = 5000    # 種類数を数える上限(これを超えたら「5000+」と出す。メモリ対策)
+
+
+def stream_stats(path, head):
+    """★ファイルを**全行**流し読みして、列ごとに 入力率・種類数・値の形 を集める。
+
+    ★行を配列に貯めない(212,209件×81列を持つとメモリが足りない)。
+      数えるものだけを持って読み捨てる。
+
+    ★なぜ全行読むか(2026-09-05 店の実行結果で判明した重要な話):
+      以前は先頭2万行だけで統計を取っていた。ところが宝飾ナビの書き出しは
+      **商品キーの順=古い順**なので、先頭2万件は「一番古い9%」でしかない。
+      その結果、実際には使われている項目まで「0.0% すべて空」と出てしまい、
+      **「この項目は使われていない」と誤って判断する**ところだった。
+      (実例: 仕入の伝票日付は先頭2万件では1.7%だが、2025年の画面には入っている)
+    """
+    filled = [0] * len(head)
+    kinds = [set() for _ in head]
+    over = [False] * len(head)
+    shapes = [collections.Counter() for _ in head]
+    n = 0
+    for enc in ("cp932", "utf-8-sig", "utf-8"):
+        try:
+            with open(path, "r", encoding=enc, newline="") as f:
+                rd = csv.reader(f)
+                next(rd, None)          # 見出しを飛ばす
+                for row in rd:
+                    n += 1
+                    for ci in range(len(head)):
+                        if ci >= len(row):
+                            continue
+                        v = norm(row[ci])
+                        if not v:
+                            continue
+                        filled[ci] += 1
+                        if not over[ci]:
+                            kinds[ci].add(v)
+                            if len(kinds[ci]) > KINDS_CAP:
+                                over[ci] = True
+                                kinds[ci] = set()   # もう数えないので捨てる
+                        shapes[ci][shape_of(v)] += 1
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        return n, []
     out = []
     for ci, col in enumerate(head):
-        vals = [norm(r[ci]) for r in rows if ci < len(r)]
-        filled = [v for v in vals if v != ""]
-        shapes = collections.Counter(shape_of(v) for v in filled)
         out.append({
-            "col": col, "idx": ci, "n": n, "filled": len(filled),
-            "rate": (len(filled) / n * 100) if n else 0.0,
-            "kinds": len(set(filled)),
-            "shapes": shapes.most_common(SHAPE_LIMIT),
+            "col": col, "idx": ci, "n": n, "filled": filled[ci],
+            "rate": (filled[ci] / n * 100) if n else 0.0,
+            "kinds": ("%d+" % KINDS_CAP) if over[ci] else len(kinds[ci]),
+            "kinds_num": (KINDS_CAP + 1) if over[ci] else len(kinds[ci]),
+            "shapes": shapes[ci].most_common(SHAPE_LIMIT),
             "secret": is_secret(col),
         })
-    return out
+    return n, out
 
 
 def score(st):
@@ -148,7 +189,7 @@ def score(st):
         s += 2
     # ★1枚の納品書に複数商品が載るので、種類数は行数よりかなり少ないはず。
     #   全部バラバラ(種類≒行数)なら商品固有の番号で、納品書Noではない
-    if st["filled"] and st["kinds"] < st["filled"] * 0.6:
+    if st["filled"] and st["kinds_num"] < st["filled"] * 0.6:
         s += 4
     # 数字だけ・数字と記号だけの短い値が納品書Noらしい
     if st["shapes"]:
@@ -164,16 +205,19 @@ def show_table(path, want_value=None, want_product=None, finds=None, found=None)
     # ★何かを「探す」時は全行読む(打ち切ると取りこぼして「無い」と誤答するため)。
     #   列の統計を見るだけの時は、速さのために上限まででよい
     searching = bool(want_value or want_product or finds)
-    head, rows = read_csv(path, None if searching else SAMPLE_LIMIT)
+    # 探す時だけ行を配列で持つ(全行)。統計は行を貯めずに流し読みする
+    head, rows = read_csv(path, None) if searching else (read_csv(path, 1)[0], [])
     if not head:
         return []
-    capped = (not searching) and len(rows) >= SAMPLE_LIMIT
     print("\n" + "=" * 72)
-    print("■ %s  (列 %d / 読んだ行 %d%s)"
-          % (name, len(head), len(rows), " ※統計用に上限まで" if capped else ""))
     # 列の統計は「候補の絞り込み」の時だけ出す。
     # ★探している時に114表ぶんの一覧を出すと、肝心の答えが埋もれて見つけられない
-    stats = col_stats(head, rows) if not searching else []
+    stats = []
+    if searching:
+        print("■ %s  (列 %d / 読んだ行 %d)" % (name, len(head), len(rows)))
+    else:
+        total, stats = stream_stats(path, head)
+        print("■ %s  (列 %d / 全 %d行)" % (name, len(head), total))
     if stats:
         ranked = sorted(stats, key=lambda st: (-score(st), st["idx"]))
         print("  %-22s %7s %8s %8s  %s" % ("列名", "入力率", "入力数", "種類", "形(多い順)"))
@@ -181,7 +225,7 @@ def show_table(path, want_value=None, want_product=None, finds=None, found=None)
             mark = "★" if score(st) >= 10 else ("・" if score(st) >= 7 else "  ")
             shapes = "(伏せ字)" if st["secret"] else \
                 " / ".join("%s×%d" % (sh, c) for sh, c in st["shapes"]) or "(すべて空)"
-            print("  %s%-20s %6.1f%% %8d %8d  %s"
+            print("  %s%-20s %6.1f%% %8d %8s  %s"
                   % (mark, st["col"][:20], st["rate"], st["filled"], st["kinds"], shapes[:60]))
     hits = []
     # 値で逆引き(紙の納品書の番号を渡された場合)

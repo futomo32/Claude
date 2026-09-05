@@ -61,7 +61,7 @@ with sync_playwright() as p:
         pg.click("#btn")
     pg.wait_for_selector("#app.active", timeout=20000)
     pg.wait_for_timeout(1500)
-    check("バージョン表示が v1.4.6", pg.inner_text("#app-ver").strip() == "v1.4.6",
+    check("バージョン表示が v1.4.7", pg.inner_text("#app-ver").strip() == "v1.4.7",
           pg.inner_text("#app-ver").strip())
 
     # ── 複合検索のタブを開く ──
@@ -387,7 +387,7 @@ with sync_playwright() as p:
           chk["order2"] == "asc" and not any(chk["top2"]), chk["top2"])
     check("チェックで並べ替えても該当件数は変わらない", chk["n"] == n_ref, chk["n"])
 
-    # ★「選択中だけ表示」(v1.4.6)。選択は検索をまたいで積み上がるので、印刷・書き出しの
+    # ★「選択中だけ表示」(v1.4.7)。選択は検索をまたいで積み上がるので、印刷・書き出しの
     #   前に中身を確かめられること。★別画面ではなく**同じ一覧**に出るのが肝
     sl = pg.evaluate("""async () => {
         msSelected.clear();
