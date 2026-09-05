@@ -199,7 +199,7 @@ def score(st):
     return s
 
 
-def show_table(path, want_value=None, want_product=None, finds=None, found=None):
+def show_table(path, want_value=None, want_product=None, finds=None, found=None, key_col=None):
     found = found if found is not None else []
     name = os.path.splitext(os.path.basename(path))[0]
     # ★何かを「探す」時は全行読む(打ち切ると取りこぼして「無い」と誤答するため)。
@@ -244,13 +244,23 @@ def show_table(path, want_value=None, want_product=None, finds=None, found=None)
         np_ = norm(want_product).casefold()
         shown = 0
         for i, r in enumerate(rows, start=2):
-            if not any(norm(c).casefold() == np_ for c in r):
+            # ★どの列で一致したかを必ず出す(2026-09-05 追加)。
+            #   宝飾ナビは「商品番号(strsyno)」と「商品キー(lngsykey)」が**別物**で、
+            #   たまたま同じ数字が入っていることがある。列名を出さないと、
+            #   まったく別の商品の行を見て「納品書Noが無い」と誤って結論してしまう
+            #   (実際に商品番号21454で、商品キー21454の別商品が3件出た)。
+            matched = [head[ci] if ci < len(head) else "?"
+                       for ci, c in enumerate(r) if norm(c).casefold() == np_]
+            if not matched:
+                continue
+            if key_col and not any(m == key_col for m in matched):
                 continue
             shown += 1
-            if shown > 3:
-                print("  … 同じ商品番号の行が他にもあります(表示は3行まで)")
+            if shown > 5:
+                print("  … 一致する行が他にもあります(表示は5行まで)")
                 break
-            print("\n  ■ %s の %d行目 が一致 ── 手元の画面と見比べてください" % (name, i))
+            print("\n  ■ %s の %d行目 が一致【%s = %s】── 手元の画面と見比べてください"
+                  % (name, i, " / ".join(matched), want_product))
             for ci, (col, val) in enumerate(zip(head, r)):
                 v = norm(val)
                 if not v:
@@ -266,6 +276,12 @@ def show_table(path, want_value=None, want_product=None, finds=None, found=None)
                     print("    ★ %-22s = %-20s ← 【%s】はこの列です" % (col[:22], shown_val, hit_label))
                 else:
                     print("      %-22s = %s" % (col[:22], shown_val))
+            # ★空の列は上に出さないので、「列はあるが空だった」ことが分からない。
+            #   伝票・納品書らしい列だけは、空でも名前を出す(存在するのに空 ≠ 列が無い)
+            blanks = [c for ci2, c in enumerate(head)
+                      if SLIP_COL.search(c) and (ci2 >= len(r) or not norm(r[ci2]))]
+            if blanks:
+                print("      (この行では空だった伝票らしい列: %s)" % " / ".join(blanks))
         if not shown:
             print("  (商品番号 %s の行はこの表にありません)" % want_product)
     return hits
@@ -276,6 +292,10 @@ def main():
     ap.add_argument("--all", action="store_true", help="商品まわり以外の全テーブルも見る")
     ap.add_argument("--value", help="紙の納品書の番号。その値が入っている列を突き止める")
     ap.add_argument("--product", help="商品番号(管理番号)。その行の全列を出す")
+    ap.add_argument("--key-col", metavar="列名",
+                    help="--product をこの列だけで照合する(例 --key-col strsyno / lngsykey)。"
+                         "★宝飾ナビは商品番号(strsyno)と商品キー(lngsykey)が別物で、"
+                         "同じ数字が入っていることがある。別商品を拾ってしまう時に使う")
     ap.add_argument("--find", action="append", default=[], metavar="項目名=値",
                     help="画面で見えている値。--product と一緒に使うと、その行の"
                          "どの列かを確定できる(例 --find \"納品書No=121463\")。何度でも指定可")
@@ -312,9 +332,9 @@ def main():
     # --find だけで --product が無い時は、値そのもので全体を探す(--value と同じ動き)
     extra_values = [v for _, v in finds] if (finds and not a.product) else []
     for f in files:
-        hits += show_table(f, a.value, a.product, finds, found)
+        hits += show_table(f, a.value, a.product, finds, found, a.key_col)
         for v in extra_values:
-            hits += show_table(f, v, None, None, found)
+            hits += show_table(f, v, None, None, found, None)
 
     print("\n" + "=" * 72)
     if found:
