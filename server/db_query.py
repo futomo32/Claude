@@ -2210,13 +2210,27 @@ def multi_customer_search(con, payload):
         ・same_prev … 買ったもの/処方箋の条件だけ。true=1つ上の行と同じ1点の商品
                       (処方箋なら同じ1枚)で満たす
         ・include_family … 1=当たった人の家族(顧客として登録され、つながっている人)も含める
+        ・only_selected … 1=条件を使わず、selected の顧客IDだけを一覧に出す(選択中の確認用)。
+                      ★この時は DM可のみ・集計対象外・家族を含める も効かせない
       戻り値: {rows: 表示するページぶん, count: 該当総数, ids: 該当者すべての顧客ID,
                offset, limit, ids_truncated, sort, order, year}
         rows の並び: [ID, 顧客名, カナ, 電話, 年齢, ランク, 住所, 今年の購入, 累計購入, 担当]
     ★rows はページぶんだけ、ids は全件。「全選択」で1ページ目以外も選べるようにするため。"""
     con.row_factory = sqlite3.Row
     p = payload or {}
+    # ★「選択中だけ表示」(2026-09-05)。条件で絞るのではなく、いま選んでいる人を
+    #   そのまま一覧に出す(並べ替え・ページ送り・CSVは条件で絞った時と全く同じ)。
+    #   ★この時は絞り込み(DM可のみ・集計対象外を除く・家族を含める)を**一切かけない**。
+    #   選んだ人が黙って消えると「入れたはずの人が居ない」ことに気づけないため。
+    only_selected = str(p.get("only_selected") or "") in ("1", "True", "true")
+    if only_selected:
+        p = dict(p, conditions=[], dm_ok="", exclude="0", include_family="0")
     where, args = ["COALESCE(c.is_test,0)=0"], []
+    if only_selected:
+        # 選んだ顧客IDは数万件になり得るので、★JSONの配列を**1つの引数**で渡す
+        # (IN (?,?,…) だと SQLite の引数の数の上限に当たる)
+        where.append("c.customer_id IN (SELECT value FROM json_each(?))")
+        args.append(json.dumps([str(x) for x in (p.get("selected") or [])]))
     if str(p.get("exclude") or "1") != "0":
         where.append("COALESCE(c.exclude_stats,0)=0")
     if str(p.get("dm_ok") or "") in ("1", "True", "true"):
