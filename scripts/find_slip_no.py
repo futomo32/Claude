@@ -30,6 +30,15 @@
       → 商品番号(管理番号)を渡す。その商品の行の全列を出すので、
         手元の納品書と見比べて「これだ」と目で確かめられる
 
+  ★確認(これが一番はっきりする):
+  python3 scripts/find_slip_no.py --product 21454 --find "納品書No=121463"
+      → 「商品番号21454の行の中で、121463 が入っている列はどれか」を突き止める。
+        宝飾ナビの『仕入商品登録・修正・削除』の画面を開いて、商品番号と
+        納品書Noを読み取って渡せば、対応する列名が1発で分かる。
+        複数の項目を一度に確かめてもよい:
+          --find "納品書No=121463" --find "仕入品番=3S848" --find "伝票日付=2025/04/18"
+        ※ここで渡す値は画面に見えている値をそのまま。全角/半角は気にしなくてよい。
+
 出力の見方:
   入力率 … その列に値が入っている行の割合。低すぎる列は使い物にならない
   種類  … 値の種類数。★納品書Noなら「1枚の納品書に複数商品」なので
@@ -143,7 +152,8 @@ def score(st):
     return s
 
 
-def show_table(path, want_value=None, want_product=None):
+def show_table(path, want_value=None, want_product=None, finds=None, found=None):
+    found = found if found is not None else []
     name = os.path.splitext(os.path.basename(path))[0]
     head, rows = read_csv(path)
     if not head:
@@ -169,7 +179,9 @@ def show_table(path, want_value=None, want_product=None):
             k = sum(1 for r in rows if ci < len(r) and norm(r[ci]).casefold() == nv)
             if k:
                 hits.append((name, st["col"], k))
-    # 商品番号でその行の全列を出す(手元の納品書と見比べる用)
+    # 商品番号でその行の全列を出す(手元の納品書と見比べる用)。
+    # ★--find を一緒に渡すと、その行の中で値が一致した列に★を付けて確定できる
+    finds = finds or []
     if want_product:
         np_ = norm(want_product).casefold()
         shown = 0
@@ -180,12 +192,24 @@ def show_table(path, want_value=None, want_product=None):
             if shown > 3:
                 print("  … 同じ商品番号の行が他にもあります(表示は3行まで)")
                 break
-            print("\n  ■ %s の %d行目 が一致 ── 手元の納品書と見比べてください" % (name, i))
-            for col, val in zip(head, r):
+            print("\n  ■ %s の %d行目 が一致 ── 手元の画面と見比べてください" % (name, i))
+            for ci, (col, val) in enumerate(zip(head, r)):
                 v = norm(val)
                 if not v:
                     continue
-                print("      %-22s = %s" % (col[:22], "(伏せ字)" if is_secret(col, v) else v[:60]))
+                hit_label = None
+                for label, want in finds:
+                    if norm(want).casefold() == v.casefold():
+                        hit_label = label
+                        found.append((name, col, label, i))
+                        break
+                shown_val = "(伏せ字)" if is_secret(col, v) else v[:60]
+                if hit_label:
+                    print("    ★ %-22s = %-20s ← 【%s】はこの列です" % (col[:22], shown_val, hit_label))
+                else:
+                    print("      %-22s = %s" % (col[:22], shown_val))
+        if not shown:
+            print("  (商品番号 %s の行はこの表にありません)" % want_product)
     return hits
 
 
@@ -194,7 +218,20 @@ def main():
     ap.add_argument("--all", action="store_true", help="商品まわり以外の全テーブルも見る")
     ap.add_argument("--value", help="紙の納品書の番号。その値が入っている列を突き止める")
     ap.add_argument("--product", help="商品番号(管理番号)。その行の全列を出す")
+    ap.add_argument("--find", action="append", default=[], metavar="項目名=値",
+                    help="画面で見えている値。--product と一緒に使うと、その行の"
+                         "どの列かを確定できる(例 --find \"納品書No=121463\")。何度でも指定可")
     a = ap.parse_args()
+    finds = []
+    for f in a.find:
+        if "=" not in f:
+            print("--find は「項目名=値」の形で指定してください(例 --find \"納品書No=121463\")")
+            return 1
+        label, _, val = f.partition("=")
+        finds.append((label.strip(), val.strip()))
+    if finds and not a.product:
+        # 商品番号なしでも、値だけで全表を探せるようにする(--value と同じ扱い)
+        print("※--product が無いので、値だけで全体から探します。")
 
     csv_dir = _paths.find_dir(REAL_BASE, "*.csv", "csv")
     files = sorted(glob.glob(os.path.join(csv_dir, "*.csv")))
@@ -213,22 +250,47 @@ def main():
 
     print("読むだけの調査です。データは一切変更しません。")
     print("対象: %d ファイル(%s)" % (len(files), csv_dir))
-    hits = []
+    hits, found = [], []
+    # --find だけで --product が無い時は、値そのもので全体を探す(--value と同じ動き)
+    extra_values = [v for _, v in finds] if (finds and not a.product) else []
     for f in files:
-        hits += show_table(f, a.value, a.product)
+        hits += show_table(f, a.value, a.product, finds, found)
+        for v in extra_values:
+            hits += show_table(f, v, None, None, found)
 
     print("\n" + "=" * 72)
-    if a.value:
+    if found:
+        # ★これが一番はっきりした答え。画面で見えている項目 → 実際の列名
+        print("★ 画面の項目 → 宝飾ナビの列名 が分かりました:")
+        seen = set()
+        for name, col, label, i in found:
+            k = (name, col, label)
+            if k in seen:
+                continue
+            seen.add(k)
+            print("     【%s】 = %s . %s   (%s の %d行目で確認)" % (label, name, col, name, i))
+        print("\n  → この列名を教えてください。取込に追加して、過去分を埋められます。")
+        print("     ★念のため、別の商品番号でもう1回試して同じ列になるか確かめると確実です")
+        print("       (たまたま同じ値が別の列に入っていただけ、という取り違えを防げます)。")
+    if a.value or (finds and not a.product):
+        want = a.value or "・".join(v for _, v in finds)
         if hits:
-            print("★ 指定の番号「%s」が見つかった列:" % a.value)
+            print("★ 指定の値「%s」が見つかった列:" % want)
             for name, col, k in sorted(hits, key=lambda x: -x[2]):
                 print("     %s . %s   (%d行で一致)" % (name, col, k))
             print("\n  → この列名を教えてください。取込に追加して、過去分を埋められます。")
         else:
-            print("指定の番号「%s」はどの列にも見つかりませんでした。" % a.value)
+            print("指定の値「%s」はどの列にも見つかりませんでした。" % want)
             print("  ・--all を付けて全テーブルを見る")
             print("  ・番号の書き方を変えて試す(先頭の0を省いた/付けた 等)")
-    else:
+    elif a.product and finds:
+        if not found:
+            print("商品番号 %s の行は見つかりましたが、指定した値と一致する列はありませんでした。"
+                  % a.product)
+            print("  ・--all を付けて全テーブルを見る(仕入は d_siire にあるはずです)")
+            print("  ・画面の表示と保存されている値が違うことがあります"
+                  "(日付の区切り・先頭の0・全角/半角)。--value で値だけを探すのも有効です")
+    elif not found:
         print("★の付いた列が納品書Noの候補です。次にやること:")
         print("  1. 紙の納品書の番号を1つ用意して")
         print("     python3 scripts/find_slip_no.py --value <その番号>")
