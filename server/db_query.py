@@ -180,6 +180,12 @@ def ensure_schema(con):
         # 値札(タグ)に刷る2項目。宝飾ナビから引き継ぐ(2026-08-03 実データで所在を特定)
         ("products", "maker_no", "TEXT"),  # 品番(仕入先の商品コード)。宝飾ナビ d_siire.strsirsycode
         ("products", "tag_name", "TEXT"),  # タグ用の短い品名。宝飾ナビ d_item.strtaghinname
+        # 仕入伝票番号(仕入先の納品書・伝票の番号)。2026-09-05 追加。
+        # ★登録した商品を後から実務で追う時のカギになる項目(宝飾ナビにもあった)。
+        #   宝飾ナビ側の元データは d_siire(仕入テーブル)にあるが、d_siire は**取込を
+        #   一切実装していない**(scripts/diag_unused_columns.py 参照)。よって
+        #   既存の21万件は空のままで、これから登録する商品にだけ入る。
+        ("products", "purchase_slip_no", "TEXT"),
         ("supplier_master", "fucho_head", "TEXT"),  # 仕入先ごとの符丁頭カナ(漢字名対策)
         # 仕入先コード(宝飾ナビ m_siiresaki.strsircode)。2026-09-03 追加。
         # ★取込時は「コード→名前」の変換に使うだけで**保存していなかった**ため、
@@ -627,15 +633,19 @@ def build_blob(con):
                 [r["line_id"], r["sold_at"], nm, r["amount"], glass_kind(r["cat"], nm)])
 
     products = []
+    # ★並びは search_products の rows と同じにする(画面が同じ番号で読むため)。
+    #   11=ブランド 12=地金 13=仕入伝票番号
     for r in cur.execute("""SELECT product_no,name,category,list_price,state,location,
-                                   center_stone,center_carat,product_key,image_file,cost_price,supplier
+                                   center_stone,center_carat,product_key,image_file,cost_price,supplier,
+                                   brand,metal,purchase_slip_no
                             FROM products ORDER BY product_no"""):
         stone = r["center_stone"] or ""
         if stone and r["center_carat"]:
             stone += f' {r["center_carat"]}ct'
         products.append([r["product_no"], r["name"], r["category"], r["list_price"],
                          r["state"], r["location"], stone or None, r["product_key"], r["image_file"],
-                         r["cost_price"], r["supplier"]])
+                         r["cost_price"], r["supplier"], r["brand"], r["metal"],
+                         r["purchase_slip_no"]])
 
     repairs = []
     for r in cur.execute("""SELECT id,repair_no,customer_id,item_name,issue,estimate,
@@ -1076,7 +1086,8 @@ def customer_detail(con, cid):
 # 在庫一覧の並び替えで指定できる列(キー→実カラム。ホワイトリストでSQLインジェクション防止)
 PRODUCT_SORT_COLS = {"no": "product_no", "name": "name", "cat": "category",
                      "list": "list_price", "cost": "cost_price", "state": "state",
-                     "loc": "location", "supplier": "supplier"}
+                     "loc": "location", "supplier": "supplier",
+                     "slip": "purchase_slip_no"}
 
 
 def _ean13_base(code):
@@ -1114,7 +1125,7 @@ def _resolve_code_conditions(code):
 def search_products(con, q="", cat="", state="", supplier="", genre="", sort="no", order="desc", limit=50, offset=0):
     """商品検索(在庫一覧・レジの商品ピッカー用)。全商品(21万件)を送らずサーバーで絞り込む。
     戻り値 {rows:[...], total:N}。rows は
-      [商品番号,品名,分類,上代,状態,置場,石,商品キー,画像,下代,仕入先]。
+      [商品番号,品名,分類,上代,状態,置場,石,商品キー,画像,下代,仕入先,ブランド,地金,仕入伝票番号]。
     末尾寄りの商品キー(product_key)はレジで在庫引落・購入履歴の紐付けに使う内部キー。
     sort/order で並び替え(サーバー側。ページングと整合させるため)。"""
     con.row_factory = sqlite3.Row
@@ -1134,8 +1145,11 @@ def search_products(con, q="", cat="", state="", supplier="", genre="", sort="no
                          "OR REPLACE(product_no,'-','') LIKE ?)")
             args += [liken, like, base[:5], base + "%"]
         else:
-            where.append("(product_no LIKE ? OR product_no LIKE ? OR name LIKE ?)")
-            args += [like, liken, like]
+            # ★仕入伝票番号も照合する(2026-09-05)。納品書の番号を入れると、その伝票で
+            #   仕入れた商品がまとめて出る = 実務で商品を追う時の入口になるため。
+            where.append("(product_no LIKE ? OR product_no LIKE ? OR name LIKE ? "
+                         "OR purchase_slip_no LIKE ?)")
+            args += [like, liken, like, like]
     if cat:
         where.append("category = ?"); args.append(cat)
     if state:
@@ -1154,14 +1168,15 @@ def search_products(con, q="", cat="", state="", supplier="", genre="", sort="no
     rows = []
     for r in con.execute(
             "SELECT product_no,name,category,list_price,cost_price,state,location,"
-            "center_stone,center_carat,supplier,product_key,image_file,brand,metal "
+            "center_stone,center_carat,supplier,product_key,image_file,brand,metal,purchase_slip_no "
             "FROM products" + wsql + order_sql + " LIMIT ? OFFSET ?", args + [limit, offset]):
         stone = r["center_stone"] or ""
         if stone and r["center_carat"]:
             stone += f' {r["center_carat"]}ct'
         rows.append([r["product_no"], r["name"], r["category"], r["list_price"],
                      r["state"], r["location"], stone or None, r["product_key"], r["image_file"],
-                     r["cost_price"], r["supplier"], r["brand"], r["metal"]])  # [11]=ブランド [12]=地金
+                     r["cost_price"], r["supplier"], r["brand"], r["metal"],
+                     r["purchase_slip_no"]])  # [11]=ブランド [12]=地金 [13]=仕入伝票番号
     return {"rows": rows, "total": total}
 
 
@@ -3520,7 +3535,8 @@ def delete_family(con, family_id):
 PRODUCT_FIELDS = ("product_no", "name", "category", "brand", "metal", "supplier", "cost_price",
                   "list_price", "location", "center_stone", "center_carat",
                   "color", "clarity", "cut", "cert_no", "info", "fucho",
-                  "maker_no", "tag_name", "ring_fingers", "ring_size", "tax_rate")
+                  "maker_no", "tag_name", "ring_fingers", "ring_size", "tax_rate",
+                  "purchase_slip_no")
 
 # 符丁(下代を隠す店内符牒)。数字→カナ「エビスアキナイカミ」対応表。
 _FUCHO_DIGITS = {"1": "ｴ", "2": "ﾋ", "3": "ｽ", "4": "ｱ", "5": "ｷ",
@@ -3692,7 +3708,7 @@ def get_product(con, product_key):
     r = con.execute(
         "SELECT product_key,product_no,name,category,brand,metal,supplier,cost_price,list_price,location,"
         "center_stone,center_carat,color,clarity,cut,cert_no,info,fucho,state,image_file,"
-        "maker_no,tag_name,ring_fingers,ring_size "
+        "maker_no,tag_name,ring_fingers,ring_size,purchase_slip_no "
         "FROM products WHERE product_key=?", (pk,)).fetchone()
     if not r:
         raise ValueError("商品が見つかりません")

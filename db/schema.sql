@@ -109,7 +109,8 @@ CREATE TABLE products (
   sub_stone     TEXT,               -- 脇石の石種。d_item.strsecode → m_ishi
   sub_carat1    TEXT,               -- 脇石1の重量。d_item.cursubjuryo1(0は無しとしてNULL)
   sub_carat2    TEXT,               -- 脇石2の重量。d_item.cursubjuryo2
-  tax_rate      INTEGER             -- 消費税率(10 or 8)。空=10%として扱う(2026-09-02)
+  tax_rate      INTEGER,            -- 消費税率(10 or 8)。空=10%として扱う(2026-09-02)
+  purchase_slip_no TEXT             -- 仕入伝票番号(仕入先の納品書・伝票の番号)。2026-09-05
 );
 CREATE INDEX idx_products_no    ON products(product_no);
 CREATE INDEX idx_products_state ON products(state);
