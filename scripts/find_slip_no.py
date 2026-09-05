@@ -92,8 +92,14 @@ def shape_of(s):
     return "".join(out)
 
 
-def read_csv(path):
-    """宝飾ナビの書き出しは cp932 のことが多いので順に試す。"""
+def read_csv(path, limit=SAMPLE_LIMIT):
+    """宝飾ナビの書き出しは cp932 のことが多いので順に試す。
+
+    ★limit=None なら**全行**読む。値や商品番号を探す時は必ず全行読むこと——
+      途中で打ち切ると、探しているものが後ろの方にあった場合に
+      「見つかりません」と出てしまう(仕入 d_siire は16万件ある)。
+      黙って取りこぼすのが一番まずい。
+    """
     for enc in ("cp932", "utf-8-sig", "utf-8"):
         try:
             with open(path, "r", encoding=enc, newline="") as f:
@@ -104,7 +110,7 @@ def read_csv(path):
                         head = row
                         continue
                     rows.append(row)
-                    if len(rows) >= SAMPLE_LIMIT:
+                    if limit is not None and len(rows) >= limit:
                         break
             return head or [], rows
         except UnicodeDecodeError:
@@ -155,30 +161,38 @@ def score(st):
 def show_table(path, want_value=None, want_product=None, finds=None, found=None):
     found = found if found is not None else []
     name = os.path.splitext(os.path.basename(path))[0]
-    head, rows = read_csv(path)
+    # ★何かを「探す」時は全行読む(打ち切ると取りこぼして「無い」と誤答するため)。
+    #   列の統計を見るだけの時は、速さのために上限まででよい
+    searching = bool(want_value or want_product or finds)
+    head, rows = read_csv(path, None if searching else SAMPLE_LIMIT)
     if not head:
         return []
+    capped = (not searching) and len(rows) >= SAMPLE_LIMIT
     print("\n" + "=" * 72)
     print("■ %s  (列 %d / 読んだ行 %d%s)"
-          % (name, len(head), len(rows), " ※上限まで" if len(rows) >= SAMPLE_LIMIT else ""))
-    stats = col_stats(head, rows)
-    ranked = sorted(stats, key=lambda st: (-score(st), st["idx"]))
-    print("  %-22s %7s %8s %8s  %s" % ("列名", "入力率", "入力数", "種類", "形(多い順)"))
-    for st in ranked:
-        mark = "★" if score(st) >= 10 else ("・" if score(st) >= 7 else "  ")
-        shapes = "(伏せ字)" if st["secret"] else \
-            " / ".join("%s×%d" % (sh, c) for sh, c in st["shapes"]) or "(すべて空)"
-        print("  %s%-20s %6.1f%% %8d %8d  %s"
-              % (mark, st["col"][:20], st["rate"], st["filled"], st["kinds"], shapes[:60]))
+          % (name, len(head), len(rows), " ※統計用に上限まで" if capped else ""))
+    # 列の統計は「候補の絞り込み」の時だけ出す。
+    # ★探している時に114表ぶんの一覧を出すと、肝心の答えが埋もれて見つけられない
+    stats = col_stats(head, rows) if not searching else []
+    if stats:
+        ranked = sorted(stats, key=lambda st: (-score(st), st["idx"]))
+        print("  %-22s %7s %8s %8s  %s" % ("列名", "入力率", "入力数", "種類", "形(多い順)"))
+        for st in ranked:
+            mark = "★" if score(st) >= 10 else ("・" if score(st) >= 7 else "  ")
+            shapes = "(伏せ字)" if st["secret"] else \
+                " / ".join("%s×%d" % (sh, c) for sh, c in st["shapes"]) or "(すべて空)"
+            print("  %s%-20s %6.1f%% %8d %8d  %s"
+                  % (mark, st["col"][:20], st["rate"], st["filled"], st["kinds"], shapes[:60]))
     hits = []
     # 値で逆引き(紙の納品書の番号を渡された場合)
     if want_value:
+        # ★stats は「探している時」は作らないので、列は head から数える
         nv = norm(want_value).casefold()
-        for st in stats:
-            ci = st["idx"]
+        for ci, col in enumerate(head):
             k = sum(1 for r in rows if ci < len(r) and norm(r[ci]).casefold() == nv)
             if k:
-                hits.append((name, st["col"], k))
+                hits.append((name, col, k))
+                print("  ★ %s に 「%s」 が入っています(%d行)" % (col, want_value, k))
     # 商品番号でその行の全列を出す(手元の納品書と見比べる用)。
     # ★--find を一緒に渡すと、その行の中で値が一致した列に★を付けて確定できる
     finds = finds or []
