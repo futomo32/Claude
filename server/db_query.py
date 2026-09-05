@@ -193,6 +193,11 @@ def ensure_schema(con):
         #   一切実装していない**(scripts/diag_unused_columns.py 参照)。よって
         #   既存の21万件は空のままで、これから登録する商品にだけ入る。
         ("products", "purchase_slip_no", "TEXT"),
+        # 伝票日付(仕入先の伝票に書かれた日付)。2026-09-05 追加。
+        # ★宝飾ナビ d_siire.datdendate。実データで88.2%(148,377件)入っており、
+        #   納品書No(12.5%)よりずっと入力率が高い。「いつ仕入れたか」を追える。
+        #   products.registered_at(登録日=トキワに登録した日)とは別物。
+        ("products", "purchase_slip_date", "TEXT"),
         ("supplier_master", "fucho_head", "TEXT"),  # 仕入先ごとの符丁頭カナ(漢字名対策)
         # 仕入先コード(宝飾ナビ m_siiresaki.strsircode)。2026-09-03 追加。
         # ★取込時は「コード→名前」の変換に使うだけで**保存していなかった**ため、
@@ -3614,7 +3619,7 @@ PRODUCT_FIELDS = ("product_no", "name", "category", "brand", "metal", "supplier"
                   "list_price", "location", "center_stone", "center_carat",
                   "color", "clarity", "cut", "cert_no", "info", "fucho",
                   "maker_no", "tag_name", "ring_fingers", "ring_size", "tax_rate",
-                  "purchase_slip_no")
+                  "purchase_slip_no", "purchase_slip_date")
 
 # 符丁(下代を隠す店内符牒)。数字→カナ「エビスアキナイカミ」対応表。
 _FUCHO_DIGITS = {"1": "ｴ", "2": "ﾋ", "3": "ｽ", "4": "ｱ", "5": "ｷ",
@@ -3786,7 +3791,7 @@ def get_product(con, product_key):
     r = con.execute(
         "SELECT product_key,product_no,name,category,brand,metal,supplier,cost_price,list_price,location,"
         "center_stone,center_carat,color,clarity,cut,cert_no,info,fucho,state,image_file,"
-        "maker_no,tag_name,ring_fingers,ring_size,purchase_slip_no "
+        "maker_no,tag_name,ring_fingers,ring_size,purchase_slip_no,purchase_slip_date "
         "FROM products WHERE product_key=?", (pk,)).fetchone()
     if not r:
         raise ValueError("商品が見つかりません")

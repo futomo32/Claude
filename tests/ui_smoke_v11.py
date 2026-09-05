@@ -36,7 +36,7 @@ with sync_playwright() as p:
         pg.click("#btn")
     pg.wait_for_selector("#app.active", timeout=20000)
     pg.wait_for_timeout(1500)
-    check("バージョン表示が v1.4.9", pg.inner_text("#app-ver").strip() == "v1.4.9",
+    check("バージョン表示が v1.4.10", pg.inner_text("#app-ver").strip() == "v1.4.10",
           pg.inner_text("#app-ver").strip())
 
     pg.click('.nav-item[data-screen="register"]')

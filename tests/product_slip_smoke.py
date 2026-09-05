@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""商品登録の「仕入伝票番号」(v1.3.13)を実ブラウザで確かめる。
+"""商品登録の「納品書No」「伝票日付」(v1.3.13 / v1.4.10)を実ブラウザで確かめる。
 
   python3 server/app.py &
   python3 tests/product_slip_smoke.py
@@ -60,7 +60,8 @@ with sync_playwright() as p:
             var el = document.getElementById('np-slip-no');
             return el ? el.closest('.field').querySelector('label').textContent.trim() : '';
         })()})""")
-    check("仕入登録に「仕入伝票番号」の欄がある", has["np"] and has["label"] == "仕入伝票番号", has)
+    check("仕入登録に「納品書No」の欄がある(名前は宝飾ナビと同じ)",
+          has["np"] and has["label"] == "納品書No", has)
 
     # ── ② 1点目を登録 → ★伝票番号の欄だけ残る(他は消える) ──
     pg.evaluate("""(slip) => {
@@ -75,7 +76,7 @@ with sync_playwright() as p:
         slip: (document.getElementById('np-slip-no') || {}).value,
         name: (document.getElementById('np-name') || {}).value,
         cost: (document.getElementById('np-cost') || {}).value})""")
-    check("★登録しても仕入伝票番号は残る(同じ納品書の商品を続けて登録できる)",
+    check("★登録しても納品書Noは残る(同じ納品書の商品を続けて登録できる)",
           after["slip"] == SLIP, after["slip"])
     check("他の欄は空に戻る(前の商品を引きずらない)",
           after["name"] == "" and after["cost"] == "", after)
@@ -113,7 +114,7 @@ with sync_playwright() as p:
     # 一覧に「仕入伝票」の列が出て、押すと並べ替わる
     col = pg.evaluate("""async () => {
         var ths = Array.from(document.querySelectorAll('#stock-thead th'));
-        var i = ths.findIndex(t => t.textContent.indexOf('仕入伝票') >= 0);
+        var i = ths.findIndex(t => t.textContent.indexOf('納品書No') >= 0);
         var d = {heads: ths.length, idx: i,
                  cells: document.querySelectorAll('#stock-tbody tr:first-child td').length,
                  shown: (document.querySelectorAll('#stock-tbody tr:first-child td')[i] || {}).textContent};
@@ -122,8 +123,8 @@ with sync_playwright() as p:
         d.sort = prodSort.key; d.dir = prodSort.dir; d.total2 = prodTotal;
         return d;
     }""")
-    check("在庫一覧に「仕入伝票」の列がある(見出しとセルの数が合う)",
-          col["idx"] >= 0 and col["heads"] == col["cells"] == 10, col)
+    check("在庫一覧に「納品書No」の列がある(見出しとセルの数が合う)",
+          col["idx"] >= 0 and col["heads"] == col["cells"] == 11, col)
     check("その列に伝票番号が出る", col["shown"] == SLIP, col["shown"])
     check("見出しを押すと伝票番号で並べ替わる(件数は変わらない)",
           col["sort"] == "slip" and col["total2"] == 2, col)
@@ -136,9 +137,9 @@ with sync_playwright() as p:
             .map(r => [r.querySelector('.k').textContent.trim(),
                        r.querySelector('.v').textContent.trim()]);
         return {rows: rows,
-                slip: (rows.find(r => r[0] === '仕入伝票番号') || [])[1]};
+                slip: (rows.find(r => r[0] === '納品書No') || [])[1]};
     }""")
-    check("商品詳細に「仕入伝票番号」が出る", det["slip"] == SLIP, det["slip"])
+    check("商品詳細に「納品書No」が出る", det["slip"] == SLIP, det["slip"])
 
     # ── ⑥ 商品修正で書き換えられる ──
     edited = pg.evaluate("""async (slip2) => {
@@ -170,12 +171,12 @@ with sync_playwright() as p:
     }""")
     got = (csv or {}).get("csv")
     head = got["rows"][0] if got else []
-    idx = head.index("仕入伝票番号") if "仕入伝票番号" in head else -1
+    idx = head.index("納品書No") if "納品書No" in head else -1
     check("★在庫CSVが実際に書き出される(サーバー稼働時。D.products は空)",
           bool(got) and len(got["rows"]) - 1 == csv["total"] and csv["total"] > 0,
           {"CSVの行": (len(got["rows"]) - 1) if got else None,
            "一覧の件数": csv["total"], "D.products": csv["dProducts"]})
-    check("在庫一覧のCSVに「仕入伝票番号」の列がある", idx >= 0, head)
+    check("在庫一覧のCSVに「納品書No」の列がある", idx >= 0, head)
     check("★CSVのその列に値が入っている",
           idx >= 0 and any(r[idx] in (SLIP, SLIP2) for r in got["rows"][1:]),
           [r[idx] for r in got["rows"][1:]] if idx >= 0 else None)
