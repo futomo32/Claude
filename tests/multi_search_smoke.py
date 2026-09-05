@@ -61,7 +61,7 @@ with sync_playwright() as p:
         pg.click("#btn")
     pg.wait_for_selector("#app.active", timeout=20000)
     pg.wait_for_timeout(1500)
-    check("バージョン表示が v1.3.11", pg.inner_text("#app-ver").strip() == "v1.3.11",
+    check("バージョン表示が v1.3.12", pg.inner_text("#app-ver").strip() == "v1.3.12",
           pg.inner_text("#app-ver").strip())
 
     # ── 複合検索のタブを開く ──

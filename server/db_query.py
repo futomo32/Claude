@@ -2741,6 +2741,60 @@ def _ensure_documents_table(con):
         lines_json TEXT,                   -- 明細 [{name,amount},...] のJSON
         created_at TEXT DEFAULT (datetime('now','localtime'))
     )""")
+    # 領収書も履歴に残すために足した列(2026-09-05)。★見積書・請求書は残していたのに、
+    # 一番残すべき領収書が残っていなかった(二重発行を確かめられない状態だった)。
+    # 既存DBでもマイグレーション不要で動くように、無ければ足す。
+    have = {r[1] for r in con.execute("PRAGMA table_info(issued_documents)")}
+    for col, typ in (("slip_id", "INTEGER"),     # どの会計の領収書か
+                     ("note", "TEXT"),           # 但し書き
+                     ("issue_mode", "TEXT"),     # 発行方法(レシート / A4)
+                     ("seq", "INTEGER")):        # その伝票で何回目の発行か(1=初回)
+        if col not in have:
+            con.execute(f"ALTER TABLE issued_documents ADD COLUMN {col} {typ}")
+
+
+RECEIPT_DOC_TYPE = "領収書"
+
+
+def receipt_doc_count(con, slip_id):
+    """その伝票で領収書を何回発行したかを数える(0=まだ)。
+    ★画面の覚えではなくDBで数える。ブラウザを閉じても、別のPCから出しても正しく数えられる。"""
+    _ensure_documents_table(con)
+    r = con.execute("SELECT COUNT(*) FROM issued_documents WHERE doc_type=? AND slip_id=?",
+                    (RECEIPT_DOC_TYPE, str(slip_id))).fetchone()
+    return int(r[0] or 0) if r else 0
+
+
+def receipt_doc_history(con, slip_id):
+    """その伝票の領収書の発行履歴(古い順)。発行画面に「発行済みです」と出すために使う。"""
+    _ensure_documents_table(con)
+    con.row_factory = sqlite3.Row
+    return [{"seq": r["seq"], "issued_at": r["issued_at"], "to_name": r["to_name"],
+             "note": r["note"], "issue_mode": r["issue_mode"], "total": r["total"],
+             "created_at": r["created_at"]}
+            for r in con.execute(
+                "SELECT seq,issued_at,to_name,note,issue_mode,total,created_at "
+                "FROM issued_documents WHERE doc_type=? AND slip_id=? ORDER BY id",
+                (RECEIPT_DOC_TYPE, str(slip_id)))]
+
+
+def save_receipt_doc(con, doc, mode=""):
+    """領収書の発行を履歴に残す(★発行ボタンを押した時点で残す。店の指定 2026-09-05)。
+    ★「出していないのに出したことになる」より「出したのに残らない」方が危険なため、
+      A4のプレビューで印刷を取りやめた場合も残す(発行方法に「A4(押した)」と入る)。
+      二重発行の確認が目的なので、疑わしいものは残す側に倒している。"""
+    _ensure_documents_table(con)
+    seq = receipt_doc_count(con, doc.get("slip_id")) + 1
+    cur = con.cursor()
+    cur.execute("""INSERT INTO issued_documents
+                   (doc_type,issued_at,to_name,keisho,total,tax,lines_json,
+                    slip_id,note,issue_mode,seq)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                (RECEIPT_DOC_TYPE, doc.get("issued_at") or datetime.date.today().isoformat(),
+                 doc.get("to_name"), "様", int(doc.get("total") or 0), int(doc.get("tax") or 0),
+                 "[]", str(doc.get("slip_id")), doc.get("note"), mode or "", seq))
+    con.commit()
+    return {"id": cur.lastrowid, "seq": seq}
 
 
 def save_document(con, p):
@@ -4297,12 +4351,15 @@ def receipt_doc_data(con, slip_id, to_name=None, note=None, reissue=False):
     tax = taxes.total_tax(tax_rows)
 
     name = str(to_name or "").strip() or (s["cname"] or "").strip() or "上様"
+    # ★何回目の発行かはDBで数える(画面の覚えだとブラウザを閉じた時・別のPCの時に分からない)
+    past = receipt_doc_history(con, s["slip_id"])
     return {"slip_id": s["slip_id"], "issued_at": datetime.date.today().isoformat(),
+            "past_issues": past,
             "sold_at": s["sold_at"], "to_name": name,
             "note": str(note or "").strip() or "お品代として",
             "total": total, "tax": tax, "payments": payments,
             "cash_amount": cash_amount, "stamp_required": stamp_required,
-            "credit_methods": credit_methods, "reissue": bool(reissue)}
+            "credit_methods": credit_methods, "reissue": bool(reissue) or bool(past)}
 
 
 def void_receipt_data(con, line_id=None, slip_id=None):

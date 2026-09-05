@@ -440,6 +440,7 @@ class Handler(BaseHTTPRequestHandler):
                         "/api/customer_ranking", "/api/prescription_search", "/api/rank_preview",
                         "/api/rank_rules", "/api/receivables_summary", "/api/stock_stats",
                         "/api/search_options", "/api/detailed_search", "/api/stocktake_summary",
+                        "/api/receipt_doc_history",
                         "/api/multi_search_fields"):
                 qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
 
@@ -502,6 +503,9 @@ class Handler(BaseHTTPRequestHandler):
                         result = db_query.stocktake_summary(con)
                     elif path == "/api/search_options":
                         result = db_query.search_options(con)
+                    elif path == "/api/receipt_doc_history":
+                        # その伝票の領収書の発行履歴(二重発行の確認用)
+                        result = {"history": db_query.receipt_doc_history(con, q1("slip_id"))}
                     elif path == "/api/multi_search_fields":
                         # 複合検索で選べる項目と選択肢(定義は db_query.MULTI_FIELDS が唯一の正)
                         result = db_query.multi_search_fields(con)
@@ -761,10 +765,26 @@ class Handler(BaseHTTPRequestHandler):
                 finally:
                     con.close()
                 doc["store"] = store_info.as_dict()
+                # ★発行ボタンを押した時点で履歴に残す(店の指定 2026-09-05)。
+                #   「出していないのに出したことになる」より「出したのに残らない」方が
+                #   危険なため、A4のプレビューで取りやめた場合も残す。
+                #   レシートプリンタは機器OFFだと印字しないので、その時は残さない。
+                mode = "レシート" if payload.get("mode") == "print" else "A4"
                 if payload.get("mode") == "print":
                     result = devices.print_receipt_doc(doc)
+                    if not result.get("skipped"):
+                        con = connect()
+                        try:
+                            doc["issued"] = db_query.save_receipt_doc(con, doc, mode)
+                        finally:
+                            con.close()
                     result["doc"] = doc
                     return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+                con = connect()
+                try:
+                    doc["issued"] = db_query.save_receipt_doc(con, doc, mode)
+                finally:
+                    con.close()
                 return self._send(200, json.dumps({"ok": True, "doc": doc}, ensure_ascii=False).encode("utf-8"))
             if path == "/api/drawer_open":
                 result = devices.open_drawer()
