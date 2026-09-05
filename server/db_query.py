@@ -38,6 +38,13 @@ def write_lock(con):
 
 GLASS_PAT = re.compile(r"メガネ|眼鏡|レンズ|フレーム|ﾒｶﾞﾈ|ﾚﾝｽﾞ|ﾌﾚｰﾑ")
 
+# 仕入先マスタでメガネに割り当てたジャンル名(SUPPLIER_GENRES の1つ)。
+# 品名が型番だけの商品(POLICE VPLP39J 等)は文字では判定できないので、
+# 「メガネのメーカーから仕入れた品か」で補う(2026-09-05)。
+GLASSES_GENRE = "メガネ"
+# 処方箋の紐付け候補で、メガネと判定できなかった購入を出す上限(新しい順)
+RX_OTHER_MAX = 100
+
 
 def normjp(s):
     """検索照合用の正規化(1か所に集約)。全角/半角・半角カナ/全角カナ・大文字/小文字の
@@ -618,19 +625,25 @@ def build_blob(con):
     # 処方箋に未紐付けの「メガネ関連の購入明細」(処方箋追加時に選べる候補)
     linked = set(r[0] for r in cur.execute(
         "SELECT sale_line_id FROM prescriptions WHERE sale_line_id IS NOT NULL"))
+    # ★ここは単体HTML(埋め込みデータ)用なので**メガネと判定できたものだけ**にする。
+    #   全顧客ぶんの明細22万件を入れるとファイルが巨大になるため。
+    #   「判定から外れた購入も選べる」のは customer_detail(1人ぶんを都度取得)側で行う。
+    #   マイナス金額(宝飾ナビの赤黒)を外すのと仕入先ジャンルで拾うのは、こちらにも入れる。
     rx_candidates = {}
     for r in cur.execute("""
         SELECT s.customer_id cid, l.line_id, s.sold_at, l.amount,
-               COALESCE(l.free_name, p.name) nm, p.is_glasses g, p.category cat
+               COALESCE(l.free_name, p.name) nm, p.is_glasses g, p.category cat,
+               (SELECT 1 FROM supplier_master sm
+                 WHERE sm.name = p.supplier AND sm.genre = ?) gsup
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         WHERE s.customer_id IS NOT NULL
-              AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0"""):
+              AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0""", (GLASSES_GENRE,)):
         nm = r["nm"] or ""
-        is_glass = r["g"] == 1 or bool(GLASS_PAT.search(nm))
-        if is_glass and r["line_id"] not in linked:
+        is_glass = r["g"] == 1 or r["gsup"] == 1 or bool(GLASS_PAT.search(nm))
+        if is_glass and r["line_id"] not in linked and (r["amount"] or 0) >= 0:
             rx_candidates.setdefault(str(r["cid"]), []).append(
-                [r["line_id"], r["sold_at"], nm, r["amount"], glass_kind(r["cat"], nm)])
+                [r["line_id"], r["sold_at"], nm, r["amount"], glass_kind(r["cat"], nm), 1])
 
     products = []
     # ★並びは search_products の rows と同じにする(画面が同じ番号で読むため)。
@@ -1050,18 +1063,35 @@ def customer_detail(con, cid):
 
     linked = set(r[0] for r in cur.execute(
         "SELECT sale_line_id FROM prescriptions WHERE customer_id = ? AND sale_line_id IS NOT NULL", (cid,)))
-    rx_candidates = []
+    # 処方箋に紐付けられる購入明細の候補(2026-09-05 に3点直した)。
+    #   1行 = [明細ID, 買上日, 品名, 金額, frame/lens, メガネと判定できたか(1/0)]
+    # ★(1)マイナス金額は出さない。宝飾ナビの「赤黒」(訂正時に同額マイナスの伝票を立てて
+    #      相殺する方式)がそのまま移行されており、打ち消し用の行が候補に混ざっていた。
+    #      「-14,800円の購入」を処方箋に紐付ける意味は無い。
+    #   ★(2)仕入先のジャンルでも判定する。品名が型番だけ(POLICE VPLP39J 等)だと文字では
+    #      引けないが、メガネのメーカーから仕入れた品ならメガネと分かる。
+    #   ★(3)判定から外れた購入も候補に出す(下のグループへ)。判定の精度をいくら上げても
+    #      漏れは残るが、「出ない」と手の打ちようが無い。出過ぎるのは選べば済む。
+    rx_candidates, rx_others = [], []
     for r in cur.execute("""
         SELECT l.line_id, s.sold_at, l.amount,
-               COALESCE(l.free_name, p.name) nm, p.is_glasses g, p.category cat
+               COALESCE(l.free_name, p.name) nm, p.is_glasses g, p.category cat,
+               (SELECT 1 FROM supplier_master sm
+                 WHERE sm.name = p.supplier AND sm.genre = ?) gsup
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         WHERE s.customer_id = ?
-              AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0""", (cid,)):
+              AND COALESCE(l.voided,0)=0 AND COALESCE(s.voided,0)=0
+        ORDER BY s.sold_at DESC, l.line_id DESC""", (GLASSES_GENRE, cid)):
+        if r["line_id"] in linked or (r["amount"] or 0) < 0:
+            continue
         nm = r["nm"] or ""
-        is_glass = r["g"] == 1 or bool(GLASS_PAT.search(nm))
-        if is_glass and r["line_id"] not in linked:
-            rx_candidates.append([r["line_id"], r["sold_at"], nm, r["amount"], glass_kind(r["cat"], nm)])
+        is_glass = r["g"] == 1 or r["gsup"] == 1 or bool(GLASS_PAT.search(nm))
+        row = [r["line_id"], r["sold_at"], nm, r["amount"], glass_kind(r["cat"], nm),
+               1 if is_glass else 0]
+        (rx_candidates if is_glass else rx_others).append(row)
+    # その他は新しい順に上限まで(何百件も並べると、肝心のメガネが探しにくくなるため)
+    rx_candidates += rx_others[:RX_OTHER_MAX]
 
     # 顧客メモ(宝飾ナビ d_user_memo の memo01〜10 を取り込んだもの)。
     # ★これまで取込済みなのに画面のどこにも出していなかった(2026-08-17に判明)。
