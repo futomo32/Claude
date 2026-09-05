@@ -2493,6 +2493,32 @@ def save_tag_settings(con, p):
     return tag_settings(con)
 
 
+def tag_print_data(con, keys):
+    """値札に刷る項目を、渡された商品キーの**順番のまま**返す(2026-09-05)。
+
+    ★値札に何を刷るかの定義はここが唯一の正。画面は受け取って台紙に並べるだけ。
+      商品一覧の行(search_products)には持たせない——タグ品名・品番・符丁は
+      一覧に出さない項目で、21万件の検索を重くしたくないため。
+    ★見つからないキー(消された商品など)は黙って飛ばす。並び=印刷する面の順なので、
+      呼び側は返ってきた件数で「何面ぶん刷るか」を数え直すこと。
+    """
+    ks = [str(k) for k in (keys or []) if str(k or "").strip()]
+    if not ks:
+        return []
+    con.row_factory = sqlite3.Row
+    found = {}
+    # 選んだ商品は数百件になり得るので、IN (?,?,…) ではなくJSONの配列を1引数で渡す
+    for r in con.execute(
+            "SELECT product_key,product_no,name,tag_name,maker_no,fucho,list_price,state "
+            "FROM products WHERE product_key IN (SELECT value FROM json_each(?))",
+            (json.dumps(ks),)):
+        found[str(r["product_key"])] = {
+            "product_key": str(r["product_key"]), "product_no": r["product_no"],
+            "name": r["name"], "tag_name": r["tag_name"], "maker_no": r["maker_no"],
+            "fucho": r["fucho"], "list_price": r["list_price"], "state": r["state"]}
+    return [found[k] for k in ks if k in found]
+
+
 # ── バックアップ設定(app_settings に保存。実処理は server/backup.py) ──
 #   backup_enabled … 1=自動バックアップON(サーバー起動時＋1日1回)
 #   backup_dirs    … 追加の保存先(改行区切り)。店外=外付けHDD・クラウド同期フォルダ。

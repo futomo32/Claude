@@ -873,6 +873,13 @@ class Handler(BaseHTTPRequestHandler):
                 result = db_query.save_tag_settings(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/tag_data":
+                # 値札に刷る項目を、選んだ商品キーの順に返す(値札印刷)。
+                # ★読み取りだけ。パート権限でも使える(値札を刷るのは主に売場のため)
+                con = connect()
+                result = {"rows": db_query.tag_print_data(con, payload.get("keys"))}
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/backup_now":
                 result = run_backup_and_record("手動")
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
