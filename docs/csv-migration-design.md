@@ -52,6 +52,39 @@ importで各 m_*.csv を辞書に読み、コードを名前に変換する:
 d_siire(仕入16万)/d_jutaku(受託)/d_nyushukkin(入出金)/d_tana(棚卸)/d_uriage系の一部/
 w_*(分析ワーク)/wk_*/zz*(システム)。必要になった時点で追加。CSVは保管してあるので移行可能。
 
+### ★d_siire(仕入)の列を確定した(2026-09-05)
+店から「商品の伝票番号＝納品書番号が漏れている」と指摘があり、実データで突き止めた
+(`scripts/find_slip_no.py`。全168,136行を読んで確認)。宝飾ナビ『仕入商品登録・修正・削除』
+画面の左半分がこの表で、商品とは **lngsykey(商品キー)** で繋ぐ。
+
+| 列 | 画面の項目 | 入っている割合 | トキワの受け皿 |
+|---|---|---|---|
+| lngsykey | (内部) | 100% | products.product_key と対応 |
+| **strsirsakidenno** | **納品書No** | **12.5% / 21,097件** | **products.purchase_slip_no**(v1.4.2で追加・未取込) |
+| datdendate | 伝票日付 | 88.2% / 148,377件 | 未(列も無い) |
+| dattoudate | 登録日 | 88.2% | products.registered_at は d_item 側を使用 |
+| strsirtancode | 仕入担当 | 20.0% / 33,690件 | 未 |
+| strsirsycode | 仕入品番 | 24.6% / 41,329件 | products.maker_no(列だけ作って未取込) |
+| cursirtanka | 仕入単価 | 100% | products.cost_price は d_item 側を使用 |
+
+- **★lngsykey(商品キー)と strsyno(商品番号)は別物。** 同じ数字が別商品に入っていることが
+  あり、取り違えると**まったく別の品の行**を見てしまう(実例: 商品番号21454 の商品の
+  商品キーは 164226。一方で商品キー21454 の1988年の別商品も存在する)。
+- 同じ `strsirsakidenno` は **d_jutaku(受託)にもある**(5.7% / 1,172件)。
+- ★入力率は**全行**で数えた値。書き出しは**商品キー順=古い順**なので、
+  先頭2万行だけを見ると「すべて空」に見えて誤判断する。
+
+### ★あわせて分かった d_item の取りこぼし・未使用(2026-09-05)
+| 列 | 意味 | 割合 | 判断 |
+|---|---|---|---|
+| strbiknaiyo | 商品の備考 | 23.9% / 50,961件 | **未取込**。入れる価値あり |
+| strtaghinname | タグ品名 | 48.0% / 102,391件 | 取込済み(v0.34.23) |
+| strfucho | 符丁 | **すべて空** | 取り込む必要なし(トキワが自動生成) |
+| strshiharaihohokbn / datshiharaiyoteibi | 支払方法・支払予定日 | 46件のみ | 実質未使用 |
+| strtagyousiki | タグ様式 | すべて空 | 不要 |
+| strcolcode / strclacode / strcutcode | カラー/クラリティ/カット | 各0.1%(100件台) | ほぼ未使用 |
+| strkanbno | 鑑別書No | 0.3% / 619件 | 取込済み(cert_no) |
+
 ## 未確定・実データで要検証(実行後にアプリで目視)
 - 金額列の意味(curorokin=卸/仕入, curkoukin=甲=上代 の想定)。
 - 状態区分 strjotaikbn / 各フラグ(strjuflg 受託 等)→ products.state の対応。

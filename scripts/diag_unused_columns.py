@@ -87,6 +87,22 @@ KNOWN = {
     #   products.maker_no(品番=strsirsycode)の列だけ作って取込を入れ忘れている。
     #   値札はこの品番を刷るため、8月末の再取込までに実装が必要。
     #   → 全列が「未確認」と表示されるのが正しい状態。取込を実装したらここに足すこと。
+    #
+    # ★★2026-09-05 実データで列の中身を確定した(scripts/find_slip_no.py・全168,136行)。
+    #   宝飾ナビ『仕入商品登録・修正・削除』画面の左半分がこの表。商品とは lngsykey で繋ぐ。
+    #     lngsykey         … 商品キー(d_item.lngsykey と対。★商品番号 strsyno とは別物!
+    #                        同じ数字が別商品に入っていることがあり、取り違えると別の品を見る)
+    #     strsirsakidenno  … ★納品書No(仕入伝票番号)。12.5% / 21,097件
+    #                        商品番号21454(商品キー164226)の納品書No=121463 で実物と照合済み
+    #     datdendate       … 伝票日付。88.2% / 148,377件(納品書Noより入力率が高い)
+    #     dattoudate       … 登録日。88.2%
+    #     strsirtancode    … 仕入担当コード。20.0% / 33,690件
+    #     strsirsycode     … 仕入品番(値札の裏に刷る品番)。24.6% / 41,329件
+    #     cursirtanka      … 仕入単価。100%
+    #     strsytencode / datinpdate / dathendate … 店舗・入力日時・変更日時
+    #   ※同じ strsirsakidenno は d_jutaku(受託)にもある(5.7% / 1,172件)。
+    #   ※入力率は**全行**で数えた値。先頭2万行だけだと「すべて空」に見える
+    #     (書き出しが商品キー順=古い順のため。2026-09-05 に取り方を直した)。
     "d_siire": {},
     "d_user": {
         "lngkokey": "customer_id(strkotencodeと組で使用)",
