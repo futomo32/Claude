@@ -595,8 +595,12 @@ def build_blob(con):
     urikake_hist = group("""SELECT customer_id, entry_date, entry_type, product_name, amount, paid, method
                             FROM receivable_entries ORDER BY entry_date DESC""")
 
+    # ★同じ日付の中は id(採番順)で決着させる(2026-09-06)。occurred_at は**日付だけ**なので、
+    #   同じ日に2件以上動くと並び順が決まらず、SQLiteは登録順(=古い順)で返していた。
+    #   そのため**その日に足した行が一番下**に出ていた。画面はこの順で描くだけなので、
+    #   さらに「履歴の先頭=最新残高」を使う残高表示(renderPoint)まで古い値になり得た。
     point_tx = group("""SELECT customer_id, occurred_at, tx_type, add_points, use_points, balance
-                        FROM point_transactions ORDER BY occurred_at DESC""")
+                        FROM point_transactions ORDER BY occurred_at DESC, id DESC""")
     points = {str(r["customer_id"]): r["balance"]
               for r in cur.execute("SELECT customer_id, balance FROM point_balances")}
     card_state = card_state_map(con)
@@ -1063,7 +1067,8 @@ def customer_detail(con, cid):
 
     point_tx = [list(r) for r in cur.execute("""
         SELECT occurred_at, tx_type, add_points, use_points, balance
-        FROM point_transactions WHERE customer_id = ? ORDER BY occurred_at DESC""", (cid,))]
+        FROM point_transactions WHERE customer_id = ?
+        ORDER BY occurred_at DESC, id DESC""", (cid,))]   # ★同日は id で決着(上の build_blob と同じ)
 
     approach = [list(r) for r in cur.execute("""
         SELECT approach_date, kind, title, staff_name
