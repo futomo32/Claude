@@ -559,7 +559,8 @@ def build_blob(con):
 
     customers = []
     for r in cur.execute("""SELECT customer_id,name,kana,tel,staff_name,address,birthday,gender,wedding_day,
-                                   is_test,note,postal,address2,tel2,email,rank,dm_ok,district,exclude_stats
+                                   is_test,note,postal,address2,tel2,email,rank,dm_ok,district,exclude_stats,
+                                   store_code
                             FROM customers ORDER BY is_test DESC, CAST(customer_id AS INTEGER)"""):
         cid = r["customer_id"]
         customers.append([
@@ -569,6 +570,8 @@ def build_blob(con):
             r["postal"], r["address2"],                    # 14=郵便番号 15=建物名等
             r["tel2"], r["email"],                         # 16=携帯電話(TEL2) 17=eメール
             r["rank"], r["dm_ok"], r["district"], r["exclude_stats"],  # 18=ランク 19=DM 20=地区 21=集計対象外
+            # 22=店舗コード(顧客管理の絞り込み用。2026-09-06)。d_user の管理店舗(strkanritenpo)由来
+            r["store_code"],
         ])
 
     def group(sql, key_idx=0):
@@ -704,7 +707,11 @@ def build_blob(con):
                             ORDER BY s.sold_at DESC"""):
         tenders.append([r["sold_at"], r["method"], r["amount"], str(r["customer_id"])])
 
-    return dict(customers=customers, sales=sales, families=families, points=points,
+    # 店舗の一覧(顧客管理の絞り込みに出す)。数件しかないので毎回そのまま渡す
+    stores = [[r["store_code"], r["name"]] for r in cur.execute(
+        "SELECT store_code, name FROM stores ORDER BY store_code")]
+
+    return dict(customers=customers, sales=sales, families=families, points=points, stores=stores,
                 cardState=card_state,
                 pointTx=point_tx, urikake=urikake, urikakeHist=urikake_hist,
                 approach=approach, rx=rx, rxCandidates=rx_candidates, products=products,
@@ -743,7 +750,8 @@ def build_blob_light(con):
 
     customers = []
     for r in cur.execute("""SELECT customer_id,name,kana,tel,staff_name,address,birthday,gender,wedding_day,
-                                   is_test,note,postal,address2,tel2,email,rank,dm_ok,district,exclude_stats
+                                   is_test,note,postal,address2,tel2,email,rank,dm_ok,district,exclude_stats,
+                                   store_code
                             FROM customers ORDER BY is_test DESC, CAST(customer_id AS INTEGER)"""):
         cid = r["customer_id"]
         customers.append([
@@ -752,6 +760,8 @@ def build_blob_light(con):
             r["is_test"], r["note"], last_buy.get(cid),
             r["postal"], r["address2"], r["tel2"], r["email"],
             r["rank"], r["dm_ok"], r["district"], r["exclude_stats"],  # 18=ランク 19=DM 20=地区 21=集計対象外
+            # 22=店舗コード(顧客管理の絞り込み用。2026-09-06)。d_user の管理店舗(strkanritenpo)由来
+            r["store_code"],
         ])
 
     def group(sql, key_idx=0):
@@ -821,7 +831,10 @@ def build_blob_light(con):
     staff_codes = [[r["staff_code"], r["name"]] for r in cur.execute(
         "SELECT staff_code, name FROM staff WHERE active=1")]
 
-    return dict(customers=customers, families=families, points=points,
+    stores = [[r["store_code"], r["name"]] for r in cur.execute(
+        "SELECT store_code, name FROM stores ORDER BY store_code")]
+
+    return dict(customers=customers, families=families, points=points, stores=stores,
                 cardState=card_state,
                 urikake=urikake, urikakeHist=urikake_hist,
                 repairs=repairs, tenders=tenders, stockStats=stock_summary, staff=staff,
