@@ -516,9 +516,16 @@ def main():
         cid = cid_of(r)
         if cid in seen:
             add, use = n(r.get("curkasanpoint")) or 0, n(r.get("curusepoint")) or 0
-            when = dt(r.get("dathakko")) or dt(r.get("datinpdate"))  # 発行日が空なら処理日で補完
+            # ★日付は「処理日時(datinpdate)」を使う(2026-09-06 修正)。
+            #   以前は「お買上げ日(dathakko)」を優先していたが、宝飾ナビのポイント履歴が
+            #   日付として出しているのは処理日時の方。お買上げ日は古い値のまま同じ日付が
+            #   延々と入っていることがあり、**履歴が全部同じ日付**に見えていた
+            #   (実データで「2011/09/02」が何十行も並ぶお客様がいた)。
+            #   お買上げ日は捨てずに bought_at に分けて持つ(宝飾ナビと同じ2列)。
+            when = dt(r.get("datinpdate")) or dt(r.get("dathakko"))
+            bought = dt(r.get("dathakko"))
             ptx.append((cid, s(r.get("lngpointkbn")), add - use, add, use,
-                        n(r.get("curzanpoint")), s(r.get("strsyname")), when))
+                        n(r.get("curzanpoint")), s(r.get("strsyname")), when, bought))
             seq = n(r.get("lngpointseq")) or 0
             if cid not in have_bal and seq >= last_seq.get(cid, -1):
                 last_seq[cid] = seq
@@ -527,8 +534,8 @@ def main():
     for cid2, b in last_bal.items():
         pbal.append((cid2, b, last_date.get(cid2)))
     cur.executemany("INSERT OR REPLACE INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)", pbal)
-    cur.executemany("""INSERT INTO point_transactions(customer_id,tx_type,points,add_points,use_points,balance,product_name,occurred_at)
-                       VALUES (?,?,?,?,?,?,?,?)""", ptx)
+    cur.executemany("""INSERT INTO point_transactions(customer_id,tx_type,points,add_points,use_points,balance,product_name,occurred_at,bought_at)
+                       VALUES (?,?,?,?,?,?,?,?,?)""", ptx)
     log["point_balances"], log["point_tx"] = len(pbal), len(ptx)
 
     # ── 処方箋(d_shohosen) ──

@@ -229,6 +229,12 @@ def ensure_schema(con):
         ("sale_lines", "tax_rate", "INTEGER"),
         ("products", "consign_settled", "INTEGER DEFAULT 0"),  # 受託の後日精算(原価入力)が済んだか
         ("prescriptions", "frame_type", "TEXT"),  # フレームの種類(セル/メタル/ツーポ/ナイロール)
+        # ポイント履歴の「お買上げ日」(宝飾ナビ d_pointhistory.dathakko)。2026-09-06 追加。
+        # ★これまで occurred_at にこの列を入れていたため、履歴の日付が全部
+        #   「2011-09-02」等の同じ日付になっていた。宝飾ナビの画面が日付として
+        #   出しているのは**処理日時(datinpdate)**の方。occurred_at は処理日時にし、
+        #   お買上げ日はこの列に分けて持つ(宝飾ナビと同じ2列)。
+        ("point_transactions", "bought_at", "TEXT"),
         ("receivables", "slip_id", "INTEGER"),    # 起票元の売上伝票(併用払いの内訳を辿るため)
         ("products", "ring_fingers", "TEXT"),  # はめる指(複数可。カンマ区切り)
         ("products", "ring_size", "TEXT"),     # リングサイズ(フリー入力。#10.5 や 12号 等)
@@ -599,7 +605,8 @@ def build_blob(con):
     #   同じ日に2件以上動くと並び順が決まらず、SQLiteは登録順(=古い順)で返していた。
     #   そのため**その日に足した行が一番下**に出ていた。画面はこの順で描くだけなので、
     #   さらに「履歴の先頭=最新残高」を使う残高表示(renderPoint)まで古い値になり得た。
-    point_tx = group("""SELECT customer_id, occurred_at, tx_type, add_points, use_points, balance
+    point_tx = group("""SELECT customer_id, occurred_at, tx_type, add_points, use_points, balance,
+                               bought_at
                         FROM point_transactions ORDER BY occurred_at DESC, id DESC""")
     points = {str(r["customer_id"]): r["balance"]
               for r in cur.execute("SELECT customer_id, balance FROM point_balances")}
@@ -1066,7 +1073,7 @@ def customer_detail(con, cid):
         row[4] = pay_texts.get(row[8]) or pay_fallback(row[4], row.pop())
 
     point_tx = [list(r) for r in cur.execute("""
-        SELECT occurred_at, tx_type, add_points, use_points, balance
+        SELECT occurred_at, tx_type, add_points, use_points, balance, bought_at
         FROM point_transactions WHERE customer_id = ?
         ORDER BY occurred_at DESC, id DESC""", (cid,))]   # ★同日は id で決着(上の build_blob と同じ)
 
@@ -1130,8 +1137,16 @@ def customer_detail(con, cid):
     extra = {"registered_at": row["registered_at"], "ring_size": row["ring_size"],
              "pierce": row["pierce"]} if row else {}
 
+    # ★ポイント残高もここで返す(2026-09-06)。画面が持っている残高は「会計」と
+    #   「ポイント手動修正」でしか更新しておらず、**顧客変更(付替)・顧客統合のあと、
+    #   および別の端末で会計したあとは古い残高が出たまま**になっていた
+    #   (実際に、付替後に 15pt と出ていて実は 28pt だった)。
+    #   お客様にお伝えする数字なので、詳細を開いたら必ず現在値に直す。
+    bal_row = cur.execute("SELECT balance FROM point_balances WHERE customer_id=?", (cid,)).fetchone()
+
     return {"sales": sales, "salesVoided": sales_voided, "rx": rx, "rxCandidates": rx_candidates,
-            "pointTx": point_tx, "approach": approach, "memos": memos, "extra": extra}
+            "pointTx": point_tx, "approach": approach, "memos": memos, "extra": extra,
+            "points": int(bal_row[0] or 0) if bal_row else None}
 
 
 # 在庫一覧の並び替えで指定できる列(キー→実カラム。ホワイトリストでSQLインジェクション防止)
@@ -4832,12 +4847,39 @@ def reassign_slip(con, slip_id, new_customer_id, operator=None, staff=None, reas
             con.execute("""INSERT INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)
                            ON CONFLICT(customer_id) DO UPDATE SET balance=excluded.balance,
                              updated_at=excluded.updated_at""", (old_cid, newbal, today))
+            # ★間違えて選ばれた側にも履歴を残す(2026-09-06)。
+            #   これまでは残高だけが減り、ポイントの画面には**理由が何も出なかった**。
+            #   経緯は顧客メモに残るが、「ポイントが減っている」と言われた時に
+            #   ポイント履歴で説明できないと店頭で困る。
+            d = -net                       # 元のお客様から見た増減(付与を取り上げるので通常はマイナス)
+            con.execute("""INSERT INTO point_transactions
+                             (customer_id,tx_type,points,add_points,use_points,balance,
+                              product_name,occurred_at)
+                           VALUES (?,?,?,?,?,?,?,?)""",
+                        (old_cid, "顧客変更", d, d if d > 0 else None, -d if d < 0 else None, newbal,
+                         (f"顧客変更: {prev['sold_at']} の売上を {new_name} 様へ付け替え"
+                          + (f" ※残高不足のため{short:,}ptは戻せませんでした" if short else ""))[:100],
+                         today))
         if net:
             bal = con.execute("SELECT balance FROM point_balances WHERE customer_id=?", (new_cid,)).fetchone()
+            newbal_to = int((bal[0] if bal else 0) or 0) + net
             con.execute("""INSERT INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)
                            ON CONFLICT(customer_id) DO UPDATE SET balance=excluded.balance,
-                             updated_at=excluded.updated_at""",
-                        (new_cid, int((bal[0] if bal else 0) or 0) + net, today))
+                             updated_at=excluded.updated_at""", (new_cid, newbal_to, today))
+            # ★移した履歴行の「残高」列を、付け替え後のお客様の残高に付け直す(2026-09-06)。
+            #   行をそのまま移すだけだと、残高の列が**間違えて選ばれたお客様の時点の値**の
+            #   まま残り、履歴と残高が食い違って見える(実際に 15pt のお客様の履歴に
+            #   「残高13」と出ていた)。
+            rows = list(con.execute("""SELECT id, COALESCE(add_points,0), COALESCE(use_points,0)
+                                       FROM point_transactions
+                                       WHERE ref_slip_id=? AND customer_id=? ORDER BY id""",
+                                    (slip_id, new_cid)))
+            # 足し合わせが net と一致する時だけ書き直す(想定外の行が混ざっていたら触らない)
+            if rows and sum(int(r[1]) - int(r[2]) for r in rows) == net:
+                running = newbal_to - net       # この伝票を通す前の残高
+                for rid, add_p, use_p in rows:
+                    running += int(add_p) - int(use_p)
+                    con.execute("UPDATE point_transactions SET balance=? WHERE id=?", (running, rid))
         # 両方のお客様にメモを残す(どちらの画面を見ても経緯が分かるように)
         detail = (f"{prev['sold_at']} の売上 ¥{prev['total']:,}"
                   + (f"(伝票 {prev['slip_no']})" if prev["slip_no"] else "")
