@@ -4054,10 +4054,26 @@ def add_prescription(con, p):
         # 処方箋で品名(レンズ/フレーム)を直したら、紐づく購入明細(番号なし行)の表示名も
         # 合わせて更新する。これで購入一覧の品名も処方箋の修正が反映される。
         # 在庫品(product_key有り)の名前は商品側が正なので触らない(番号なし行のみ)。
-        disp = v("lens_name") or v("frame_name")
-        if slid and disp:
+        # ★レンズ名はレンズの明細、フレーム名はフレームの明細へ**別々に**書く(2026-09-06)。
+        #   処方箋が持てる紐付け(sale_line_id)は1件だけなので、以前は「レンズ名、無ければ
+        #   フレーム名」をその1件に書いており、**フレーム名だけ直しても購入履歴が直らなかった**。
+        #   画面から反映先(lens_line_id / frame_line_id)を受け取り、それぞれに書く。
+        targets = []
+        lens_nm, frame_nm = v("lens_name"), v("frame_name")
+        for lid, nm in ((n_int("lens_line_id"), lens_nm), (n_int("frame_line_id"), frame_nm)):
+            if lid and nm:
+                targets.append((lid, nm))
+        # 反映先が分からない時(古い画面からの保存など)は、紐付けている明細に
+        # 「レンズ名、無ければフレーム名」を書く(従来の動き)
+        if slid and not any(lid == slid for lid, _ in targets) and (lens_nm or frame_nm):
+            targets.append((slid, lens_nm or frame_nm))
+        done = set()
+        for lid, nm in targets:
+            if lid in done:      # 同じ明細を2度書かない(先に決まった方=レンズを優先)
+                continue
+            done.add(lid)
             cur.execute("UPDATE sale_lines SET free_name=? WHERE line_id=? AND product_key IS NULL",
-                        (disp, slid))
+                        (nm, lid))
 
     rx_id = n_int("id")
     if rx_id:  # 編集(既存を更新)
