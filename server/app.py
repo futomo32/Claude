@@ -573,8 +573,12 @@ class Handler(BaseHTTPRequestHandler):
         "/api/photo_pool", "/api/photo_pool_assign", "/api/photo_pool_delete",
         "/api/supplier_genre", "/api/supplier_fucho", "/api/supplier_code", "/api/master_item", "/api/rank_apply", "/api/rank_rules",
         "/api/stocktake_scan", "/api/stocktake_reset", "/api/settle_consignment",
-        "/api/point_settings", "/api/point_adjust", "/api/tag_settings",
+        "/api/point_settings", "/api/tag_settings",
     }
+    # ★「ポイントを修正」はパートにも開く(2026-09-10 店の指定)。
+    #   レジで気づいた食い違いをその場で直せないと、社員待ちでお客様を待たせる。
+    #   代わりに**理由を必須にし、操作したログインユーザーを履歴に残す**ことで追える
+    #   ようにしてある(adjust_points の operator)。
     # 管理者のみの操作(担当者マスタ・ログインユーザー管理)
     ADMIN_ONLY_POSTS = {"/api/staff", "/api/app_user", "/api/app_user_logout", "/api/app_user_order",
                         "/api/backup_now", "/api/backup_settings", "/api/integrity_check",
@@ -907,7 +911,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/point_adjust":
                 con = connect()
-                result = db_query.adjust_points(con, payload)
+                # 誰が直したかを履歴に残す(パートも使えるようにしたため。2026-09-10)
+                result = db_query.adjust_points(con, payload, operator=user.get("name") or "")
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/sale_line_update":

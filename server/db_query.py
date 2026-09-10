@@ -2830,9 +2830,15 @@ def integrity_status(con):
     return out
 
 
-def adjust_points(con, p):
+def adjust_points(con, p, operator=""):
     """ポイントの手動修正(±)。宝飾ナビの「カードを入れてポイント修正」に相当する画面操作。
-    理由を必須にして履歴(point_transactions)に「手動修正」として残す(監査できるように)。"""
+    理由を必須にして履歴(point_transactions)に「手動修正」として残す(監査できるように)。
+
+    ★2026-09-10: パート権限でも使えるようにした(店の指定)。レジで気づいた食い違いを
+      その場で直せないと、社員を待つ間お客様を待たせることになるため。
+      代わりに **operator(ログインユーザー)を履歴に残す**。理由だけでは「誰が直したか」が
+      分からず、残高を直接動かす操作としては記録が足りなかった。
+    """
     cid = str(p.get("customer_id") or "").strip()
     if not cid:
         raise ValueError("顧客が指定されていません")
@@ -2857,12 +2863,13 @@ def adjust_points(con, p):
             (customer_id,tx_type,points,add_points,use_points,balance,product_name,occurred_at)
             VALUES (?,?,?,?,?,?,?,?)""",
             (cid, "手動修正", abs(delta), delta if delta > 0 else None,
-             -delta if delta < 0 else None, newbal, f"手動修正: {reason}", today))
+             -delta if delta < 0 else None, newbal,
+             (f"手動修正: {reason}" + (f"(操作: {operator})" if operator else ""))[:200], today))
         con.execute("""INSERT INTO point_balances(customer_id,balance,updated_at) VALUES (?,?,?)
                        ON CONFLICT(customer_id) DO UPDATE SET balance=excluded.balance, updated_at=excluded.updated_at""",
                     (cid, newbal, today))
     return {"customer_id": cid, "balance": newbal, "delta": delta,
-            "occurred_at": today, "reason": reason}
+            "occurred_at": today, "reason": reason, "operator": operator}
 
 
 # 顧客ランクの既定基準(B-5)。宝飾ナビの合計金額ランク(1が最上位)に準拠。
