@@ -1017,6 +1017,23 @@ def mark_card_written(con, customer_id):
     return now
 
 
+def clear_card_written(con, customer_id):
+    """「カードを書いた」記録を取り消す(2026-09-10 店の指摘で追加)。
+
+    ★他のお客様のカードを入れて書いてしまった時のため。実際に、ご家族のカードを
+      入れたまま別のお客様の画面で書き込んでしまい、**持っていない方に「カードあり」の
+      印が残る**ことが起きた。取り消す手段が無いと、その方の画面には以後ずっと
+      「ポイントカードあり」と出て、来店のたびに誤った前提で接客することになる。
+    ★カードそのものには何もしない(磁気も券面も触らない)。トキワ側の記録を消すだけ。
+    """
+    cid = str(customer_id or "").strip()
+    if not cid:
+        raise ValueError("顧客が指定されていません")
+    con.execute("UPDATE customers SET card_written_at=NULL WHERE customer_id=?", (cid,))
+    con.commit()
+    return {"customer_id": cid, "card_written_at": None}
+
+
 def slip_pay_texts(con, where_sql="", args=()):
     """伝票ごとの支払表示 {slip_id: "現金 ¥50,000 / クレジット ¥50,000"} を返す。
     現金＋クレジットの併用払いは sale_payments に内訳が入っているので、

@@ -829,6 +829,16 @@ class Handler(BaseHTTPRequestHandler):
                 finally:
                     con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/card_written_clear":
+                # 「カードを書いた」記録の取り消し(他のお客様のカードを入れて書いた時)
+                con = connect()
+                try:
+                    result = db_query.clear_card_written(con, payload.get("customer_id"))
+                except ValueError as e:
+                    return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                finally:
+                    con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/card_read_cancel":
                 result = devices.card_eject()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
