@@ -240,6 +240,10 @@ def ensure_schema(con):
         # 項目が無いので、トキワで持つ。紐付けたレンズ商品のブランドを初期値に入れ、
         # 番号なし(手打ち)のレンズでも手で書けるようにする。
         ("prescriptions", "lens_color", "TEXT"),
+        # ★代表フラグ(2026-09-10 店の指定で復活)。宝飾ナビ d_user.lngdaihyoflg。
+        #   同じご家族に何通もDMを出さないための印。家族5人でも「代表(奥様など)」に
+        #   印を付けておけば、DMは1通で済む。1=代表 / 0・空=そうでない。
+        ("customers", "is_family_rep", "INTEGER"),
         ("receivables", "slip_id", "INTEGER"),    # 起票元の売上伝票(併用払いの内訳を辿るため)
         ("products", "ring_fingers", "TEXT"),  # はめる指(複数可。カンマ区切り)
         ("products", "ring_size", "TEXT"),     # リングサイズ(フリー入力。#10.5 や 12号 等)
@@ -565,7 +569,7 @@ def build_blob(con):
     customers = []
     for r in cur.execute("""SELECT customer_id,name,kana,tel,staff_name,address,birthday,gender,wedding_day,
                                    is_test,note,postal,address2,tel2,email,rank,dm_ok,district,exclude_stats,
-                                   store_code
+                                   store_code,is_family_rep
                             FROM customers ORDER BY is_test DESC, CAST(customer_id AS INTEGER)"""):
         cid = r["customer_id"]
         customers.append([
@@ -577,6 +581,7 @@ def build_blob(con):
             r["rank"], r["dm_ok"], r["district"], r["exclude_stats"],  # 18=ランク 19=DM 20=地区 21=集計対象外
             # 22=店舗コード(顧客管理の絞り込み用。2026-09-06)。d_user の管理店舗(strkanritenpo)由来
             r["store_code"],
+            r["is_family_rep"],   # 23=代表フラグ(家族に1通だけDMを出すための印。2026-09-10)
         ])
 
     def group(sql, key_idx=0):
@@ -757,7 +762,7 @@ def build_blob_light(con):
     customers = []
     for r in cur.execute("""SELECT customer_id,name,kana,tel,staff_name,address,birthday,gender,wedding_day,
                                    is_test,note,postal,address2,tel2,email,rank,dm_ok,district,exclude_stats,
-                                   store_code
+                                   store_code,is_family_rep
                             FROM customers ORDER BY is_test DESC, CAST(customer_id AS INTEGER)"""):
         cid = r["customer_id"]
         customers.append([
@@ -768,6 +773,7 @@ def build_blob_light(con):
             r["rank"], r["dm_ok"], r["district"], r["exclude_stats"],  # 18=ランク 19=DM 20=地区 21=集計対象外
             # 22=店舗コード(顧客管理の絞り込み用。2026-09-06)。d_user の管理店舗(strkanritenpo)由来
             r["store_code"],
+            r["is_family_rep"],   # 23=代表フラグ(家族に1通だけDMを出すための印。2026-09-10)
         ])
 
     def group(sql, key_idx=0):
@@ -1875,6 +1881,10 @@ MULTI_FIELDS = [
     {"key": "memo_any", "label": "顧客メモ(どれでも)", "type": "like", "group": "顧客",
      "scope": "customer", "hint": "メモ01〜10のどれかに含まれていれば該当します"},
     {"key": "store", "label": "店舗", "type": "choice", "group": "顧客", "scope": "customer"},
+    # 代表フラグ(2026-09-10 復活)。同じご家族に何通もDMを出さないための印
+    {"key": "family_rep", "label": "代表フラグ", "type": "choice", "group": "顧客",
+     "scope": "customer",
+     "hint": "宝飾ナビの「代表」に相当します。家族5人でも代表(奥様など)だけに絞ってDMを出せます"},
     {"key": "points", "label": "現残ポイント", "type": "range_num", "group": "顧客",
      "scope": "customer", "hint": "ポイントの記録が無い人は 0 として扱います"},
     # ── メガネ処方箋の条件(第3段) ──
@@ -1965,6 +1975,15 @@ def _multi_special(f, row):
         return ("(" + " OR ".join(parts) + ")", args) if parts else (None, [])
     if key == "store":
         return _in_sql("c.store_code", vals)
+    if key == "family_rep":
+        # 「代表」=1 / 「代表でない」=0または未設定。★未設定を「代表でない」に含めるのは、
+        #   印を付けていない人が**どちらを選んでも出てこない**状態を作らないため。
+        parts = []
+        if "代表" in vals:
+            parts.append("COALESCE(c.is_family_rep,0)=1")
+        if "代表でない" in vals:
+            parts.append("COALESCE(c.is_family_rep,0)=0")
+        return ("(" + " OR ".join(parts) + ")", []) if parts else (None, [])
     inner = "normjp(COALESCE(m.body,'')) LIKE ?"
     if key == "memo3":
         inner += " AND m.seq=3"
@@ -2299,6 +2318,7 @@ def multi_search_fields(con):
         "brand": lambda: product_brands(con),
         "supplier": lambda: product_suppliers(con),
         "rx_purpose": lambda: prescription_purposes(con),
+        "family_rep": lambda: ["代表", "代表でない"],
         # 住所の印。「印なし」も選べるようにする(印が付いていない人を探せる)
         "dm_mark": lambda: list(DM_BLOCK_REASONS.values()) + [MULTI_NO_MARK],
         # 店舗はコードで絞るが、画面には名前を出す({v:値, t:表示})
@@ -3336,7 +3356,8 @@ def sample_in_stock_key(con):
 
 CUSTOMER_FIELDS = ("name", "kana", "gender", "birthday", "wedding_day", "tel", "tel2",
                    "email", "postal", "address", "address2", "rank", "district", "dm_ok",
-                   "staff_name", "ring_size", "pierce", "note", "exclude_stats")
+                   "staff_name", "ring_size", "pierce", "note", "exclude_stats",
+                   "is_family_rep")
 
 
 def upsert_customer(con, payload):
