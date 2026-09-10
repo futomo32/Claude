@@ -235,6 +235,11 @@ def ensure_schema(con):
         #   出しているのは**処理日時(datinpdate)**の方。occurred_at は処理日時にし、
         #   お買上げ日はこの列に分けて持つ(宝飾ナビと同じ2列)。
         ("point_transactions", "bought_at", "TEXT"),
+        # メガネレンズのカラー(2026-09-10)。宝飾ナビは商品の**ブランド欄**にカラー品番
+        # (COPR50F 等)を入れて管理していた(m_brand.strbrname で確認)。処方箋側には
+        # 項目が無いので、トキワで持つ。紐付けたレンズ商品のブランドを初期値に入れ、
+        # 番号なし(手打ち)のレンズでも手で書けるようにする。
+        ("prescriptions", "lens_color", "TEXT"),
         ("receivables", "slip_id", "INTEGER"),    # 起票元の売上伝票(併用払いの内訳を辿るため)
         ("products", "ring_fingers", "TEXT"),  # はめる指(複数可。カンマ区切り)
         ("products", "ring_size", "TEXT"),     # リングサイズ(フリー入力。#10.5 や 12号 等)
@@ -652,6 +657,7 @@ def build_blob(con):
     for r in cur.execute("""
         SELECT s.customer_id cid, l.line_id, s.sold_at, l.amount,
                COALESCE(l.free_name, p.name) nm, p.is_glasses g, p.category cat,
+               p.brand brand,
                (SELECT 1 FROM supplier_master sm
                  WHERE sm.name = p.supplier AND sm.genre = ?) gsup
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
@@ -664,7 +670,7 @@ def build_blob(con):
         if is_glass and r["line_id"] not in linked and (r["amount"] or 0) >= 0:
             rx_candidates.setdefault(str(r["cid"]), []).append(
                 [r["line_id"], r["sold_at"], nm, r["amount"], glass_kind(r["cat"], nm), 1,
-                 RX_BUCKET_GLASS])
+                 RX_BUCKET_GLASS, r["brand"]])   # [7]=ブランド欄(レンズのカラー)
 
     products = []
     # ★並びは search_products の rows と同じにする(画面が同じ番号で読むため)。
@@ -862,6 +868,7 @@ def _rx_row(r):
         "id": r["id"], "rx_no": r["rx_no"], "purpose": r["purpose"],
         "lens_name": r["lens_name"], "frame_name": r["frame_name"],
         "frame_type": _col(r, "frame_type"),  # セル/メタル/ツーポ/ナイロール
+        "lens_color": _col(r, "lens_color"),  # レンズのカラー(商品のブランド欄由来)
         "lens_price": r["lens_price"], "frame_price": r["frame_price"], "total": r["total_sell"],
         "misassign": _rx_misassign(r["jewelry_misassign"], r["lens_name"], r["frame_name"]),
         "sale_line_id": r["sale_line_id"],
@@ -1063,9 +1070,15 @@ def customer_detail(con, cid):
     #   複数の商品に使い回すことがあり(実データ診断で17組確認)、番号では特定できない。
     pay_texts = slip_pay_texts(con, "WHERE s.customer_id = ?", (cid,))
     for row in sales:
-        row[1] = rx_names.get(row[7]) or row[1]  # [7]=line_id。処方箋の正式名を優先
+        rx_nm = rx_names.get(row[7])             # [7]=line_id。処方箋の正式名を優先
+        orig_name = row[1]                       # 置き換える前(=商品台帳)の名前
+        row[1] = rx_nm or row[1]
         row[4] = pay_texts.get(row[8]) or pay_fallback(row[4], row[9])
         row[9] = row.pop(10)  # [9]=商品画像(サムネイル用)。元[11]の商品キーが[10]になる
+        # ★[11]=商品台帳の名前(処方箋の名前で置き換えた時だけ入れる。2026-09-10)。
+        #   置き換わったことが画面から分からず、店が**「レンズ」という商品を探してしまう**
+        #   ことがあった(実際の商品は「遠近両用2NAI160-12-BLPレンズ」)。両方見えるようにする。
+        row.append(orig_name if (rx_nm and orig_name and orig_name != rx_nm) else None)
 
     # 取消(返品)済みの明細。監査ログとして「取消済みも表示」トグルON時のみ画面に出す。
     # 形状は sales と同じ並び＋[9]取消日時・[10]取消した担当者・[11]取消理由・[12]ログインユーザー。
@@ -1112,6 +1125,7 @@ def customer_detail(con, cid):
     for r in cur.execute("""
         SELECT l.line_id, s.sold_at, l.amount,
                COALESCE(l.free_name, p.name) nm, p.is_glasses g, p.category cat,
+               p.brand brand,
                (SELECT 1 FROM supplier_master sm
                  WHERE sm.name = p.supplier AND sm.genre = ?) gsup
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
@@ -1125,8 +1139,10 @@ def customer_detail(con, cid):
         # ★番号なしの明細は品名の決め打ちでも見る(仕入先が無いのでこれしか手がかりが無い)
         is_glass = (r["g"] == 1 or r["gsup"] == 1 or bool(GLASS_PAT.search(nm))
                     or free_name_genre(nm) == "メガネ")
+        # [7]=その商品のブランド欄。宝飾ナビはここにレンズのカラー(COPR50F 等)を
+        #     入れているので、処方箋で選んだ時にカラー欄の初期値として使う(2026-09-10)
         row = [r["line_id"], r["sold_at"], nm, r["amount"], glass_kind(r["cat"], nm),
-               1 if is_glass else 0, rx_bucket(is_glass, nm, r["cat"])]
+               1 if is_glass else 0, rx_bucket(is_glass, nm, r["cat"]), r["brand"]]
         (rx_candidates if is_glass else rx_others).append(row)
     # その他は新しい順に上限まで(何百件も並べると、肝心のメガネが探しにくくなるため)。
     # ★「メガネか分からないもの」を先に入れる。宝石・時計と分かったものに枠を食われると、
@@ -1201,7 +1217,8 @@ def _resolve_code_conditions(code):
     return ("product_no = ?", [raw])
 
 
-def search_products(con, q="", cat="", state="", supplier="", genre="", sort="no", order="desc", limit=50, offset=0):
+def search_products(con, q="", cat="", state="", supplier="", genre="", sort="no", order="desc",
+                    limit=50, offset=0, key=""):
     """商品検索(在庫一覧・レジの商品ピッカー用)。全商品(21万件)を送らずサーバーで絞り込む。
     戻り値 {rows:[...], total:N}。rows は
       [商品番号,品名,分類,上代,状態,置場,石,商品キー,画像,下代,仕入先,ブランド,地金,仕入伝票番号]。
@@ -1214,7 +1231,15 @@ def search_products(con, q="", cat="", state="", supplier="", genre="", sort="no
     except (TypeError, ValueError):
         limit, offset = 50, 0
     where, args = [], []
-    if q:
+    # ★商品キーが分かっている時は、それだけで引く(2026-09-10)。
+    #   購入履歴→商品情報のジャンプが、これまで**商品番号で検索してから20件の中を
+    #   キーで探す**作りだったため、同じ番号の商品が大量にある番号(実データの「*10」など)
+    #   では本物が20件に入らず、**まったく別の商品が開いていた**(店から報告)。
+    #   キーは商品を一意に決めるので、必ず1件になり取り違えようがない。
+    if key:
+        where.append("product_key = ?")
+        args.append(str(key))
+    elif q:
         like = "%" + q.replace("%", "").replace("_", "") + "%"
         qn = norm_code(q)                       # 全角(かな)入力を半角化した品番/バーコード照合用
         liken = "%" + qn.replace("%", "").replace("_", "") + "%"
@@ -4074,7 +4099,7 @@ def add_prescription(con, p):
     if not total:
         total = n_int("total_sell")
 
-    cols = ("purpose", "lens_name", "frame_name", "frame_type",
+    cols = ("purpose", "lens_name", "frame_name", "frame_type", "lens_color",
             "sph_r", "sph_l", "cyl_r", "cyl_l", "ax_r", "ax_l", "pri_r", "pri_l", "base_r", "base_l",
             "pri2_r", "pri2_l", "base2_r", "base2_l", "add_r", "add_l",
             "pd_far_both", "pd_far_r", "pd_far_l", "pd_near_both", "pd_near_r", "pd_near_l",
