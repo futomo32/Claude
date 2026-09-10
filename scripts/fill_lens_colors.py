@@ -25,6 +25,14 @@
     上書きしたい時だけ --overwrite を付ける。
   ・個人情報は出さない(件数と、カラーの値の種類だけ)。
 
+下読みで出るもの(2026-09-10 追加):
+  実データで流したところ **89%(44,305件)が「商品台帳にその商品が無い」** に入り、
+  諦めるしかないのか、まだ手があるのかが件数だけでは分からなかった。そこで
+    ・「商品台帳に無い」の中身 …… **元からレンズを紐付けていない(キーが0)** と、
+       **キーはあるのに商品が無い**(宝飾ナビ側で消された/移行で外れた)に分ける
+    ・年別の内訳 …………………… 古い年に偏っているかを見る
+  を出すようにした。前者は埋めようがなく、後者はまだ手がある可能性がある。
+
 使い方:
   python3 scripts/fill_lens_colors.py             # 下読み(何件入るか見るだけ)
   python3 scripts/fill_lens_colors.py --apply     # バックアップしてから書き込む
@@ -74,7 +82,7 @@ def main():
         SELECT rx.id,
                COALESCE(rx.lens_key, l.product_key) pk,
                COALESCE(rx.lens_color,'') cur,
-               p.brand brand
+               p.product_key found, p.brand brand, rx.rx_date
         FROM prescriptions rx
         LEFT JOIN sale_lines l ON l.line_id = rx.sale_line_id
         LEFT JOIN products p ON p.product_key = COALESCE(rx.lens_key, l.product_key)"""))
@@ -82,26 +90,47 @@ def main():
     plan = []
     no_key, no_product, no_brand, skip_filled = 0, 0, 0, 0
     kinds = collections.Counter()
+    # ── 「商品台帳に無い」の中身を割って出す(2026-09-10 追加)。
+    #    89%がここに入っており、**諦めるしかないのか、まだ手があるのか**が
+    #    件数だけでは分からなかったため。
+    zero_key = 0                          # キーが「◯◯-0」= 元からレンズを紐付けていない
+    miss_store = collections.Counter()    # 実在しないキーの店舗コード別
+    by_year = collections.defaultdict(lambda: collections.Counter())   # 年別の内訳
     for r in rows:
+        year = str(r["rx_date"] or "")[:4] or "(日付なし)"
         cur_val = (r["cur"] or "").strip()
         if cur_val and not a.overwrite:
             skip_filled += 1
+            by_year[year]["済"] += 1
             continue
         if not r["pk"]:
             no_key += 1            # レンズの商品が分からない処方箋(手書き・番号なし)
+            by_year[year]["キー無"] += 1
             continue
-        brand = (r["brand"] or "").strip() if r["brand"] is not None else ""
-        if r["brand"] is None:
-            no_product += 1        # 商品台帳にその商品が無い(移行で外れた等)
+        # ★商品が有るか無いかは product_key で判定する。
+        #   以前は brand が NULL かどうかで見ていたため、**商品はあるがブランドが空**の
+        #   ものまで「商品台帳に無い」に数えていた(2026-09-10 修正)。
+        if r["found"] is None:
+            no_product += 1        # 商品台帳にその商品が無い(移行で外れた/宝飾ナビ側で削除)
+            by_year[year]["商品無"] += 1
+            pk = str(r["pk"])
+            if pk.rsplit("-", 1)[-1] in ("0", "00", ""):
+                zero_key += 1      # 元からレンズを紐付けていない処方箋
+            else:
+                miss_store[pk.split("-", 1)[0]] += 1
             continue
+        brand = (r["brand"] or "").strip()
         if not brand:
             no_brand += 1          # 商品はあるが、ブランド欄が空(カラー未登録)
+            by_year[year]["色無"] += 1
             continue
         if brand == cur_val:
             skip_filled += 1
+            by_year[year]["済"] += 1
             continue
         plan.append((brand, r["id"]))
         kinds[brand] += 1
+        by_year[year]["入る"] += 1
 
     print("\n入れられる処方箋: %s件" % format(len(plan), ","))
     print("  入れられないもの:")
@@ -113,6 +142,30 @@ def main():
         print("\n  入るカラーの種類: %s種類(多い順に10件)" % format(len(kinds), ","))
         for k, c in kinds.most_common(10):
             print("    %-20s %s件" % (k[:20], format(c, ",")))
+
+    # ── 内訳(1)「商品台帳に無い」の中身 ──
+    if no_product:
+        print("\n=== 「商品台帳にその商品が無い」%s件の内訳 ===" % format(no_product, ","))
+        print("  ・元からレンズを紐付けていない(キーが 0): %s件" % format(zero_key, ","))
+        print("     → これは移行の取りこぼしではありません。宝飾ナビ側でレンズ商品を")
+        print("       選ばずに処方箋だけ作った分なので、埋めようがありません。")
+        rest = no_product - zero_key
+        print("  ・商品キーはあるのに商品台帳に無い: %s件" % format(rest, ","))
+        if rest:
+            print("     → 宝飾ナビ側で商品が消されている(売れたレンズを消す運用)か、")
+            print("       移行で外れた可能性があります。店舗コード別:")
+            for st, c in miss_store.most_common(6):
+                print("       %-6s %s件" % (st, format(c, ",")))
+
+    # ── 内訳(2)年別。古い年に偏っているかを見る ──
+    print("\n=== 年別(処方日) ===")
+    print("  %-10s %8s %8s %8s %8s %8s" % ("年", "全体", "入る", "商品無", "キー無", "色無"))
+    for year in sorted(by_year, reverse=True):
+        c = by_year[year]
+        tot = sum(c.values())
+        print("  %-10s %8s %8s %8s %8s %8s"
+              % (year, format(tot, ","), format(c["入る"], ","), format(c["商品無"], ","),
+                 format(c["キー無"], ","), format(c["色無"], ",")))
 
     if not a.apply:
         print("\n下読みだけで終了しました。書き込むには --apply を付けてください。")
