@@ -245,6 +245,10 @@ def ensure_schema(con):
         #   印を付けておけば、DMは1通で済む。1=代表 / 0・空=そうでない。
         ("customers", "is_family_rep", "INTEGER"),
         ("receivables", "slip_id", "INTEGER"),    # 起票元の売上伝票(併用払いの内訳を辿るため)
+        # 入金履歴にも起票元の伝票を持たせる(2026-09-14)。★これが無いと「どの入金履歴が
+        # どの売上のものか」を辿れず、売上を取り消しても履歴の「掛売」行を相殺できない。
+        # 実際に、打ち直した売上の「掛売 ¥50,000」が履歴に残り、2件掛売があったように見えた。
+        ("receivable_entries", "slip_id", "INTEGER"),
         ("products", "ring_fingers", "TEXT"),  # はめる指(複数可。カンマ区切り)
         ("products", "ring_size", "TEXT"),     # リングサイズ(フリー入力。#10.5 や 12号 等)
         ("sales_slips", "receipt_note", "TEXT"),  # その会計だけのレシート一言(再印字でも同じ内容が出る)
@@ -1196,9 +1200,24 @@ def customer_detail(con, cid):
     #   お客様にお伝えする数字なので、詳細を開いたら必ず現在値に直す。
     bal_row = cur.execute("SELECT balance FROM point_balances WHERE customer_id=?", (cid,)).fetchone()
 
+    # ★売掛もここで返す(2026-09-14)。これまで売掛は起動時のデータ(build_blob)だけに
+    #   入っていたため、**売上を取り消して売掛が消えても画面に残ったまま**になっていた。
+    #   形は起動時のデータと同じ(画面が同じ番号で読むため)。
+    urikake = [list(r) for r in cur.execute(
+        """SELECT id, product_name, bought_at, down_payment, balance, last_paid_at, slip_id
+           FROM receivables WHERE customer_id = ? ORDER BY bought_at DESC, id DESC""", (cid,))]
+    _pt = slip_pay_texts(con, "WHERE s.customer_id = ?", (cid,))
+    for _r in urikake:
+        _r[6] = _pt.get(_r[6]) or None      # [6]=同じ会計での支払内訳(併用払いの確認用)
+    urikake_hist = [list(r) for r in cur.execute(
+        """SELECT entry_date, entry_type, product_name, amount, paid, method
+           FROM receivable_entries WHERE customer_id = ?
+           ORDER BY entry_date DESC, id DESC""", (cid,))]
+
     return {"sales": sales, "salesVoided": sales_voided, "rx": rx, "rxCandidates": rx_candidates,
             "pointTx": point_tx, "approach": approach, "memos": memos, "extra": extra,
-            "points": int(bal_row[0] or 0) if bal_row else None}
+            "points": int(bal_row[0] or 0) if bal_row else None,
+            "urikake": urikake, "urikakeHist": urikake_hist}
 
 
 # 在庫一覧の並び替えで指定できる列(キー→実カラム。ホワイトリストでSQLインジェクション防止)
@@ -4345,15 +4364,76 @@ def update_receivable(con, p):
 
 
 def delete_receivable(con, rid):
-    """売掛1件を削除(誤登録の訂正用)。売掛残高から消える。入金履歴の記録は残す。"""
+    """売掛1件を削除(誤登録の訂正用)。売掛残高から消える。
+
+    ★入金履歴には「取消」の行を足して相殺する(2026-09-14)。
+      以前は receivables を消すだけで入金履歴には何も残さなかったため、
+      **取り消した売上の「掛売 ¥50,000」がそのまま履歴に並び、2件掛売があったように
+      見えていた**(店の指摘)。履歴は消さず、読めば分かる形にする(赤黒と同じ考え方だが、
+      こちらは「取消」と明示するので意図が読める)。
+    """
     if not rid:
         raise ValueError("対象の売掛が指定されていません")
-    row = con.execute("SELECT customer_id FROM receivables WHERE id=?", (rid,)).fetchone()
+    con.row_factory = sqlite3.Row
+    row = con.execute("""SELECT customer_id, product_name, COALESCE(balance,0) bal,
+                                COALESCE(down_payment,0) down, bought_at, slip_id
+                         FROM receivables WHERE id=?""", (rid,)).fetchone()
     if not row:
         raise ValueError("対象の売掛が見つかりません")
     con.execute("DELETE FROM receivables WHERE id=?", (rid,))
+    _add_void_entry(con, row["customer_id"], row["product_name"],
+                    int(row["bal"] or 0) + int(row["down"] or 0), row["slip_id"],
+                    "売掛の削除(誤登録の訂正)")
     con.commit()
-    return {"deleted": rid, "customer_id": row[0]}
+    return {"deleted": rid, "customer_id": row["customer_id"]}
+
+
+def _add_void_entry(con, cid, product_name, amount, slip_id, note):
+    """入金履歴に「取消」の行を足す(金額はマイナスで入れて相殺と分かるようにする)。"""
+    con.execute("""INSERT INTO receivable_entries
+                     (customer_id,entry_type,entry_date,product_name,amount,paid,note,slip_id)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (str(cid), "取消", datetime.date.today().isoformat(),
+                 product_name, -int(amount or 0), None, str(note or "")[:200], slip_id))
+
+
+def void_receivables_for_slip(con, slip_id, reason=""):
+    """伝票を取り消した時に、その伝票から起票した売掛を落とす(2026-09-14 店の指定)。
+
+    ルール(店と決めた3つ):
+      ・伝票まるごと取消 × **入金がまだ無い** … 売掛を消して「取消」の履歴を残す
+      ・伝票まるごと取消 × **入金済み**       … **自動では消さない**。受け取ったお金の
+        記録を勝手に消すと、返金の実態と帳簿が合わなくなるため。件数を返して画面で知らせる
+      ・**明細1行だけの取消**                … 売掛には触らない(呼び出し側で呼ばない)。
+        売掛は伝票単位で起票しているので、1行だけ消した時にいくら減らすべきかを
+        自動で決められない
+    戻り値 {"cleared": 件数, "cleared_amount": 金額, "kept": 件数, "kept_amount": 金額}
+    """
+    con.row_factory = sqlite3.Row
+    rows = list(con.execute("""SELECT id, customer_id, product_name, COALESCE(balance,0) bal,
+                                      COALESCE(down_payment,0) down, last_paid_at
+                               FROM receivables WHERE slip_id=?""", (int(slip_id),)))
+    cleared_amt, kept_amt, cleared, kept = 0, 0, 0, 0
+    for r in rows:
+        paid = bool(str(r["last_paid_at"] or "").strip()) or int(r["down"] or 0) > 0
+        if paid:                       # 入金済みは触らない(店が返金の手当てをする)
+            kept += 1
+            kept_amt += int(r["bal"] or 0)
+            continue
+        con.execute("DELETE FROM receivables WHERE id=?", (r["id"],))
+        _add_void_entry(con, r["customer_id"], r["product_name"], int(r["bal"] or 0),
+                        int(slip_id), "売上の取消" + (": " + reason if reason else ""))
+        cleared += 1
+        cleared_amt += int(r["bal"] or 0)
+    return {"cleared": cleared, "cleared_amount": cleared_amt,
+            "kept": kept, "kept_amount": kept_amt}
+
+
+def slip_receivable_count(con, slip_id):
+    """その伝票から起票した売掛の件数と金額(明細1行の取消で「触っていない」と知らせる用)。"""
+    r = con.execute("""SELECT COUNT(*), COALESCE(SUM(balance),0) FROM receivables
+                       WHERE slip_id=? AND COALESCE(balance,0) > 0""", (int(slip_id),)).fetchone()
+    return {"count": int(r[0] or 0), "amount": int(r[1] or 0)}
 
 
 def add_cash_movement(con, p):
@@ -4530,8 +4610,10 @@ def _checkout_locked(con, payload):
             cur.execute("""INSERT INTO receivables(customer_id,product_name,bought_at,down_payment,balance,last_paid_at,slip_id)
                            VALUES (?,?,?,?,?,?,?)""", (cid, summary_name, sold_at, 0, amt, None, slip_id))
             rid = cur.lastrowid  # 画面側でD.urikakeを即時更新できるよう新しい売掛行を返す
-            cur.execute("""INSERT INTO receivable_entries(customer_id,entry_type,entry_date,product_name,amount,paid)
-                           VALUES (?,?,?,?,?,?)""", (cid, "掛売", sold_at, summary_name, amt, None))
+            cur.execute("""INSERT INTO receivable_entries
+                             (customer_id,entry_type,entry_date,product_name,amount,paid,slip_id)
+                           VALUES (?,?,?,?,?,?,?)""",
+                        (cid, "掛売", sold_at, summary_name, amt, None, slip_id))
             receivables_out.append({"id": rid, "product_name": summary_name, "bought_at": sold_at,
                                     "down_payment": 0, "balance": amt, "last_paid_at": None,
                                     "pay_text": pay_text})
@@ -5009,8 +5091,13 @@ def void_sale_line(con, line_id, operator=None, staff=None, reason=None, refund_
                     (now, op, stf, rsn, rm, line_id))
         # 付与ptを取り消し、使用ptを戻す(取り消した金額の割合で按分)
         pts = _reverse_points_for_void(con, lr[0], lr[1], rsn) if lr else None
+        # ★売掛には触らない(3ルールの3番目)。売掛は伝票単位で起票しているので、
+        #   1行だけ取り消した時にいくら減らすべきかを自動で決められない。
+        #   ただし**残っていることは必ず知らせる**(黙っていると請求してしまう)。
+        recv = slip_receivable_count(con, lr[0]) if lr else {"count": 0, "amount": 0}
     return {"line_id": line_id, "voided": True, "voided_at": now, "refund_method": rm,
-            "voided_by": op, "voided_staff": stf, "voided_reason": rsn, "points": pts}
+            "voided_by": op, "voided_staff": stf, "voided_reason": rsn, "points": pts,
+            "receivables": recv}
 
 
 def void_sale_slip(con, slip_id, operator=None, staff=None, reason=None, refund_method=None):
@@ -5036,8 +5123,12 @@ def void_sale_slip(con, slip_id, operator=None, staff=None, reason=None, refund_
                               voided_reason=?, refund_method=? WHERE slip_id=?""",
                     (now, op, stf, rsn, rm, slip_id))
         pts = _reverse_points_for_void(con, slip_id, sum(int(r[1] or 0) for r in live), rsn)
+        # ★この伝票から起票した売掛を落とす(3ルールの1・2番目)。
+        #   入金がまだ無いものは消して「取消」の履歴を残す。入金済みのものは触らず件数を返す。
+        recv = void_receivables_for_slip(con, slip_id, rsn)
     return {"slip_id": slip_id, "voided": True, "voided_at": now, "refund_method": rm,
-            "voided_by": op, "voided_staff": stf, "voided_reason": rsn, "points": pts}
+            "voided_by": op, "voided_staff": stf, "voided_reason": rsn, "points": pts,
+            "receivables": recv}
 
 
 # ── ログイン認証・ロール制御(アクセス制御④。docs/access-control.md) ──
