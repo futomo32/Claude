@@ -15,6 +15,14 @@
   取込プログラム(import_csv.py)は 2026-09-16 に直したが、**すでに入っているDBは
   直らない**ので、この道具で入れ直す。
 
+★トキワに居ないお客様の売上は捨てない(2026-09-17 修正):
+  今の取込は、伝票番号がある売上なら**顧客が居なくても「持ち主なし」で入れている**
+  (実際「持ち主が空の伝票」が275枚ある)。ここで捨てると、同じ性質のデータが
+  「伝票番号があれば残る・無ければ消える」という説明のつかない状態になり、
+  さらに**店全体の売上集計が約4,400万円(2,873件)減る**。
+  誰の履歴にも出ないのは今までどおりだが、店の売上ではあるので残す。
+  買上日が空の行は 掛売日 → 登録日 の順で補う(日付が無いと日報・集計に出ないため)。
+
 ★再取込はしない:
   再取込すると 9/2 以降にトキワで打った売上・ポイント・処方箋まで消えてしまう。
   ここでは **「伝票0番」の伝票と、その明細だけ**を消して、CSVから入れ直す。
@@ -141,32 +149,52 @@ def main():
     staff_of = {s(r[0]): r[1] for r in con.execute(
         "SELECT staff_code, name FROM staff WHERE COALESCE(staff_code,'')<>''")}
 
-    plan = collections.OrderedDict()   # (cid, 買上日) → [行,...]
-    no_cust, no_date = 0, 0
+    # ★顧客が居なくても「持ち主なし」で入れる(2026-09-17 修正)。
+    #   今の取込は、伝票番号がある売上なら**顧客が居なくても持ち主なしで入れている**
+    #   (実際「持ち主が空の伝票」が275枚ある)。ここで捨ててしまうと、同じ性質のデータが
+    #   「伝票番号があれば残る・無ければ消える」という説明のつかない状態になり、
+    #   さらに**店全体の売上集計が約4,400万円減る**(2,873件ぶん)。
+    #   誰の履歴にも出ないのは今までどおりだが、店の売上ではあるので残す。
+    # ★日付は 買上日 → 掛売日 → 登録日 の順で補う。日付が無いと日報・集計に出ないため。
+    # ★まとめるキーは**元の顧客キー**を使う(トキワに居ない人でも別の伝票になるように)。
+    #   持ち主として書く値だけを None にする。同じ日に別々の(消えた)お客様の売上が
+    #   あった時に、1枚の伝票に混ぜてしまわないため。
+    plan = collections.OrderedDict()   # (元の顧客キー, 買上日) → [行,...]
+    owner = {}                         # そのまとまりの持ち主(トキワに居なければ None)
+    no_cust, no_date, by_inp = 0, 0, 0
     years = collections.Counter()
     for r in rows:
         if s(r.get("curdenpyono")) not in ZERO_VALUES:
             continue                                  # 伝票番号がある=触らない
         store, key = s(r.get("strkotencode")), s(r.get("lngkokey"))
-        cid = ("%s-%s" % (store, key)) if (store and key) else None
-        sold = dt(r.get("datkaidate")) or dt(r.get("datcredate"))
-        if not cid or cid not in known:
+        raw = ("%s-%s" % (store, key)) if (store and key) else "(キーなし)"
+        cid = raw if raw in known else None            # 居なければ持ち主なしで入れる
+        if cid is None:
             no_cust += 1
-            continue
+        sold = dt(r.get("datkaidate")) or dt(r.get("datcredate"))
+        if not sold:
+            sold = dt(r.get("datinpdate"))            # 登録日で補う
+            if sold:
+                by_inp += 1
         if not sold:
             no_date += 1
-            continue
+            continue                                  # 日付がどれも読めない分だけは入れない
         years[sold[:4]] += 1
-        plan.setdefault((cid, sold), []).append(r)
+        plan.setdefault((raw, sold), []).append(r)
+        owner[(raw, sold)] = cid
 
     n_lines = sum(len(v) for v in plan.values())
-    custs = set(k[0] for k in plan)
+    custs = set(k[0] for k in plan if owner.get(k))
     amt = sum(n(r.get("curkaikin")) or 0 for v in plan.values() for r in v)
-    print("  伝票番号なし(0)の行: %s件" % format(n_lines + no_cust + no_date, ","))
+    print("  伝票番号なし(0)の行: %s件" % format(n_lines + no_date, ","))
     print("    ・入れ直せる: %s件 (¥%s) / 伝票 %s枚 / お客様 %s人"
           % (format(n_lines, ","), format(amt, ","), format(len(plan), ","), format(len(custs), ",")))
-    print("    ・トキワに居ないお客様: %s件(入れません)" % format(no_cust, ","))
-    print("    ・買上日が読めない: %s件(入れません)" % format(no_date, ","))
+    print("      うち**持ち主なし**で入れる(トキワに居ないお客様): %s件" % format(no_cust, ","))
+    print("        ※誰の履歴にも出ませんが、店の売上として集計に残ります")
+    print("        ※今の取込も、伝票番号がある売上は同じ扱いにしています")
+    if by_inp:
+        print("      うち買上日が空で**登録日で補った**: %s件" % format(by_inp, ","))
+    print("    ・日付がどれも読めない(入れません): %s件" % format(no_date, ","))
     if years:
         ys = sorted(years)
         print("    ・年の範囲: %s 〜 %s" % (ys[0], ys[-1]))
@@ -202,7 +230,9 @@ def main():
     print("消しました: 伝票 %s枚 / 明細 %s件" % (format(len(ids), ","), format(del_lines, ",")))
 
     made = 0
-    for (cid, sold), items in plan.items():
+    for gkey, items in plan.items():
+        sold = gkey[1]
+        cid = owner.get(gkey)          # トキワに居ないお客様は None(持ち主なし)
         r0 = items[0]
         tan = s(r0.get("strhantancode"))
         cur.execute("""INSERT INTO sales_slips
