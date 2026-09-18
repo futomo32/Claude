@@ -534,7 +534,64 @@ def open_drawer():
 CARD_PREFIX = "TKW"  # トキワ形式の磁気: "TKW"+顧客ID
 
 
+def _log_card(op, result):
+    """カードの操作を logs/エラー_今日.txt に残す(2026-09-18 追加)。
+
+    作った理由:
+      「レジは打てて、ポイントも付いたのに、カードが出てこなかった。赤い帯のエラーは
+      出ていたが内容を覚えていない」という報告があった(店)。赤帯(⚠のお知らせ)は
+      押すまで消えない作りだが、**次のお知らせが出れば消える**ので後から読めない。
+      レシート・ドロワーは 2026-08-29 から残していたが、**カードだけ残していなかった**。
+
+    ★成功も残す。「磁気は書けていた/券面で失敗した」の切り分けが原因究明の決め手になる。
+    ★氏名は書かない(顧客IDまで)。券面に印字する名前はログに出さない。
+    """
+    try:
+        import applog
+        if result.get("error"):
+            applog.write("カード", f"{op} 失敗: {result['error']} (COM={CARD_PORT})")
+        elif result.get("skipped"):
+            applog.write("カード", f"{op} 送信せず: 機器OFFモード")
+        elif result.get("face_error"):
+            # 磁気は書けたが券面で失敗。呼出は使えるので「持っている」扱いにしている
+            applog.write("カード", f"{op} 磁気は成功・券面で失敗: {result['face_error']} "
+                                   f"(顧客 {result.get('customer_id') or '-'} / COM={CARD_PORT})")
+        elif result.get("unknown"):
+            applog.write("カード", f"{op} 宝飾ナビ形式のカードでした(紐付け待ち・装置内に保持)")
+        else:
+            held = "・装置内に保持" if result.get("held") else ""
+            applog.write("カード", f"{op} 成功(顧客 {result.get('customer_id') or '-'}{held})")
+    except Exception:  # noqa: BLE001 ログで業務を止めない
+        pass
+    return result
+
+
 def card_read(timeout=30.0):
+    """カード挿入を待って磁気(トラック2)を読む(ログを残す入口)。"""
+    return _log_card("カード読取", _card_read(timeout))
+
+
+def card_link(customer_id, timeout=30.0, keep=False):
+    """磁気にトキワ形式を書き込む(ログを残す入口)。"""
+    return _log_card("磁気書込(紐付け)", _card_link(customer_id, timeout, keep))
+
+
+def card_issue(customer_id, face, timeout=60.0):
+    """カードに書き込む: 磁気→券面→排出(ログを残す入口)。"""
+    return _log_card("カード書き込み(磁気+券面)", _card_issue(customer_id, face, timeout))
+
+
+def card_face_print(face):
+    """券面だけ書き換えて排出する(ログを残す入口)。会計確定後の券面更新はここを通る。"""
+    return _log_card("券面書換(会計後)", _card_face_print(face))
+
+
+def card_eject():
+    """装置内のカードを排出する(ログを残す入口)。"""
+    return _log_card("カード排出", _card_eject())
+
+
+def _card_read(timeout=30.0):
     """カード挿入を待って磁気(トラック2)を読む。読んだ後カードは装置内に残る。
     トキワ形式: 顧客を返し、カードは保持したまま(宝飾ナビと同じ運用。会計確定時に
     券面を書き換えて排出する。会計しない場合は card_eject で返す)。2026-07-31 案A採用。
@@ -562,7 +619,7 @@ def card_read(timeout=30.0):
         return {"error": f"カード読取に失敗: {e}"}
 
 
-def card_link(customer_id, timeout=30.0, keep=False):
+def _card_link(customer_id, timeout=30.0, keep=False):
     """装置内のカード(または新たに挿入されたカード)へ、トキワ形式
     ("TKW"+顧客ID)を逆7bitで磁気書込する。初回紐付け(方式B)と再発行の両方に使う。
 
@@ -594,7 +651,7 @@ def card_link(customer_id, timeout=30.0, keep=False):
         return {"error": f"カード書込に失敗: {e}"}
 
 
-def card_issue(customer_id, face, timeout=60.0):
+def _card_issue(customer_id, face, timeout=60.0):
     """ポイントカードに書き込む: 1回の挿入で「磁気書込(TKW+顧客ID)→券面印字→排出」まで行う。
     ★新品のカードにも、既に持っているカードの書き直しにも同じ処理を使う
       (画面の「💳 カードに書き込む」。以前は「会員証発行」という名前だった)。
@@ -757,7 +814,7 @@ def build_card_grid_cmds():
     return cmds
 
 
-def card_face_print(face):
+def _card_face_print(face):
     """カード券面を消去→印字→排出する(46h)。face={name, issued, expiry, points}。
     カードが装置内に無ければ挿入を待つ。磁気は触らない(磁気書換は card_link)。"""
     if not ENABLED:
@@ -782,7 +839,7 @@ def card_face_print(face):
         return {"error": f"券面印字に失敗: {e}"}
 
 
-def card_eject():
+def _card_eject():
     """装置内のカードを排出する(紐付け中止など)。"""
     if not ENABLED:
         return _skip()

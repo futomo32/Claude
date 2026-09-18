@@ -795,6 +795,14 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/drawer_open":
                 result = devices.open_drawer()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/client_log":
+                # 画面に出た赤い帯(⚠のお知らせ)と、画面側のエラーをログに残す(2026-09-18)。
+                # ★理由: 「エラーは出ていたが内容を覚えていない」が続いたため。赤帯は
+                #   押すまで消えない作りだが、次のお知らせが出れば消えるので後から読めない。
+                # ★個人情報は書かない。画面側で「◯◯様」を伏せてから送っている。
+                applog.write(str(payload.get("where") or "画面")[:20],
+                             str(payload.get("message") or "")[:300])
+                return self._send(200, b'{"ok":true}')
             if path == "/api/card_read":
                 result = devices.card_read()
                 # トキワ形式なら顧客名も返す(画面がそのまま選択できるように)
