@@ -170,6 +170,42 @@ def lan_ip():
             return None
 
 
+# ── 機器を動かせるのはレジPC(サーバーを動かしているPC)だけ(2026-09-18 案1)────────
+# 作った理由(店の指摘):
+#   機器(レシートプリンタ・ドロワー・カード読取機)は**サーバーを動かしているレジPC**に
+#   繋がっている。「本番運用で起動.bat」(機器ON＋店内共有)では、別のPCのブラウザも同じ
+#   サーバーを見るため、**別端末でボタンを押すとレジPCの機器が動いてしまう**。
+#   とくに危ないのがカードの排出で、「保持中です」の確認は**その端末のブラウザが覚えて
+#   いる値**で出しているので、別端末はレジがカードを保持していることを知らない。
+#   → レジで会計中のカードが、確認も出ずに吐き出される事故が起こり得た。
+# 決め方:
+#   要求元が**サーバーと同じPC**(ループバック、またはこのPC自身のIP)なら許す。
+#   ★レジPCのブラウザが LAN のIP(http://192.168.x.x:8760/)で開いている場合もあるので、
+#     ループバックだけで判定せず、このPC自身のIPも許す一覧に入れる。
+#   ★判定できない時は**許す**。機器が使えなくなって店が止まる方が困るため
+#     (その場合も今までと同じ挙動で、悪くはならない)。
+LOCAL_IPS = {"127.0.0.1", "::1", "localhost", ""}
+
+# 機器を実際に動かす入口。ここへの要求はレジPC以外から来たら断る。
+# ★/api/receipt_doc は「A4のデータだけ返す」用途も兼ねているので一覧に入れない
+#   (mode=print の時だけ下で個別に断る)。画面で組むだけの操作は別端末でも使える。
+DEVICE_PATHS = (
+    "/api/receipt_print", "/api/void_receipt_print", "/api/drawer_open",
+    "/api/card_read", "/api/card_link", "/api/card_issue", "/api/card_face",
+    "/api/card_read_cancel",
+)
+DEVICE_DENY_MSG = ("この端末からは機器を動かせません(レシートプリンタ・ドロワー・"
+                   "カード読取機はレジPCに繋がっています)。レジPCで操作してください。")
+
+
+def device_here(client_ip):
+    """機器を動かしてよい要求元か(=サーバーを動かしているレジPC自身か)。"""
+    ip = str(client_ip or "")
+    if ip.startswith("::ffff:"):      # IPv6でくるまれたIPv4
+        ip = ip[7:]
+    return ip in LOCAL_IPS
+
+
 def already_running(port):
     """同じポートで既にトキワが動いていないか調べる(二重起動の防止)。
 
@@ -206,11 +242,13 @@ def apply_role_filter(blob, role):
     return blob
 
 
-def render_index(user):
+def render_index(user, here=True):
     """UIのHTMLに、DBから組み立てたデータとログインユーザー情報を埋め込んで返す。"""
     con = connect()
     blob = apply_role_filter(db_query.build_blob_light(con), user.get("role"))  # 起動時は軽量データのみ
     blob["hardwareMode"] = HW_ENABLED  # 機器モード(起動方法で決まる。画面のモード表示用)
+    # ★この端末から機器を動かせるか(レジPC自身だけ true)。画面はこれでボタンを出し分ける
+    blob["hardwareHere"] = bool(HW_ENABLED and here)
     sample = db_query.sample_in_stock_key(con)
     con.close()
     html = open(UI, encoding="utf-8").read()
@@ -353,7 +391,8 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/":
                     if not user:
                         return self._send(200, render_login(), "text/html; charset=utf-8")
-                    return self._send(200, render_index(user), "text/html; charset=utf-8")
+                    return self._send(200, render_index(user, device_here(self.client_address[0])),
+                                      "text/html; charset=utf-8")
                 if not user:
                     return self._deny("ログインしてください(ページを再読み込みするとログイン画面が出ます)", 401)
                 role = user.get("role")
@@ -431,6 +470,7 @@ class Handler(BaseHTTPRequestHandler):
                 con = connect()
                 blob = apply_role_filter(db_query.build_blob(con), role)
                 blob["hardwareMode"] = HW_ENABLED
+                blob["hardwareHere"] = bool(HW_ENABLED and device_here(self.client_address[0]))
                 con.close()
                 return self._send(200, json.dumps(blob, ensure_ascii=False).encode("utf-8"))
             if path in ("/api/customer_detail", "/api/products", "/api/product_categories",
@@ -660,6 +700,14 @@ class Handler(BaseHTTPRequestHandler):
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             # ── 機器(フェーズ2)。機器OFFモードでは devices 側が何も送信せず skipped を返す ──
+            # ★レジPC以外から機器を動かす要求は断る(2026-09-18 案1)。画面でもボタンを
+            #   隠しているが、別端末のブラウザが古いままの時もあるので**サーバーで止める**。
+            if (path in DEVICE_PATHS or (path == "/api/receipt_doc" and payload.get("mode") == "print")) \
+                    and not device_here(self.client_address[0]):
+                applog.write("機器", f"{path} を別端末から呼ばれたので断りました"
+                                     f"(要求元={self.client_address[0]})")
+                return self._send(200, json.dumps({"error": DEVICE_DENY_MSG},
+                                                  ensure_ascii=False).encode("utf-8"))
             if path == "/api/receipt_print":
                 con = connect()
                 try:
@@ -1244,6 +1292,16 @@ def main():
         elif a.lower() == "nologo":
             NO_LOGO = True
     devices.ENABLED = HW_ENABLED  # 機器制御層に伝える(OFFなら一切送信しない)
+    # ★このPC自身のIPも「機器を動かしてよい要求元」に入れる(2026-09-18)。
+    #   レジPCのブラウザが http://localhost:8760/ ではなく LAN のIPで開いていることも
+    #   あるので、ループバックだけで判定するとレジPCで機器が使えなくなってしまう。
+    try:
+        own = lan_ip()
+        if own:
+            LOCAL_IPS.add(own)
+        LOCAL_IPS.update(socket.gethostbyname_ex(socket.gethostname())[2] or [])
+    except Exception:  # noqa: BLE001 判定できなくても起動は止めない
+        pass
     if already_running(port):
         print("=" * 60)
         print(f"【中止】トキワは既に起動しています(ポート {port})。")
