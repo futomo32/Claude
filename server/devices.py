@@ -558,6 +558,8 @@ def _log_card(op, result):
                                    f"(顧客 {result.get('customer_id') or '-'} / COM={CARD_PORT})")
         elif result.get("unknown"):
             applog.write("カード", f"{op} 宝飾ナビ形式のカードでした(紐付け待ち・装置内に保持)")
+        elif result.get("no_card"):
+            applog.write("カード", f"{op} カードは入っていませんでした(空押し)")
         else:
             held = "・装置内に保持" if result.get("held") else ""
             applog.write("カード", f"{op} 成功(顧客 {result.get('customer_id') or '-'}{held})")
@@ -840,13 +842,27 @@ def _card_face_print(face):
 
 
 def _card_eject():
-    """装置内のカードを排出する(紐付け中止など)。"""
+    """装置内のカードを排出する(紐付け中止・画面の「⏏ カード排出」)。
+
+    ★「カードが入っていなかった」を失敗として返さない(2026-09-18)。
+      排出ボタンをどの画面からでも押せるようにしたので、空押しは普通に起こる。
+      装置は 0x22「処理対象カード無し」を返すだけなので、no_card として知らせ、
+      画面では赤帯ではなく「カードは入っていませんでした」と出す。
+    """
     if not ENABLED:
         return _skip()
     try:
-        from tcp300ii import TCP300II
+        from tcp300ii import TCP300II, status_text
         with TCP300II(CARD_PORT) as dev:
-            _eject_safe(dev)
+            try:
+                _, status, _payload = dev.eject()
+            except Exception:  # noqa: BLE001 読取直後のDLE拒否などはリセットで押し出す
+                _eject_safe(dev)
+                return {"ok": True, "note": "リセットで排出しました"}
+            if status == 0x22:
+                return {"ok": True, "no_card": True}
+            if status != 0x20:
+                return {"error": "カード排出に失敗: " + status_text(status)}
         return {"ok": True}
     except Exception as e:  # noqa: BLE001
         return {"error": f"カード排出に失敗: {e}"}
