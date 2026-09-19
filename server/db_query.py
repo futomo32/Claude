@@ -240,6 +240,11 @@ def ensure_schema(con):
         # 項目が無いので、トキワで持つ。紐付けたレンズ商品のブランドを初期値に入れ、
         # 番号なし(手打ち)のレンズでも手で書けるようにする。
         ("prescriptions", "lens_color", "TEXT"),
+        # 処方箋のメモ(2026-09-19 店の指定)。「前回きつめと言われた」「鼻パッド低めで」など、
+        # **その処方箋についての話**を残す欄。顧客メモ(人について)・商品情報(買い物について)
+        # では次に作り直す時に見つけにくいため。★宝飾ナビの「アイ備考2」(d_shohosen.strbiko2)
+        # の取込先もここ(取込は別途)。
+        ("prescriptions", "note", "TEXT"),
         # ★代表フラグ(2026-09-10 店の指定で復活)。宝飾ナビ d_user.lngdaihyoflg。
         #   同じご家族に何通もDMを出さないための印。家族5人でも「代表(奥様など)」に
         #   印を付けておけば、DMは1通で済む。1=代表 / 0・空=そうでない。
@@ -892,6 +897,7 @@ def _rx_row(r):
         "naked_both": r["naked_both"], "naked_r": r["naked_r"], "naked_l": r["naked_l"],
         "corrected_both": r["corrected_both"], "corrected_r": r["corrected_r"], "corrected_l": r["corrected_l"],
         "handler": r["handler"], "rx_date": r["rx_date"],
+        "note": _col(r, "note"),              # 処方箋のメモ(自由入力)
     }
 
 
@@ -4237,7 +4243,7 @@ def add_prescription(con, p):
     if not total:
         total = n_int("total_sell")
 
-    cols = ("purpose", "lens_name", "frame_name", "frame_type", "lens_color",
+    cols = ("purpose", "lens_name", "frame_name", "frame_type", "lens_color", "note",
             "sph_r", "sph_l", "cyl_r", "cyl_l", "ax_r", "ax_l", "pri_r", "pri_l", "base_r", "base_l",
             "pri2_r", "pri2_l", "base2_r", "base2_l", "add_r", "add_l",
             "pd_far_both", "pd_far_r", "pd_far_l", "pd_near_both", "pd_near_r", "pd_near_l",
