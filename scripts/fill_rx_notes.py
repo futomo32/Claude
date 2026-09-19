@@ -205,6 +205,8 @@ def main():
     for k in dup_db:
         index.pop(k, None)
 
+    # 「見つからない」の中身を分けるため、トキワに居るお客様の一覧も持っておく
+    db_cust = set(r[0] for r in con.execute("SELECT customer_id FROM customers"))
     total_rx = con.execute("SELECT COUNT(*) FROM prescriptions").fetchone()[0]
     print("\n■ トキワの処方箋: %s件(うち既にメモがある: %s件)"
           % (format(total_rx, ","), format(have_note, ",")))
@@ -214,14 +216,23 @@ def main():
 
     # ── 3. 突き合わせ ──────────────────────────────────────────
     todo, skip_have, miss = [], 0, 0
+    miss_nocust = miss_key = 0
     ex_todo, ex_have, ex_miss = [], [], []    # 確認用の見本(顧客IDと処方箋Noだけ)
     lens = collections.Counter()
     for key, note in plan.items():
         hit = index.get(key)
         if not hit:
             miss += 1
-            if len(ex_miss) < SAMPLE:
-                ex_miss.append(key)
+            # ★「入れ先が無い」には2種類ある。分けないと手の打ちようが分からない:
+            #   (1) そのお客様自体がトキワに居ない … 宝飾ナビ側で顧客が消された孤児データ。
+            #       処方箋ごと取り込めていないので、メモだけ入れる先が無い(諦めるしかない)
+            #   (2) お客様は居るのに処方箋が見つからない … 突き合わせのずれ。直せる可能性がある
+            if key[0] not in db_cust:
+                miss_nocust += 1
+            else:
+                miss_key += 1
+                if len(ex_miss) < SAMPLE:
+                    ex_miss.append(key)
             continue
         rx_id, cur_note = hit
         if cur_note:
@@ -242,9 +253,14 @@ def main():
         print("     確認用: %s" % sample_text(ex_have))
     print("  ・トキワ側に見つからない      : %s件" % format(miss, ","))
     if miss:
-        print("     確認用: %s" % sample_text(ex_miss))
-        print("     ※この方を宝飾ナビとトキワの両方で開いて見比べると、")
-        print("       突き合わせ(顧客ID/処方箋No/処方日/レンズ/フレーム)のどこがずれているか分かります。")
+        print("     うち お客様自体がトキワに居ない: %s件" % format(miss_nocust, ","))
+        print("       → 宝飾ナビ側で顧客が消された孤児データ。処方箋ごと取り込めていないので")
+        print("         入れる先がありません(想定どおり。手の打ちようはありません)")
+        print("     うち お客様は居るのに処方箋が合わない: %s件" % format(miss_key, ","))
+        if miss_key:
+            print("       確認用: %s" % sample_text(ex_miss))
+            print("       ※★こちらは突き合わせのずれです。この方を宝飾ナビとトキワの両方で開いて")
+            print("         見比べると、どこ(処方箋No/処方日/レンズ/フレーム)がずれているか分かります。")
     if todo:
         print("  ・長さの内訳: " + " / ".join("%s %s件" % (k, format(v, ",")) for k, v in lens.most_common()))
     print("\n  ※確認のしかた: 顧客管理の検索箱に**顧客IDをそのまま**入れて開き、")
