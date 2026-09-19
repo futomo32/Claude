@@ -18,8 +18,11 @@
   宝飾ナビ形式(60文字の独自エンコード)のカードは初回挿入時に店員が顧客を選んで
   紐付け→この形式に書き換える。以後はカード挿入だけで顧客を自動呼出できる。
 """
+import contextlib
 import os
 import sys
+import threading
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "hardware"))
 
@@ -533,6 +536,58 @@ def open_drawer():
 
 CARD_PREFIX = "TKW"  # トキワ形式の磁気: "TKW"+顧客ID
 
+# ── COM3 の開き方(2026-09-19 店の報告を受けて作り直し)────────────────────────
+# 症状: 「カードの紐付けが必ずエラーになる」。ログに残っていたのは
+#   `could not open port 'COM3': OSError(22, 'パラメーターが間違っています。', None, 87)`
+# ★これは**カードでも磁気でもなく、装置との通信口(COM3)を開けなかった**というWindowsの
+#   エラー(87)。実際、同じ日のログでカードへの書き込み自体は何度も成功している。
+# 分かったこと:
+#   ・排出が 87 で失敗した直後、**同じ排出がすぐ成功している**(11:23:26)。
+#     → **1回やり直すだけで大半は助かる**のに、やり直しを入れていなかった。
+#   ・トキワは操作のたびに COM3 を開いて閉じている。開閉が多いほどこの手のエラーを踏む。
+#   ・**同時に触らないための鍵が無かった**。ブラウザのタブを2つ開いていると(店の写真で確認)、
+#     片方の「カードを読む」は最大30秒 COM3 を開いたまま待つので、その間にもう片方から
+#     書き込むと**必ず**開けずに失敗する。「紐付けが必ず失敗する」の説明がつく。
+_CARD_LOCK = threading.Lock()
+_CARD_WAIT = 2.0        # ほかの操作が使っている時に待つ秒数
+_PORT_HELP = ("カード読取機(%s)を開けませんでした。**宝飾ナビが起動していないか**、"
+              "トキワの画面を2つ開いていないかご確認ください"
+              "(片方でカードの読み取りを待っていると開けません)。"
+              "直らない時はUSBを挿し直してください")
+
+
+class CardPortError(Exception):
+    """COM3を開けなかった(カードや磁気の問題ではない)。"""
+
+
+@contextlib.contextmanager
+def _card_dev(retries=3):
+    """カード読取機を開く。★開けなかったら少し待ってやり直す(0.3秒→0.6秒→1.2秒)。
+    Windowsはポートを閉じた直後や機器が認識し直している最中に開けないことがあり、
+    その多くは**数百ミリ秒待てば開く**(2026-09-19 ログで確認)。"""
+    from tcp300ii import TCP300II
+    dev, last = None, None
+    for i in range(max(1, retries)):
+        if i:
+            time.sleep(0.3 * (2 ** (i - 1)))
+        try:
+            dev = TCP300II(CARD_PORT)
+            break
+        except Exception as e:  # noqa: BLE001 開けない理由は機器・OS側にある
+            last = e
+    if dev is None:
+        raise CardPortError("%s(%s)" % (_PORT_HELP % CARD_PORT, last))
+    try:
+        yield dev
+    finally:
+        dev.close()
+
+
+def _card_busy():
+    return {"error": "ほかの操作でカード読取機を使っています(カードの読み取りを待っているかもしれません)。"
+                     "少し待ってからもう一度押してください。"
+                     "★トキワの画面を2つ開いていると起きやすくなります(1つにしてください)。"}
+
 
 def _log_card(op, result):
     """カードの操作を logs/エラー_今日.txt に残す(2026-09-18 追加)。
@@ -569,28 +624,43 @@ def _log_card(op, result):
 
 
 def card_read(timeout=30.0):
-    """カード挿入を待って磁気(トラック2)を読む(ログを残す入口)。"""
-    return _log_card("カード読取", _card_read(timeout))
+    """カード挿入を待って磁気(トラック2)を読む(鍵を取ってから実行・ログを残す入口)。"""
+    return _with_card_lock("カード読取", _card_read, timeout)
 
 
 def card_link(customer_id, timeout=30.0, keep=False):
-    """磁気にトキワ形式を書き込む(ログを残す入口)。"""
-    return _log_card("磁気書込(紐付け)", _card_link(customer_id, timeout, keep))
+    """磁気にトキワ形式を書き込む(鍵を取ってから実行・ログを残す入口)。"""
+    return _with_card_lock("磁気書込(紐付け)", _card_link, customer_id, timeout, keep)
 
 
 def card_issue(customer_id, face, timeout=60.0):
-    """カードに書き込む: 磁気→券面→排出(ログを残す入口)。"""
-    return _log_card("カード書き込み(磁気+券面)", _card_issue(customer_id, face, timeout))
+    """カードに書き込む: 磁気→券面→排出(鍵を取ってから実行・ログを残す入口)。"""
+    return _with_card_lock("カード書き込み(磁気+券面)", _card_issue, customer_id, face, timeout)
 
 
 def card_face_print(face):
-    """券面だけ書き換えて排出する(ログを残す入口)。会計確定後の券面更新はここを通る。"""
-    return _log_card("券面書換(会計後)", _card_face_print(face))
+    """券面だけ書き換えて排出する(鍵を取ってから実行)。会計確定後の券面更新はここを通る。"""
+    return _with_card_lock("券面書換(会計後)", _card_face_print, face)
 
 
 def card_eject():
-    """装置内のカードを排出する(ログを残す入口)。"""
-    return _log_card("カード排出", _card_eject())
+    """装置内のカードを排出する(鍵を取ってから実行・ログを残す入口)。"""
+    return _with_card_lock("カード排出", _card_eject)
+
+
+def _with_card_lock(op, fn, *args):
+    """カードの操作を1つずつ行う(2026-09-19)。★同時に2つ走ると COM3 を開けず必ず失敗する。
+    待っても空かない時は、待ち続けずに**理由を返す**(店員が固まったと思わないように)。"""
+    if not ENABLED:
+        return _log_card(op, _skip())
+    if not _CARD_LOCK.acquire(timeout=_CARD_WAIT):
+        return _log_card(op, _card_busy())
+    try:
+        return _log_card(op, fn(*args))
+    except CardPortError as e:
+        return _log_card(op, {"error": str(e)})
+    finally:
+        _CARD_LOCK.release()
 
 
 def _card_read(timeout=30.0):
@@ -603,7 +673,7 @@ def _card_read(timeout=30.0):
         return _skip()
     try:
         from tcp300ii import TCP300II, status_text
-        with TCP300II(CARD_PORT) as dev:
+        with _card_dev() as dev:
             status, payload = dev.read_track2_fmt("4", resp_timeout=timeout)  # 逆7bit(宝飾ナビ/トキワ共通)
             if status != 0x20:
                 try:
@@ -639,7 +709,7 @@ def _card_link(customer_id, timeout=30.0, keep=False):
     data = (CARD_PREFIX + cid).encode("ascii", "replace")
     try:
         from tcp300ii import TCP300II, status_text
-        with TCP300II(CARD_PORT) as dev:
+        with _card_dev() as dev:
             status = dev.write_track2(data, dataset_cmd=TCP300II.DATASET_REV7)
             if status != 0x20:
                 # ★書けなかった時は必ず出す。装置に残すと次のお客様が使えない
@@ -670,7 +740,7 @@ def _card_issue(customer_id, face, timeout=60.0):
     data = (CARD_PREFIX + cid).encode("ascii", "replace")
     try:
         from tcp300ii import TCP300II, status_text
-        with TCP300II(CARD_PORT) as dev:
+        with _card_dev() as dev:
             # (1) 磁気書込。カードが入っていなければ装置が挿入を待つ
             status = dev.write_track2(data, dataset_cmd=TCP300II.DATASET_REV7,
                                       resp_timeout=timeout)
@@ -823,7 +893,7 @@ def _card_face_print(face):
         return _skip()
     try:
         from tcp300ii import TCP300II, status_text
-        with TCP300II(CARD_PORT) as dev:
+        with _card_dev() as dev:
             st = dev.print_buffer_clear()
             if st != 0x20:
                 return {"error": "印字バッファクリアに失敗: " + status_text(st)}
@@ -853,7 +923,7 @@ def _card_eject():
         return _skip()
     try:
         from tcp300ii import TCP300II, status_text
-        with TCP300II(CARD_PORT) as dev:
+        with _card_dev() as dev:
             try:
                 _, status, _payload = dev.eject()
             except Exception:  # noqa: BLE001 読取直後のDLE拒否などはリセットで押し出す
