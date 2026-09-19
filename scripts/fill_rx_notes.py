@@ -18,6 +18,11 @@
     **入れずに数える**(「判別できない」として下読みに出す)。
     出過ぎるのは選べば済むが、間違った人のメモが入るのは取り返しがつかない。
 
+確認のしかた(2026-09-19 店の要望で追加):
+  下読みに**確認用の見本**(顧客ID と 処方箋No)を数件ずつ出す。★**入れる前に**その方を
+  宝飾ナビで開き、アイ備考2の中身と突き合わせられる(=正しいと分かってから入れられる)。
+  「見つからない」の見本は、突き合わせのどこがずれているかを調べる手がかりになる。
+
 ★安全のための決まり:
   ・既定は「下読み」。何件入るかを出すだけで、データは1文字も変更しない。
   ・書き込むのは --apply を付けた時だけ。その直前に必ずバックアップを取る。
@@ -48,7 +53,6 @@ import shutil
 import sqlite3
 import sys
 import time
-import unicodedata
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASE = os.path.join(HERE, "..")
@@ -97,6 +101,19 @@ def clean_note(raw, trim0):
     if re.fullmatch(r"[0\s.]+", t):
         return None, lead0
     return t, lead0
+
+
+SAMPLE = 5     # 確認用に出す見本の数
+
+
+def sample_text(keys):
+    """確認用の見本を「顧客ID(処方箋No / 処方日)」の形で数件ならべる。
+    ★顧客IDと処方箋Noだけ。氏名もメモの中身も出さない。
+      顧客管理の検索箱に顧客IDをそのまま入れると、その方を開ける。"""
+    out = []
+    for k in list(keys)[:SAMPLE]:
+        out.append("%s(処方箋No %s / %s)" % (k[0] or "?", k[1] or "?", k[2] or "日付なし"))
+    return " / ".join(out) if out else "(なし)"
 
 
 def stream(path):
@@ -169,6 +186,7 @@ def main():
           % (format(n_lead0, ","), "(--trim0 で落としました)" if a.trim0 else "(そのまま入れます。落とすなら --trim0)"))
     if dup_csv:
         print("  ★同じ組み合わせが2件以上あり判別できない: %s件(入れません)" % format(len(dup_csv), ","))
+        print("     確認用: %s" % sample_text(dup_csv))
 
     # ── 2. トキワ側の処方箋を同じ鍵で引けるようにする ────────────────
     con = sqlite3.connect(DB)
@@ -192,28 +210,47 @@ def main():
           % (format(total_rx, ","), format(have_note, ",")))
     if dup_db:
         print("  ★同じ組み合わせが2件以上ある処方箋: %s件(入れません)" % format(len(dup_db), ","))
+        print("     確認用: %s" % sample_text(dup_db))
 
     # ── 3. 突き合わせ ──────────────────────────────────────────
     todo, skip_have, miss = [], 0, 0
+    ex_todo, ex_have, ex_miss = [], [], []    # 確認用の見本(顧客IDと処方箋Noだけ)
     lens = collections.Counter()
     for key, note in plan.items():
         hit = index.get(key)
         if not hit:
             miss += 1
+            if len(ex_miss) < SAMPLE:
+                ex_miss.append(key)
             continue
         rx_id, cur_note = hit
         if cur_note:
             skip_have += 1        # ★手で書いたメモは消さない
+            if len(ex_have) < SAMPLE:
+                ex_have.append(key)
             continue
         todo.append((note, rx_id))
+        if len(ex_todo) < SAMPLE:
+            ex_todo.append(key)
         lens["〜20文字" if len(note) <= 20 else ("21〜50文字" if len(note) <= 50 else "51文字〜")] += 1
 
     print("\n■ 突き合わせの結果")
     print("  ★入れられる                  : %s件" % format(len(todo), ","))
+    print("     確認用: %s" % sample_text(ex_todo))
     print("  ・すでにメモがある(触りません): %s件" % format(skip_have, ","))
+    if skip_have:
+        print("     確認用: %s" % sample_text(ex_have))
     print("  ・トキワ側に見つからない      : %s件" % format(miss, ","))
+    if miss:
+        print("     確認用: %s" % sample_text(ex_miss))
+        print("     ※この方を宝飾ナビとトキワの両方で開いて見比べると、")
+        print("       突き合わせ(顧客ID/処方箋No/処方日/レンズ/フレーム)のどこがずれているか分かります。")
     if todo:
         print("  ・長さの内訳: " + " / ".join("%s %s件" % (k, format(v, ",")) for k, v in lens.most_common()))
+    print("\n  ※確認のしかた: 顧客管理の検索箱に**顧客IDをそのまま**入れて開き、")
+    print("    「メガネ(処方箋)」タブでその処方箋Noの行を開くとメモが出ます。")
+    print("    ★検索の**店舗は「全店」**にしてください(処方箋のお客様は 99- が多く、")
+    print("      既定の「01 本店」では出ません)。")
 
     if not a.apply:
         print("\n下読みだけで終了しました。書き込むには --apply を付けてください。")
