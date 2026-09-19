@@ -976,6 +976,19 @@ class Handler(BaseHTTPRequestHandler):
                 result = db_query.update_sale_line(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/sale_line_link":
+                # 番号なしで売った明細に、後日登録した商品の番号を紐づける(在庫も落とす)
+                con = connect()
+                try:
+                    result = db_query.link_sale_line_product(con, payload)
+                except ValueError as e:
+                    return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                finally:
+                    con.close()
+                applog.write("売上", "明細 #%s に商品 %s を紐づけました(在庫から落とし・操作 %s)"
+                             % (result.get("line_id"), result.get("product_key"),
+                                user.get("name") or "-"))
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/slip_reassign":
                 # 売上伝票を別のお客様へ付け替える。operator(ログインユーザー)はサーバーが
                 # 入れる=詐称できない。staff(担当者)と reason(理由)は画面からの必須入力。

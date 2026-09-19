@@ -4142,6 +4142,80 @@ def update_sale_line(con, p):
     return {"line_id": line_id, "name": name, "info": info}
 
 
+def link_sale_line_product(con, p):
+    """番号なしで売った明細に、あとから商品番号(商品台帳)を紐づける(2026-09-19 店の指定)。
+
+    作った理由:
+      催事や取り寄せで「**先に番号なしで売って、後日 納品書が来てから商品を登録する**」
+      ことがある。これまでの手は2つだけだった:
+        ・品名だけ直す(`update_sale_line`) … 自由入力の文字を書き換えるだけで、
+          商品台帳とは結びつかない
+        ・**取消して打ち直す** … 取消レシートが出て、ポイントも売掛も動いてしまう
+      さらに、後から登録した商品は**必ず「在庫」で入る**ため、実際は売れているのに
+      **在庫に残り続け、棚卸しが合わなくなる**(商品の修正では状態を変えられない)。
+      → この関数で、明細と商品を結び、**在庫からも落とす**。
+
+    決め事:
+      ・**金額は触らない**。実際に受け取った金額が正しいため。
+      ・**定価は登録された商品のものを入れ、割引率を計算し直す**(店の指定「ア」)。
+        割引率は宝飾ナビの取込・レジの表示と同じ「%(0〜100)」で入れる。
+      ・在庫を落とすので `stock_events` にも1行残す(レジの会計と同じ形)。
+      ・★二重販売の防止。すでに売れている商品・別の明細に紐づいている商品は断る。
+    """
+    try:
+        line_id = int(p.get("line_id"))
+    except (TypeError, ValueError):
+        raise ValueError("明細が指定されていません")
+    pk = str(p.get("product_key") or "").strip()
+    if not pk:
+        raise ValueError("商品が指定されていません")
+
+    con.row_factory = sqlite3.Row
+    row = con.execute("""SELECT l.line_id, l.slip_id, l.product_key, l.amount,
+                                COALESCE(l.voided,0) v, s.customer_id
+                         FROM sale_lines l JOIN sales_slips s ON s.slip_id = l.slip_id
+                         WHERE l.line_id=?""", (line_id,)).fetchone()
+    if not row:
+        raise ValueError("明細が見つかりません")
+    if row["v"]:
+        raise ValueError("取消済みの明細には紐づけられません")
+    if row["product_key"]:
+        raise ValueError("この明細にはすでに商品番号が付いています(番号なしの明細にだけ使えます)")
+
+    prod = con.execute("""SELECT product_key, product_no, name, list_price, state, tax_rate
+                          FROM products WHERE product_key=?""", (pk,)).fetchone()
+    if not prod:
+        raise ValueError("その商品が商品台帳に見つかりません")
+    if prod["state"] == "売上":
+        raise ValueError(f"「{prod['name'] or pk}」はすでに販売済みです(在庫にありません)")
+    if prod["state"] != "在庫":
+        raise ValueError(f"「{prod['name'] or pk}」は在庫状態ではありません(状態: {prod['state']})")
+    used = con.execute("""SELECT COUNT(*) FROM sale_lines
+                          WHERE product_key=? AND COALESCE(voided,0)=0""", (pk,)).fetchone()[0]
+    if used:
+        raise ValueError(f"「{prod['name'] or pk}」はすでに別の売上明細に紐づいています")
+
+    # 定価と割引率(店の指定「ア」)。定価が無い/金額が定価以上なら割引率は空にする
+    amount = int(row["amount"] or 0)
+    list_price = int(prod["list_price"] or 0) or None
+    disc = None
+    if list_price and 0 < amount < list_price:
+        disc = round((list_price - amount) / list_price * 1000) / 10.0
+
+    con.execute("""UPDATE sale_lines SET product_key=?, free_name=NULL, list_price=?, discount_rate=?
+                   WHERE line_id=?""", (pk, list_price, disc, line_id))
+    con.execute("UPDATE products SET state='売上' WHERE product_key=?", (pk,))
+    con.execute("""INSERT INTO stock_events(product_key,event_type,qty_delta,ref_slip_id)
+                   VALUES (?,?,?,?)""", (pk, "売上引落", -1, row["slip_id"]))
+    # この明細に処方箋が紐づいていれば、品名のねじれを防ぐため合わせる(update_sale_line と同じ)
+    con.execute("UPDATE prescriptions SET lens_name=? "
+                "WHERE sale_line_id=? AND COALESCE(lens_name,'')<>''", (prod["name"], line_id))
+    con.commit()
+    return {"line_id": line_id, "customer_id": row["customer_id"], "product_key": pk,
+            "product_no": prod["product_no"], "name": prod["name"],
+            "list_price": list_price, "discount_rate": disc, "amount": amount}
+
+
 def add_prescription(con, p):
     """メガネ処方箋の新規登録/編集。id があれば更新、無ければ採番して新規。
     合計金額はレンズ金額+フレーム金額を優先(無ければ total_sell を使用)。"""
