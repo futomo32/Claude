@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>トキワ レジ画面の組み直し案(見た目だけ)</title>
+<!--
+  レジ画面の組み直し案(2026-09-20 店の指定)。★見た目だけで、ボタンは押せません。
+  本番のトキワ(tokiwa-ui.html)には一切触っていないので、これを見て決めてから中身を繋ぎます。
+
+  店の指定:
+    ・毎回スクロールが必要なので、1画面で完結させたい
+    ・テンキーは使っていないので無くす
+    ・①②は横長(縦に2行)、③④は1行で2列
+
+  本番機の画面: 1280 × 1024 / 拡大 100%
+    → ブラウザの枠とタスクバーを引くと、実際に使えるのは約 1280 × 890
+    → このファイルはその高さに合わせてある(F11の全画面ならさらに +90px 余る)
+
+  開き方: このファイルをダブルクリックするだけ(サーバーは要りません)
+-->
+<style>
+  :root {
+    --bg: #F1F3EC; --surface: #FFFFFF; --surface-2: #E8EBE0;
+    --ink: #202520; --ink-2: #454C43; --muted: #6D7568; --line: #D7DBCC;
+    --accent: #1E6B4F; --accent-deep: #14503A; --accent-soft: #E1EDE5;
+    --warn: #8F5A14; --warn-bg: #F6ECD7; --danger: #A33A31;
+    --shadow: 0 1px 3px rgba(32,42,35,.08), 0 4px 16px rgba(32,42,35,.06);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+    background: var(--bg); color: var(--ink); font-size: 14px; }
+
+  /* ★本番機の使える大きさ(1280×890)をそのまま枠にしている。
+     この枠の中に収まっていれば、本番でもスクロールしない。 */
+  .screen { width: 1280px; height: 890px; display: flex; overflow: hidden;
+    border: 1px solid var(--line); box-shadow: var(--shadow); background: var(--bg); }
+
+  /* ★レジの時だけ左のメニューを細く(アイコンだけ)する案。1280は幅が狭く、
+     普通のメニュー(218px)だと明細が窮屈になるため。レジ中は他の画面に移らない。 */
+  .side { width: 64px; background: var(--surface); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 4px; flex: none; }
+  .side .logo { width: 40px; height: 40px; border-radius: 10px; background: var(--accent);
+    color: #fff; display: grid; place-items: center; font-weight: 700; margin-bottom: 8px; }
+  .side .ic { width: 44px; height: 40px; display: grid; place-items: center; border-radius: 8px;
+    font-size: 18px; color: var(--ink-2); cursor: default; }
+  .side .ic.on { background: var(--accent-soft); color: var(--accent); }
+  .side .spacer { flex: 1; }
+
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 8px 10px 10px; gap: 8px; }
+
+  .top { display: flex; align-items: center; gap: 10px; flex: none; }
+  .top h2 { margin: 0; font-size: 1.25em; }
+  .chip { background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+    padding: 3px 10px; font-size: .82em; color: var(--ink-2); }
+  .chip.hw { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .top .sp { flex: 1; }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 8px 10px; box-shadow: var(--shadow); }
+  .sec { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .sec .no { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff;
+    display: grid; place-items: center; font-weight: 700; font-size: .8em; flex: none; }
+  .sec .ttl { font-weight: 700; }
+  .sec .sp { flex: 1; }
+
+  .btn { border: 1px solid var(--line); background: var(--surface); border-radius: 7px;
+    padding: .42em .8em; font: inherit; font-size: .92em; color: var(--ink); white-space: nowrap; }
+  .btn.p { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
+  .btn.sm { padding: .25em .55em; font-size: .85em; }
+  input, select { font: inherit; padding: .38em .5em; border: 1px solid var(--line);
+    border-radius: 6px; background: var(--surface); color: var(--ink); }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ── ① お客様 ── */
+  .cust { display: flex; align-items: center; gap: 8px; flex: none; }
+  .cust .step1 { display: flex; align-items: center; gap: 6px; padding: 4px 7px;
+    border: 2px solid var(--accent); border-radius: 9px; background: var(--accent-soft); }
+  .stepno { font-weight: 700; font-size: 1.2em; }
+  .who { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;
+    background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 9px; padding: 5px 10px; }
+  .who b { font-size: 1.08em; }
+  .who .s { color: var(--ink-2); font-size: .86em; }
+  .who .bal { color: var(--danger); font-weight: 700; }
+
+  /* ── ② 商品(ここだけ伸び縮みする) ── */
+  .items { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .items .body { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: .92em; }
+  thead th { position: sticky; top: 0; background: var(--surface-2); text-align: left;
+    padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; font-size: .9em; }
+  td { padding: 5px 8px; border-bottom: 1px solid var(--line); }
+  td.r, th.r { text-align: right; }
+  tbody tr:nth-child(even) { background: #FAFBF7; }
+
+  /* ── ③④ 下段 ── */
+  .foot { display: flex; gap: 8px; flex: none; }
+  .pay { flex: 7; min-width: 0; }
+  .rcpt { flex: 3; min-width: 0; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .row .lb { color: var(--ink-2); font-size: .88em; }
+  .row .sp { flex: 1; }
+  .grand { display: flex; align-items: baseline; gap: 10px; border-top: 2px solid var(--line);
+    padding-top: 5px; margin-top: 5px; }
+  .grand .v { font-size: 2em; font-weight: 700; letter-spacing: .02em; }
+  .exec { width: 100%; padding: .7em; font-size: 1.12em; font-weight: 700; margin-top: 6px;
+    background: var(--accent); color: #fff; border: none; border-radius: 9px; }
+  .note { color: var(--muted); font-size: .78em; }
+
+  .legend { width: 1280px; margin: 14px auto 40px; font-size: .9em; line-height: 1.8; }
+  .legend h3 { margin: 18px 0 6px; font-size: 1em; }
+  .legend code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+  .ruler { width: 1280px; margin: 10px auto 0; color: var(--muted); font-size: .82em; }
+</style>
+</head>
+<body>
+
+<p class="ruler">▼ この枠が本番機で実際に使える大きさ(1280 × 890)です。<b>枠からはみ出さなければ、本番でもスクロールしません。</b></p>
+
+<div class="screen">
+  <!-- 左メニュー: レジの時だけアイコンだけに畳む案(幅 218px → 64px) -->
+  <div class="side">
+    <div class="logo">常</div>
+    <div class="ic">◇</div>
+    <div class="ic on">¥</div>
+    <div class="ic">👤</div>
+    <div class="ic">🔍</div>
+    <div class="ic">💳</div>
+    <div class="ic">◆</div>
+    <div class="ic">📋</div>
+    <div class="ic">🔧</div>
+    <div class="ic">📄</div>
+    <div class="ic">📊</div>
+    <div class="ic">⚙</div>
+    <div class="spacer"></div>
+    <div class="ic">⏻</div>
+  </div>
+
+  <div class="main">
+    <!-- 上の帯 -->
+    <div class="top">
+      <h2>レジ(売上登録)</h2>
+      <span class="chip">01 本店</span>
+      <span class="sp"></span>
+      <span class="chip num">2026/09/20(日)</span>
+      <span class="chip">👤 三輪 祐加</span>
+      <span class="chip">⏏ カード排出</span>
+      <span class="chip hw">🖨 機器ON</span>
+    </div>
+
+    <!-- ① お客様 -->
+    <div class="card cust">
+      <div class="sec" style="margin:0"><span class="no">1</span><span class="ttl">お客様</span></div>
+      <div class="step1"><span class="stepno">①</span>
+        <button class="btn p">💳 カードを読む</button><button class="btn sm">⏏ 排出</button></div>
+      <div class="who">
+        <b>ポイント 花子 様</b>
+        <span class="s">51歳</span>
+        <span class="s num">070-4464-7917</span>
+        <span class="s">💳 カードあり</span>
+        <span class="s num">8,830 pt</span>
+        <span class="bal num">売掛残 ¥120,000</span>
+        <span style="flex:1"></span>
+        <button class="btn sm">クリア</button>
+      </div>
+      <select style="max-width:9em"><option>担当 三輪 祐加</option></select>
+    </div>
+
+    <!-- ② 商品 -->
+    <div class="card items">
+      <div class="sec"><span class="no">2</span><span class="ttl">商品</span>
+        <button class="btn">＋ 商品番号で追加</button>
+        <button class="btn">＋ 番号なしで追加</button>
+        <button class="btn sm">⋯ その他 ▾</button>
+        <span class="sp"></span>
+        <span class="note">⋯の中: 受託品(催事) / レジ入出金 / 明細クリア / 過去の日付で登録</span>
+      </div>
+      <div class="body">
+        <table>
+          <thead><tr>
+            <th>商品番号</th><th>商品名</th><th>商品情報</th><th>税率</th>
+            <th class="r">定価</th><th class="r">買上金額</th><th class="r">割引率</th><th></th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="num">2F50-0170</td><td>K18 ダイヤペンダント</td><td>0.30ct</td><td>10%</td>
+                <td class="r num">180,000</td><td class="r num">150,000</td><td class="r num">16.7%</td>
+                <td><button class="btn sm">削除</button></td></tr>
+            <tr><td class="num">—</td><td>メガネレンズ 一式</td><td>遠近両用 COPR50F</td><td>10%</td>
+                <td class="r num">—</td><td class="r num">42,000</td><td class="r num">—</td>
+                <td><button class="btn sm">削除</button></td></tr>
+            <tr><td class="num">01282</td><td>ラインアート XL1483</td><td>フレーム</td><td>10%</td>
+                <td class="r num">38,000</td><td class="r num">38,000</td><td class="r num">—</td>
+                <td><button class="btn sm">削除</button></td></tr>
+            <tr><td class="num">—</td><td>電池交換</td><td></td><td>10%</td>
+                <td class="r num">—</td><td class="r num">1,100</td><td class="r num">—</td>
+                <td><button class="btn sm">削除</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ③④ 下段(1行で2列) -->
+    <div class="foot">
+      <div class="card pay">
+        <div class="sec"><span class="no">3</span><span class="ttl">お支払い</span>
+          <span class="sp"></span>
+          <span class="note">ポイント付与: 通常 / 加算予定 2,311pt　<button class="btn sm">変更 ▾</button></span>
+        </div>
+        <div class="row">
+          <span class="lb">買上合計</span><b class="num">¥231,100</b>
+          <span class="lb" style="margin-left:14px">使用ポイント</span><b class="num">0 pt</b>
+          <span class="lb" style="margin-left:14px">(内消費税)</span><b class="num">¥21,009</b>
+        </div>
+        <div style="display:flex;gap:14px;align-items:flex-start">
+          <div style="flex:1">
+            <div class="grand"><span class="lb">請求金額</span><span class="v num">¥231,100</span></div>
+          </div>
+          <div style="flex:1">
+            <div class="row"><select style="width:8em"><option>現金</option></select>
+              <input class="num" value="231,100" style="width:7.5em;text-align:right">
+              <button class="btn sm">＋ 分割</button></div>
+            <div class="row"><span class="lb">お預かり</span>
+              <input class="num" value="250,000" style="width:7.5em;text-align:right;font-weight:700">
+              <button class="btn sm">C</button>
+              <span class="lb" style="margin-left:8px">釣銭</span><b class="num">¥18,900</b></div>
+          </div>
+        </div>
+        <button class="exec">会計を確定</button>
+      </div>
+
+      <div class="card rcpt">
+        <div class="sec"><span class="no">4</span><span class="ttl">レシート</span></div>
+        <div class="row"><label><input type="checkbox" checked> レシートにポイントを印字</label></div>
+        <div class="row"><input placeholder="この会計だけの一言" style="width:100%"></div>
+        <div class="row" style="background:var(--accent-soft);border:1px solid var(--accent);
+             border-radius:8px;padding:5px 8px;font-size:.85em">
+          🧾 直前: 土屋 様 / ¥45,000 <span class="sp"></span><button class="btn sm">領収書</button></div>
+        <div class="note" style="margin-top:6px">共通メッセージの編集は ⚙ 設定から</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <h3>この案で変えたところ</h3>
+  <ul>
+    <li><b>テンキーを無くしました</b>(約340px)。「クリア」は<b>お預かりの隣(C)</b>へ、「会計を確定」は<b>③の中に大きく</b>移しました。</li>
+    <li><b>①②は横長、③④は下段に2列</b>にしました(店のご指定)。</li>
+    <li><b>伸び縮みするのは②の明細だけ</b>です。明細が増えても<b>枠の中だけがスクロール</b>し、<b>請求金額と会計確定は常に同じ場所</b>にあります。</li>
+    <li><b>お客様は1行の帯</b>に。名前・年齢・電話・カードの有無・ポイント・売掛残を横に並べました。</li>
+    <li><b>左のメニューをアイコンだけ</b>に畳みました(218px → 64px)。明細に使える幅が<b>約1030px → 約1190px</b>に増えます。</li>
+    <li>普段使わないものは <b>⋯ その他</b> と <b>変更▾</b> に畳みました(受託品・レジ入出金・明細クリア・過去の日付・ポイント倍率)。
+      <b>★ただし、今それが効いている時は畳まずに帯で出します</b>(倍率が通常以外・過去日・一言が入っている等)。隠した結果おかしな会計が通るのが一番危ないためです。</li>
+  </ul>
+
+  <h3>ここは決めていただきたいところ</h3>
+  <ul>
+    <li><b>左メニューを細くしてよいか</b>(嫌なら今までどおりに戻せます)。</li>
+    <li><b>明細の「定価」「割引率」</b>は普段見ていますか。見ていなければ狭くできます。</li>
+    <li><b>明細は普段何行くらい</b>ですか。この案では<b>12〜13行</b>まで見えます(F11の全画面なら15行)。</li>
+    <li><b>④に置くもの</b>はこれでよいか(ポイント印字・一言・直前の領収書)。</li>
+  </ul>
+
+  <p class="note">※これは<b>見た目だけ</b>で、ボタンは押せません。本番のトキワには一切触っていません。
+  ここで決まってから中身を繋ぎ、そのあと動作確認で実際に会計が通ることを確かめます。</p>
+</div>
+
+</body>
+</html>
