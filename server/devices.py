@@ -442,11 +442,16 @@ def print_void_receipt(doc, drawer=None):
     open_drawer_now = doc.get("cash_refund", False) if drawer is None else bool(drawer)
     if open_drawer_now:
         data += DRAWER_KICK
+    warn = printer_trouble()
     try:
-        via = _send_to_printer(data)
-        return {"ok": True, "via": via, "drawer": open_drawer_now}
+        via, job = _send_to_printer(data)
     except Exception as e:  # noqa: BLE001
         return {"error": f"返品レシートの印字に失敗: {e}"}
+    warn = warn or _wait_job_done(job)
+    res = {"ok": True, "via": via, "drawer": open_drawer_now}
+    if warn:
+        res["warn"] = warn
+    return res
 
 
 def _log(op, result):
@@ -461,6 +466,10 @@ def _log(op, result):
         if result.get("error"):
             applog.write("機器", f"{op} 失敗: {result['error']} "
                                  f"(プリンタ名={PRINTER_NAME} / COM={PRINTER_COM})")
+        elif result.get("warn"):
+            # ★送信そのものは通ったが、紙が出ていない可能性がある。成功として流さない
+            applog.write("機器", f"{op} ★出ていない可能性: {result['warn']} "
+                                 f"({result.get('via') or '-'}経由 / プリンタ名={PRINTER_NAME})")
         elif result.get("skipped"):
             applog.write("機器", f"{op} 送信せず: {result.get('message') or '機器OFFモード'}")
         else:
@@ -474,27 +483,119 @@ def print_receipt_doc(doc):
     """領収書を印字する(レシートプリンタ)。"""
     if not ENABLED:
         return _log("領収書", _skip())
+    warn = printer_trouble()     # ★領収書は結果を待つ画面なので①だけ(②はしない)
     try:
-        via = _send_to_printer(build_receipt_doc_bytes(doc))
-        return _log("領収書", {"ok": True, "via": via})
+        via, job = _send_to_printer(build_receipt_doc_bytes(doc))
     except Exception as e:  # noqa: BLE001
         return _log("領収書", {"error": f"領収書の印字に失敗: {e}"})
+    res = {"ok": True, "via": via}
+    if warn:
+        res["warn"] = warn
+    return _log("領収書", res)
+
+
+# ── レシートが出ていない時に気づくための仕組み(2026-09-20 店の指定)────────────
+# 店の報告:「レシートが出ていないことがあるが、たいていプリンターの電源を入れ直すと直る」。
+# 理由: トキワは**Windowsの印刷キューに渡しているだけ**で、渡せた時点で「成功」と返して
+#   いた。プリンターの電源が入っていない・止まっているとキューに溜まったままになり、
+#   トキワは成功、店員は「出ない」、電源を入れ直すと溜まった分が一気に出る——となる。
+#   2026-08-29 にも同じことがあった(宝飾ナビの古い印刷ジョブが詰まっていた)。
+# 対策は2段階:
+#   ① 送る前に、プリンターの様子(オフライン/紙切れ/エラー/**溜まっている数**)を見る
+#      → 数ミリ秒。全部の印字で行う
+#   ② 送った後に、自分の印刷物がキューから消えるかを見る(消えれば受け取られた)
+#      → 正常なら0.2〜1秒で抜ける。詰まっていれば上限まで待って知らせる
+#      → ★レジの画面は**レシートを待っていない**ので、店員の待ち時間は変わらない。
+#        領収書は結果を待つ画面なので ② は行わない(wait=False)。
+# ★USBのプリンターは電源が切れていても Windows が「正常」と答えることがあるため、
+#   **溜まっている数**の方が当てになる。両方見る。
+PRINT_WAIT_SEC = 2.0     # ②で待つ上限(秒)。実機で足りなければここを増やす
+
+# Windowsのプリンター状態(GetPrinter level 2 の Status)。値はWin32の定数そのまま
+_PRINTER_BITS = [
+    (0x00000080, "プリンターがオフラインです(電源が入っていないか、ケーブルが抜けています)"),
+    (0x00001000, "プリンターが使えない状態です"),
+    (0x00000002, "プリンターがエラー状態です"),
+    (0x00000010, "紙が切れています"),
+    (0x00000008, "紙が詰まっています"),
+    (0x00400000, "カバーが開いています"),
+    (0x00000001, "印刷が一時停止になっています"),
+    (0x00100000, "プリンター側で操作待ちになっています"),
+]
+
+
+def printer_trouble():
+    """①送る前の見立て。困りごとがあれば文言、無ければ None。
+    ★見られない環境(pywin32なし)では黙って None(余計な警告を出さない)。"""
+    try:
+        import win32print
+    except ImportError:
+        return None
+    try:
+        h = win32print.OpenPrinter(PRINTER_NAME)
+        try:
+            info = win32print.GetPrinter(h, 2)
+        finally:
+            win32print.ClosePrinter(h)
+    except Exception:  # noqa: BLE001 状態が見られなくても印字はする
+        return None
+    status = int(info.get("Status") or 0)
+    for bit, msg in _PRINTER_BITS:
+        if status & bit:
+            return msg
+    jobs = int(info.get("cJobs") or 0)
+    if jobs:
+        return ("印刷待ちが %d件 たまっています(前の分が出ていない可能性があります)" % jobs)
+    return None
+
+
+def _wait_job_done(job_id, timeout=None):
+    """②送った後、自分の印刷物がキューから消えるまで見る。
+    戻り: None=出た / 文言=まだ残っている(詰まっている)。"""
+    if not job_id:
+        return None
+    try:
+        import win32print
+    except ImportError:
+        return None
+    limit = time.time() + (PRINT_WAIT_SEC if timeout is None else timeout)
+    try:
+        h = win32print.OpenPrinter(PRINTER_NAME)
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        while time.time() < limit:
+            try:
+                ids = [j.get("JobId") for j in win32print.EnumJobs(h, 0, 99, 1)]
+            except Exception:  # noqa: BLE001
+                return None
+            if job_id not in ids:
+                return None                     # キューから消えた = プリンターが受け取った
+            time.sleep(0.15)
+    finally:
+        try:
+            win32print.ClosePrinter(h)
+        except Exception:  # noqa: BLE001
+            pass
+    return "プリンターに送りましたが、%.0f秒たっても印刷が始まりません(詰まっています)" % PRINT_WAIT_SEC
 
 
 def _send_to_printer(data: bytes):
-    """スプーラーRAW(優先) → 直接COM の順で送る。"""
+    """スプーラーRAW(優先) → 直接COM の順で送る。戻り (経路, 印刷物の番号)。
+    ★印刷物の番号は②の確認に使う(直接COMの時は番号が無いので None)。"""
     try:
         import win32print
         h = win32print.OpenPrinter(PRINTER_NAME)
+        job = None
         try:
-            win32print.StartDocPrinter(h, 1, ("トキワ レシート", None, "RAW"))
+            job = win32print.StartDocPrinter(h, 1, ("トキワ レシート", None, "RAW"))
             win32print.StartPagePrinter(h)
             win32print.WritePrinter(h, data)
             win32print.EndPagePrinter(h)
             win32print.EndDocPrinter(h)
         finally:
             win32print.ClosePrinter(h)
-        return "spooler"
+        return "spooler", job
     except ImportError:
         pass  # pywin32なし → 直接COMへ(双方向サポートOFFが必要)
     import serial
@@ -504,32 +605,43 @@ def _send_to_printer(data: bytes):
         ser.flush()
     finally:
         ser.close()
-    return "com"
+    return "com", None
 
 
 def print_receipt(receipt, drawer=True):
-    """レシートを印字し、必要ならドロワーを開ける。"""
+    """レシートを印字し、必要ならドロワーを開ける。
+    ★①送る前の様子見と②送った後の詰まり確認を行う(2026-09-20)。レジの画面は
+      レシートを待っていないので、②で数秒かかっても店員の待ち時間は変わらない。"""
     if not ENABLED:
         return _log("レシート", _skip())
     data = build_receipt_bytes(receipt)
     if drawer:
         data += DRAWER_KICK
+    warn = printer_trouble()                       # ① 送る前
     try:
-        via = _send_to_printer(data)
-        return _log("レシート", {"ok": True, "via": via, "drawer": bool(drawer)})
+        via, job = _send_to_printer(data)
     except Exception as e:  # noqa: BLE001 機器エラーで会計を壊さない(呼び出し側でトースト表示)
         return _log("レシート", {"error": f"レシート印字に失敗: {e}"})
+    warn = warn or _wait_job_done(job)             # ② 送った後
+    res = {"ok": True, "via": via, "drawer": bool(drawer)}
+    if warn:
+        res["warn"] = warn + ("。ドロワーも開いていない可能性があります" if drawer else "")
+    return _log("レシート", res)
 
 
 def open_drawer():
     """ドロワーだけ開ける(売掛入金の現金授受など)。"""
     if not ENABLED:
         return _log("ドロワー", _skip())
+    warn = printer_trouble()
     try:
-        via = _send_to_printer(bytes(DRAWER_KICK))
-        return _log("ドロワー", {"ok": True, "via": via})
+        via, job = _send_to_printer(bytes(DRAWER_KICK))
     except Exception as e:  # noqa: BLE001
         return _log("ドロワー", {"error": f"ドロワーを開けられませんでした: {e}"})
+    res = {"ok": True, "via": via}
+    if warn:
+        res["warn"] = warn + "。ドロワーが開いていない可能性があります"
+    return _log("ドロワー", res)
 
 
 # ── リライトカード(TCP300II) ──────────────────────────
