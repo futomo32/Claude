@@ -4374,6 +4374,75 @@ def add_receivable_payment(con, p):
             "amount": amount, "method": method}
 
 
+def add_receivable_payment_bulk(con, p):
+    """顧客の売掛に、**金額だけ**でまとめて入金する(2026-09-20 店の指定・案1)。
+
+    作った理由:
+      店は「売掛をつけたら、あとは**合計金額で管理**していく」運用。今までは
+      **売掛1件(=1商品)ごとに入金**する作りだったので、お客様が「3万円」と持って
+      こられた時に、**店員がどの商品に充てるかを決めないといけなかった**。
+      これは余計な判断で、間違いの元でもある。
+
+    決め事(すべて店の指定):
+      ・充当は**買上日の古いものから**順に(ア)。端数は次の売掛へ繰り越す
+      ・**入金履歴は1行にまとめる**(ア)。充当の内訳は備考に書く
+        (お客様の通帳のように「いつ・いくら入れたか」が1行で見えるのが自然)
+      ・合計残高を**超える時は画面側でポップアップ**を出してから呼ぶ(イ)。
+        ★超えた分は**預り**として備考に残す。残高はマイナスにしない
+    ★記録は今までどおり**商品ごとに残る**ので、請求書・入金履歴・滞留月数・
+      「何を買った売掛か」は全部そのまま使える。
+    ★1件ずつの入金(add_receivable_payment)も残してある。店が画面で選ぶ。
+    """
+    cid = str(p.get("customer_id") or "").strip()
+    try:
+        amount = int(str(p.get("amount")).replace(",", "").replace("¥", ""))
+    except (TypeError, ValueError):
+        raise ValueError("入金額を正しく入力してください")
+    if not cid or amount <= 0:
+        raise ValueError("入金額を正しく入力してください")
+    paid_at = p.get("paid_at") or datetime.date.today().isoformat()
+    method = (p.get("method") or "現金").strip() or "現金"
+
+    con.row_factory = sqlite3.Row
+    rows = list(con.execute("""SELECT id, product_name, bought_at, balance FROM receivables
+                               WHERE customer_id=? AND COALESCE(balance,0) > 0
+                               ORDER BY COALESCE(bought_at,'9999-99-99') ASC, id ASC""", (cid,)))
+    if not rows:
+        raise ValueError("このお客様に残っている売掛がありません")
+    total = sum(int(r["balance"] or 0) for r in rows)
+
+    cur = con.cursor()
+    rest, allocs = amount, []
+    for r in rows:
+        if rest <= 0:
+            break
+        bal = int(r["balance"] or 0)
+        use = min(bal, rest)
+        rest -= use
+        new_bal = bal - use
+        cur.execute("UPDATE receivables SET balance=?, last_paid_at=? WHERE id=?",
+                    (new_bal, paid_at, r["id"]))
+        allocs.append({"id": r["id"], "product_name": r["product_name"], "bought_at": r["bought_at"],
+                       "before": bal, "applied": use, "after": new_bal})
+    over = rest      # 合計残高を超えたぶん(預り)
+
+    # ★入金履歴は1行。内訳は備考に書く(店の指定 ア)
+    parts = ["%s %s円" % ((a["product_name"] or "(品名なし)"), format(a["applied"], ","))
+             for a in allocs]
+    note = "まとめて入金: " + " / ".join(parts) if parts else "まとめて入金"
+    if over:
+        note += " / ★預り %s円(残高を超えた分。次回にお使いください)" % format(over, ",")
+    if p.get("note"):
+        note += " / " + str(p.get("note")).strip()
+    cur.execute("""INSERT INTO receivable_entries(customer_id,entry_type,entry_date,product_name,amount,paid,note,method)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (cid, "入金", paid_at, None, None, amount, note[:500], method))
+    con.commit()
+    return {"customer_id": cid, "amount": amount, "paid_at": paid_at, "method": method,
+            "before_total": total, "after_total": max(0, total - amount),
+            "over": over, "allocations": allocs}
+
+
 def receivable_summary(con):
     """売掛残高のある顧客ごとの合計(売掛管理の一覧用)。誰がいくら・件数・最古買上日・
     最終入金日を返し、総合計と対象顧客数も付ける。残高の多い順。"""

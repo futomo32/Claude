@@ -1281,6 +1281,18 @@ class Handler(BaseHTTPRequestHandler):
                 result = db_query.add_receivable_payment(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/receivable_payment_bulk":
+                # 金額だけでまとめて入金(古い売掛から順に充当)。1件ずつの入金も残してある
+                con = connect()
+                try:
+                    result = db_query.add_receivable_payment_bulk(con, payload)
+                finally:
+                    con.close()
+                applog.write("売掛", "まとめて入金 %s円(顧客 %s / 充当 %s件 / 預り %s円 / 操作 %s)"
+                             % (format(result["amount"], ","), result["customer_id"],
+                                len(result["allocations"]), format(result["over"], ","),
+                                user.get("name") or "-"))
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             self._send(404, json.dumps({"error": "not found"}).encode())
         except ValueError as e:
             self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
