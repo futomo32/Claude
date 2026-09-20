@@ -11,6 +11,7 @@
     ・毎回スクロールが必要なので、1画面で完結させたい
     ・テンキーは使っていないので無くす
     ・①②は横長(縦に2行)、③④は1行で2列
+      → 5回目の指定で会計担当も手順に入れ、①会計担当 ②お客様 ③商品 ④レシート ⑤お支払い に
   店の指定(3回目):
     ・③④が「イメージ的に逆」→ **左右を入れ替え、番号も振り直した(案B)**
       ①お客様 → ②商品 → ③レシート → ④お支払い(最後に確定)
@@ -85,7 +86,9 @@
 
   /* ── 会計担当(元どおり、担当者を押して選ぶ形) ── */
   .op { display: flex; align-items: center; gap: 7px; flex: none; flex-wrap: wrap; }
-  .op .lb { font-size: .92em; color: var(--ink-2); font-weight: 600; }
+  .op .no { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff;
+    display: grid; place-items: center; font-weight: 700; font-size: .92em; flex: none; }
+  .op .ttl { font-weight: 700; font-size: 1.06em; margin-right: 4px; }
   .op .req { background: var(--danger); color: #fff; border-radius: 4px;
     font-size: .68em; padding: 1px 5px; margin-left: 4px; vertical-align: 2px; }
   .op .ob { padding: .42em 1.05em; border: 1px solid var(--line); border-radius: 999px;
@@ -104,7 +107,7 @@
   .who .cut { overflow: hidden; text-overflow: ellipsis; }
   .step1 { display: flex; align-items: center; gap: 7px; padding: 5px 8px;
     border: 2px solid var(--accent); border-radius: 9px; background: var(--accent-soft); }
-  .stepno { font-weight: 700; font-size: 1.3em; }
+  .stepno { font-weight: 700; font-size: .92em; color: var(--accent); }
 
   /* ── ② 商品(明細は5行ぶん。増えたらこの枠の中だけスクロール) ── */
   /* ★②は余った高さを吸う。ほかが増えた時は**②が先に譲る**(7行 → 最小3行)。
@@ -184,7 +187,7 @@
     <!-- 会計担当。★6人を1行に収め、残りは「▼ その他」に入れる(2026-09-20 店の指定)。
          2行になると下がその分押されるので、常に1行で収まる形にしておく。 -->
     <div class="card op">
-      <span class="lb">会計担当<span class="req">必須</span></span>
+      <span class="no">1</span><span class="ttl">会計担当<span class="req">必須</span></span>
       <span class="ob on">三輪 祐加</span><span class="ob">田中 一槻</span>
       <span class="ob">梁瀬 智宏</span><span class="ob">青木 康子</span>
       <span class="ob">西山 店長</span><span class="ob">加藤 由美</span>
@@ -193,8 +196,9 @@
 
     <!-- ① お客様 -->
     <div class="card" style="display:flex;align-items:center;gap:9px">
-      <div class="sec" style="margin:0"><span class="no">1</span><span class="ttl">お客様</span></div>
-      <div class="step1"><span class="stepno">①</span>
+      <div class="sec" style="margin:0"><span class="no">2</span><span class="ttl">お客様</span></div>
+      <!-- ★中に「①」を入れると手順の番号と二重になるので外し、「まず」で強調する -->
+      <div class="step1"><span class="stepno">まず</span>
         <button class="btn p">💳 カードを読む</button><button class="btn sm">⏏ 排出</button></div>
       <div class="who">
         <b>ポイント 花子 様</b>
@@ -209,7 +213,7 @@
 
     <!-- ② 商品 -->
     <div class="card items">
-      <div class="sec"><span class="no">2</span><span class="ttl">商品</span>
+      <div class="sec"><span class="no">3</span><span class="ttl">商品</span>
         <button class="btn">＋ 商品番号で追加</button>
         <button class="btn">＋ 番号なしで追加</button>
         <button class="btn">＋ 受託品(催事)</button>
@@ -255,7 +259,7 @@
            で、**最後の操作である「会計を確定」が最後の番号**になる -->
     <div class="foot">
       <div class="card rcpt">
-        <div class="sec"><span class="no">3</span><span class="ttl">レシート</span></div>
+        <div class="sec"><span class="no">4</span><span class="ttl">レシート</span></div>
         <div class="row"><label><input type="checkbox" checked> レシートにポイントを印字</label></div>
         <div class="row"><input placeholder="この会計だけの一言" style="width:100%"></div>
         <div class="row" style="background:var(--accent-soft);border:1px solid var(--accent);
@@ -265,7 +269,7 @@
       </div>
 
       <div class="card pay">
-        <div class="sec"><span class="no">4</span><span class="ttl">お支払い</span></div>
+        <div class="sec"><span class="no">5</span><span class="ttl">お支払い</span></div>
         <div class="sum">
           <span><span class="lb">買上合計</span> <b class="num">¥231,100</b></span>
           <span><span class="lb">使用ポイント</span> <b class="num">0 pt</b></span>
@@ -318,6 +322,16 @@
     <li>★<b>畳んでいたものを全部戻しました</b>:
       会計担当(押して選ぶ形)・過去の日付で登録する・受託品(催事)・レジ入出金・明細クリア・
       ポイント付与の倍率・加算予定ポイント・全レシート共通のメッセージを編集。</li>
+  </ul>
+
+  <h3>5回目のご指定で直したところ</h3>
+  <ul>
+    <li><b>会計担当も手順に入れて、全部で5ステップ</b>にしました:
+      <b>①会計担当 → ②お客様 → ③商品 → ④レシート → ⑤お支払い(会計を確定)</b>。
+      レジで上から下へ進む順番と、番号の順番が一致します。</li>
+    <li>お客様の中にあった「①」は<b>手順の番号と二重になる</b>ので外し、
+      <b>「まず カードを読む」</b>という言い方に変えました
+      (カードで呼び出せば取り違えが起きないので、先に試してほしいという意図は残しています)。</li>
   </ul>
 
   <h3>4回目のご指定で直したところ</h3>
