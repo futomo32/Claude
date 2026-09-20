@@ -107,10 +107,11 @@
   .stepno { font-weight: 700; font-size: 1.3em; }
 
   /* ── ② 商品(明細は5行ぶん。増えたらこの枠の中だけスクロール) ── */
-  /* ★②は余った高さを吸う。5行ぶん(190px)は必ず確保し、それ以上入るなら見せる
-     (店の指定「通常5行あれば足りる。それ以上はスクロールで問題ない」)。 */
+  /* ★②は余った高さを吸う。ほかが増えた時は**②が先に譲る**(7行 → 最小3行)。
+     明細は枠の中だけスクロールすれば全部見えるので、減っても困らない。
+     (店の指定「通常5行あれば足りる。それ以上はスクロールで問題ない」) */
   .items { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  .items .body { flex: 1; min-height: 190px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+  .items .body { flex: 1; min-height: 120px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
   table { border-collapse: collapse; width: 100%; font-size: .97em; }
   thead th { position: sticky; top: 0; background: var(--surface-2); text-align: left;
     padding: 7px 9px; border-bottom: 1px solid var(--line); white-space: nowrap; font-size: .92em; }
@@ -121,6 +122,9 @@
   /* ── ③④ 下段 ── */
   .foot { display: flex; gap: 8px; flex: none; }
   .pay { flex: 68; min-width: 0; display: flex; flex-direction: column; }
+  /* ★支払方法が増えすぎた時は、この枠の中だけスクロールする。
+     縮む順番: ②の明細(7行→3行)→ ④の中だけスクロール → 画面全体は絶対にスクロールしない */
+  .pay .paybox { max-height: 104px; overflow: auto; }  /* 支払方法2本ぶん。3本目からこの枠だけスクロール */
   .rcpt { flex: 32; min-width: 0; }
   .row { display: flex; align-items: center; gap: 9px; margin: 5px 0; }
   .row .lb { color: var(--ink-2); font-size: .94em; }
@@ -177,13 +181,14 @@
     </div>
 
     <!-- 会計担当(★元どおり、押して選ぶ形に戻した) -->
+    <!-- 会計担当。★6人を1行に収め、残りは「▼ その他」に入れる(2026-09-20 店の指定)。
+         2行になると下がその分押されるので、常に1行で収まる形にしておく。 -->
     <div class="card op">
       <span class="lb">会計担当<span class="req">必須</span></span>
       <span class="ob on">三輪 祐加</span><span class="ob">田中 一槻</span>
       <span class="ob">梁瀬 智宏</span><span class="ob">青木 康子</span>
-      <span class="ob" style="border-style:dashed;color:var(--muted)">＋担当者</span>
-      <span class="sp" style="flex:1"></span>
-      <label class="note"><input type="checkbox"> 過去の日付で登録する(店外イベントの後日精算など)</label>
+      <span class="ob">西山 店長</span><span class="ob">加藤 由美</span>
+      <span class="ob" style="border-style:dashed;color:var(--muted)">▼ その他 / ＋担当者</span>
     </div>
 
     <!-- ① お客様 -->
@@ -210,6 +215,10 @@
         <button class="btn">＋ 受託品(催事)</button>
         <button class="btn sm">💴 レジ入出金</button>
         <button class="btn sm">✏ 明細クリア</button>
+        <span class="sp"></span>
+        <!-- ★「過去の日付で登録する」はチェックではなく**売上日そのもの**を出す。
+             隠さずに常に見えるので、過去日のまま打ってしまう事故を防げる。 -->
+        <button class="btn sm">📅 売上日: 今日 (09/20)</button>
       </div>
       <div class="body">
         <table>
@@ -262,22 +271,35 @@
           <span><span class="lb">使用ポイント</span> <b class="num">0 pt</b></span>
           <span><span class="lb">(内消費税)</span> <b class="num">¥21,009</b></span>
         </div>
-        <div style="display:flex;gap:18px;align-items:flex-start;margin-top:6px">
-          <div style="flex:1;min-width:15em">
+        <div style="display:flex;gap:16px;align-items:flex-start;margin-top:6px">
+          <div style="flex:none;width:14em">
             <div class="grand"><span class="lb">請求金額</span><span class="v num">¥231,100</span></div>
             <div class="row"><span class="lb">ポイント付与</span>
-              <select style="width:7em"><option>通常</option></select>
-              <span class="lb">加算予定</span><b class="num" style="white-space:nowrap">2,311 pt</b></div>
+              <select style="width:6.5em"><option>通常</option></select></div>
+            <div class="row"><span class="lb">加算予定</span>
+              <b class="num" style="white-space:nowrap">2,311 pt</b></div>
           </div>
-          <div style="flex:1;min-width:17em">
-            <div class="row"><select style="width:8em"><option>現金</option></select>
-              <input class="num big" value="231,100" style="width:8.5em">
-              <button class="btn sm">＋ 分割</button></div>
-            <div class="row"><span class="lb">お預かり</span>
-              <input class="num big" value="250,000" style="width:8.5em">
-              <button class="btn sm">C</button></div>
-            <div class="row"><span class="lb">釣銭</span><b class="num" style="font-size:1.35em">¥18,900</b></div>
+          <div style="flex:1;min-width:0">
+            <!-- ★支払方法だけがこの枠の中でスクロールする(2本が普通・増えても画面は伸びない) -->
+            <div class="paybox">
+              <div class="row"><select style="width:7.5em"><option>現金</option></select>
+                <input class="num big" value="150,000" style="width:7.5em">
+                <button class="btn sm">✕</button></div>
+              <div class="row"><select style="width:7.5em"><option>クレジット</option></select>
+                <input class="num big" value="81,100" style="width:7.5em">
+                <button class="btn sm">✕</button></div>
+            </div>
+            <div class="row"><button class="btn sm">＋ 支払方法を追加</button>
+              <span class="sp"></span>
+              <span class="lb">内訳合計</span><b class="num">¥231,100</b></div>
           </div>
+        </div>
+        <div class="row" style="border-top:1px solid var(--line);padding-top:6px;margin-top:2px">
+          <span class="lb">お預かり(現金)</span>
+          <input class="num big" value="150,000" style="width:8em">
+          <button class="btn sm">C</button>
+          <span class="sp"></span>
+          <span class="lb">釣銭</span><b class="num" style="font-size:1.35em">¥0</b>
         </div>
         <button class="exec">会計を確定</button>
       </div>
@@ -296,6 +318,19 @@
     <li>★<b>畳んでいたものを全部戻しました</b>:
       会計担当(押して選ぶ形)・過去の日付で登録する・受託品(催事)・レジ入出金・明細クリア・
       ポイント付与の倍率・加算予定ポイント・全レシート共通のメッセージを編集。</li>
+  </ul>
+
+  <h3>4回目のご指定で直したところ</h3>
+  <ul>
+    <li><b>会計担当を6人ぶん1行に収め、残りは「▼ その他 / ＋担当者」</b>にしました。
+      2行になると下が押されてしまうので、<b>常に1行で収まる形</b>にしてあります。</li>
+    <li><b>分割払いは2本が95%</b>とのことなので、<b>2本の状態</b>で描いてあります。
+      <b>3本目からは支払方法の枠の中だけスクロール</b>します。</li>
+    <li>「過去の日付で登録する」を、チェックではなく<b>「📅 売上日: 今日(09/20)」</b>という
+      <b>いつも見えるボタン</b>にしました。★畳んで隠すより、<b>今の売上日が常に見えている</b>ほうが、
+      過去日のまま打ってしまう事故を防げるためです。</li>
+    <li><b>縮む順番を決めました</b>: ①②の明細が 7行 → <b>最小3行</b>まで譲る →
+      ②それでも足りなければ<b>支払方法の枠だけスクロール</b> → ③<b>画面全体は絶対にスクロールしない</b>。</li>
   </ul>
 
   <h3>3回目のご指定で直したところ</h3>
