@@ -11,7 +11,11 @@
     ・毎回スクロールが必要なので、1画面で完結させたい
     ・テンキーは使っていないので無くす
     ・①②は横長(縦に2行)、③④は1行で2列
-  店の指定(2回目・この版で直したところ):
+  店の指定(3回目):
+    ・③④が「イメージ的に逆」→ **左右を入れ替え、番号も振り直した(案B)**
+      ①お客様 → ②商品 → ③レシート → ④お支払い(最後に確定)
+
+  店の指定(2回目):
     ・左のメニューは**今までどおり**(アイコンだけに畳まない)
     ・明細の「定価」「割引率」は**見ているので残す**
     ・②の明細は**通常5行あれば足りる**(それ以上はスクロールでよい)
@@ -234,10 +238,25 @@
       </div>
     </div>
 
-    <!-- ③④ 下段(1行で2列) -->
+    <!-- ③④ 下段(1行で2列)。★店の指摘で左右を入れ替えた(案B)。
+         ・今までのレジは「お会計は右」だったので、右のほうが覚え直しが要らない
+         ・明細の買上金額は表の**右側**にあるので、そこから請求金額へ目線が戻らずに済む
+         ・会計を確定ボタンが**右下**=マウスの定位置に近い
+         ・番号も振り直した。①お客様 → ②商品 → ③レシート → ④お支払い(最後に確定)
+           で、**最後の操作である「会計を確定」が最後の番号**になる -->
     <div class="foot">
+      <div class="card rcpt">
+        <div class="sec"><span class="no">3</span><span class="ttl">レシート</span></div>
+        <div class="row"><label><input type="checkbox" checked> レシートにポイントを印字</label></div>
+        <div class="row"><input placeholder="この会計だけの一言" style="width:100%"></div>
+        <div class="row" style="background:var(--accent-soft);border:1px solid var(--accent);
+             border-radius:8px;padding:6px 9px;font-size:.9em">
+          🧾 直前: 土屋 様 / ¥45,000 <span class="sp"></span><button class="btn sm">領収書</button></div>
+        <button class="btn" style="width:100%;margin-top:4px">全レシート共通のメッセージを編集</button>
+      </div>
+
       <div class="card pay">
-        <div class="sec"><span class="no">3</span><span class="ttl">お支払い</span></div>
+        <div class="sec"><span class="no">4</span><span class="ttl">お支払い</span></div>
         <div class="sum">
           <span><span class="lb">買上合計</span> <b class="num">¥231,100</b></span>
           <span><span class="lb">使用ポイント</span> <b class="num">0 pt</b></span>
@@ -262,16 +281,6 @@
         </div>
         <button class="exec">会計を確定</button>
       </div>
-
-      <div class="card rcpt">
-        <div class="sec"><span class="no">4</span><span class="ttl">レシート</span></div>
-        <div class="row"><label><input type="checkbox" checked> レシートにポイントを印字</label></div>
-        <div class="row"><input placeholder="この会計だけの一言" style="width:100%"></div>
-        <div class="row" style="background:var(--accent-soft);border:1px solid var(--accent);
-             border-radius:8px;padding:6px 9px;font-size:.9em">
-          🧾 直前: 土屋 様 / ¥45,000 <span class="sp"></span><button class="btn sm">領収書</button></div>
-        <button class="btn" style="width:100%;margin-top:4px">全レシート共通のメッセージを編集</button>
-      </div>
     </div>
   </div>
 </div>
@@ -287,6 +296,16 @@
     <li>★<b>畳んでいたものを全部戻しました</b>:
       会計担当(押して選ぶ形)・過去の日付で登録する・受託品(催事)・レジ入出金・明細クリア・
       ポイント付与の倍率・加算予定ポイント・全レシート共通のメッセージを編集。</li>
+  </ul>
+
+  <h3>3回目のご指定で直したところ</h3>
+  <ul>
+    <li>★<b>下段の左右を入れ替えました</b>。左=レシート、右=お支払い。
+      理由は3つ——<b>今までのレジもお会計は右だった</b>(覚え直しが要らない)、
+      <b>明細の買上金額は表の右側</b>なので請求金額へ目線が戻らずに済む、
+      <b>会計を確定がマウスの定位置(右下)に近い</b>。</li>
+    <li><b>番号も振り直しました</b>。①お客様 → ②商品 → ③レシート → <b>④お支払い</b>。
+      <b>最後の操作である「会計を確定」が最後の番号</b>になり、筋が通ります。</li>
   </ul>
 
   <h3>変わっていないところ(1回目のご指定どおり)</h3>
