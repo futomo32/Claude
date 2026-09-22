@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#d4f5e9">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>家族の貸し借りノート</title>
+<style>
+  :root {
+    --bg: #f6fbf8;
+    --card: #ffffff;
+    --mint: #4fc49b;
+    --mint-soft: #d4f5e9;
+    --pink: #ff8fab;
+    --pink-soft: #ffd6e0;
+    --sun: #ffb86b;
+    --sun-soft: #ffe8cc;
+    --sky: #8ab6ff;
+    --sky-soft: #dbe7ff;
+    --ink: #4a5a53;
+    --ink-light: #8ca29a;
+    --line: #e7f1ec;
+    --radius: 18px;
+    --shadow: 0 4px 14px rgba(79, 196, 155, .16);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { height: 100%; }
+  body {
+    font-family: "Hiragino Maru Gothic ProN", "BIZ UDGothic", "Yu Gothic", "Meiryo", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+    padding-bottom: calc(76px + env(safe-area-inset-bottom));
+    word-break: auto-phrase;
+    line-break: strict;
+  }
+  button, input, select, textarea { font-family: inherit; color: inherit; }
+
+  /* ---------- header ---------- */
+  header {
+    background: linear-gradient(135deg, var(--mint-soft), #e8f7ff);
+    padding: calc(10px + env(safe-area-inset-top)) 18px 10px;
+    border-radius: 0 0 var(--radius) var(--radius);
+    text-align: center;
+  }
+  header h1 { font-size: 1.15rem; font-weight: 800; letter-spacing: .05em; }
+  #connState { font-size: .7rem; color: var(--ink-light); margin-top: 2px; }
+  #connState.offline { color: #d96a6a; font-weight: bold; }
+
+  main { flex: 1; padding: 14px; }
+  .page { display: none; }
+  .page.active { display: block; animation: pop .22s ease; }
+  @keyframes pop { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  .card > h2 {
+    font-size: .82rem;
+    color: var(--ink-light);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .empty { color: var(--ink-light); font-size: .85rem; text-align: center; padding: 18px 6px; line-height: 1.7; }
+
+  /* ---------- 残高 ---------- */
+  .total-banner {
+    background: linear-gradient(135deg, #fff, var(--mint-soft));
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 14px;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  .total-banner .lbl { font-size: .76rem; color: var(--ink-light); }
+  .total-banner .val { font-size: 1.6rem; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 2px; }
+
+  .person-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px dashed var(--line);
+  }
+  .person-row:last-child { border-bottom: none; }
+  .avatar {
+    width: 36px; height: 36px; flex: 0 0 36px;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    font-weight: 800; font-size: .95rem; color: #fff;
+  }
+  .person-main { flex: 1; min-width: 0; }
+  .person-name { font-weight: bold; font-size: .98rem; }
+  .person-sub { font-size: .72rem; color: var(--ink-light); margin-top: 1px; }
+  .person-amt { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 1rem; text-align: right; white-space: nowrap; }
+  .plus { color: var(--mint); }
+  .minus { color: var(--pink); }
+  .zero { color: var(--ink-light); }
+
+  .pair-row {
+    width: 100%;
+    text-align: left;
+    background: #fbfdfc;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 11px 12px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+  }
+  .pair-row:last-child { margin-bottom: 0; }
+  .pair-row:active { transform: scale(.99); }
+  .pair-text { flex: 1; min-width: 0; font-size: .92rem; line-height: 1.45; }
+  .pair-text b { font-weight: 800; }
+  .pair-amt { font-variant-numeric: tabular-nums; font-weight: 800; white-space: nowrap; }
+  .chev { color: var(--ink-light); font-size: .8rem; }
+
+  /* ---------- フォーム ---------- */
+  .field { margin-bottom: 12px; }
+  .field > label { display: block; font-size: .78rem; color: var(--ink-light); margin-bottom: 5px; font-weight: bold; }
+  input[type="text"], input[type="number"], input[type="date"], select, textarea {
+    width: 100%;
+    border: 2px solid var(--line);
+    border-radius: 12px;
+    padding: 11px 12px;
+    font-size: 1rem;
+    background: #fff;
+    outline: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--mint); }
+  input[type="number"] { font-variant-numeric: tabular-nums; }
+  textarea { resize: vertical; min-height: 60px; }
+
+  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  .seg button {
+    border: 2px solid var(--line);
+    background: #fff;
+    border-radius: 14px;
+    padding: 12px 6px;
+    font-size: .95rem;
+    font-weight: bold;
+    cursor: pointer;
+    line-height: 1.3;
+  }
+  .seg button .big { display: block; font-size: 1.3rem; margin-bottom: 2px; }
+  .seg button[aria-pressed="true"][data-kind="loan"] { background: var(--sun-soft); border-color: var(--sun); }
+  .seg button[aria-pressed="true"][data-kind="repay"] { background: var(--mint-soft); border-color: var(--mint); }
+
+  .who-grid { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: end; }
+  .who-grid .arrow { padding-bottom: 12px; font-size: 1.1rem; color: var(--ink-light); }
+
+  .quick-amounts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+  .quick-amounts button {
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 999px;
+    padding: 6px 11px;
+    font-size: .8rem;
+    cursor: pointer;
+    color: var(--ink-light);
+  }
+  .quick-amounts button:active { background: var(--mint-soft); }
+
+  .btn {
+    width: 100%;
+    border: none;
+    border-radius: 14px;
+    padding: 14px;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: var(--shadow);
+    background: var(--mint-soft);
+  }
+  .btn:active { transform: scale(.98); }
+  .btn.primary { background: var(--mint); color: #fff; }
+  .btn.danger { background: #fff; color: #d96a6a; border: 2px solid #f6dcdc; box-shadow: none; }
+  .btn.ghost { background: #fff; border: 2px solid var(--line); box-shadow: none; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn-row { display: flex; gap: 8px; }
+  .btn-row .btn { width: auto; flex: 1; }
+
+  .preview {
+    background: var(--sun-soft);
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: .88rem;
+    line-height: 1.55;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  .preview b { font-weight: 800; }
+
+  /* ---------- 履歴 ---------- */
+  .filters { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; margin-bottom: 12px; }
+  .filters select { padding: 9px 8px; font-size: .82rem; border-radius: 11px; }
+
+  .entry-row {
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-bottom: 1px dashed var(--line);
+    padding: 11px 2px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    cursor: pointer;
+  }
+  .entry-row:last-child { border-bottom: none; }
+  .entry-icon {
+    width: 32px; height: 32px; flex: 0 0 32px;
+    border-radius: 10px;
+    display: grid; place-items: center;
+    font-size: 1rem;
+  }
+  .entry-icon.loan { background: var(--sun-soft); }
+  .entry-icon.repay { background: var(--mint-soft); }
+  .entry-main { flex: 1; min-width: 0; }
+  .entry-title { font-size: .9rem; line-height: 1.4; }
+  .entry-sub { font-size: .72rem; color: var(--ink-light); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .entry-amt { font-variant-numeric: tabular-nums; font-weight: bold; white-space: nowrap; font-size: .95rem; }
+
+  .month-head {
+    font-size: .76rem;
+    color: var(--ink-light);
+    font-weight: bold;
+    padding: 12px 2px 4px;
+    border-top: 1px solid var(--line);
+    margin-top: 6px;
+  }
+  .month-head:first-child { border-top: none; margin-top: 0; padding-top: 2px; }
+
+  /* ---------- 明細（貸し1件ごと） ---------- */
+  .loan-item { border: 1px solid var(--line); border-radius: 14px; padding: 11px 12px; margin-bottom: 9px; }
+  .loan-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .loan-date { font-size: .78rem; color: var(--ink-light); }
+  .loan-amt { font-variant-numeric: tabular-nums; font-weight: 800; }
+  .loan-note { font-size: .84rem; margin-top: 3px; }
+  .badge {
+    display: inline-block;
+    font-size: .7rem;
+    font-weight: bold;
+    padding: 2px 9px;
+    border-radius: 999px;
+    margin-top: 6px;
+  }
+  .badge.done { background: var(--mint-soft); color: #2f8b6c; }
+  .badge.open { background: var(--sun-soft); color: #b5702a; }
+  .bar { height: 6px; border-radius: 999px; background: var(--line); margin-top: 7px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--mint); border-radius: 999px; }
+  .pay-list { margin-top: 7px; font-size: .76rem; color: var(--ink-light); line-height: 1.7; }
+
+  /* ---------- メンバー ---------- */
+  .member-row { display: flex; align-items: center; gap: 9px; padding: 8px 0; border-bottom: 1px dashed var(--line); }
+  .member-row:last-child { border-bottom: none; }
+  .member-row .nm { flex: 1; font-weight: bold; font-size: .95rem; }
+  .icon-btn {
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 10px;
+    width: 34px; height: 34px;
+    font-size: .95rem;
+    cursor: pointer;
+  }
+  .add-member { display: flex; gap: 8px; margin-top: 10px; }
+  .add-member input { flex: 1; }
+  .add-member button { flex: 0 0 auto; padding: 0 16px; border: none; border-radius: 12px; background: var(--mint); color: #fff; font-weight: bold; cursor: pointer; }
+
+  .note-text { font-size: .78rem; color: var(--ink-light); line-height: 1.75; }
+  .url-box {
+    background: #f2f8f5; border-radius: 12px; padding: 10px 12px;
+    font-size: .85rem; word-break: break-all; font-family: ui-monospace, monospace; margin-top: 6px;
+  }
+
+  /* ---------- 下メニュー ---------- */
+  nav {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    max-width: 480px; margin: 0 auto;
+    background: rgba(255,255,255,.96);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid var(--line);
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    padding-bottom: env(safe-area-inset-bottom);
+    z-index: 20;
+  }
+  nav button {
+    border: none; background: none; padding: 9px 2px 8px;
+    font-size: .68rem; color: var(--ink-light); cursor: pointer; line-height: 1.35;
+  }
+  nav button .ic { display: block; font-size: 1.25rem; }
+  nav button.active { color: var(--mint); font-weight: bold; }
+
+  /* ---------- シート（下から出る画面） ---------- */
+  .sheet-bg {
+    position: fixed; inset: 0; background: rgba(40,60,52,.42);
+    display: none; z-index: 30; align-items: flex-end; justify-content: center;
+  }
+  .sheet-bg.show { display: flex; }
+  .sheet {
+    background: var(--bg);
+    width: 100%; max-width: 480px;
+    border-radius: 22px 22px 0 0;
+    padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+    max-height: 88vh; overflow-y: auto;
+    animation: up .22s ease;
+  }
+  @keyframes up { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .sheet-head h3 { font-size: 1rem; font-weight: 800; }
+  .sheet-close { border: none; background: none; font-size: 1.3rem; cursor: pointer; color: var(--ink-light); padding: 4px 6px; }
+
+  /* ---------- お知らせ ---------- */
+  #toast {
+    position: fixed; left: 50%; bottom: calc(88px + env(safe-area-inset-bottom));
+    transform: translateX(-50%) translateY(10px);
+    background: var(--ink); color: #fff;
+    padding: 10px 18px; border-radius: 999px;
+    font-size: .85rem; opacity: 0; pointer-events: none;
+    transition: opacity .2s, transform .2s; z-index: 50;
+    max-width: 92vw; text-align: center;
+  }
+  #toast.show { opacity: .95; transform: translateX(-50%); }
+  #toast.err { background: #d96a6a; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>💰 家族の貸し借りノート</h1>
+  <div id="connState">つないでいます…</div>
+</header>
+
+<main>
+  <!-- ============ 残高 ============ -->
+  <section class="page active" id="page-balance">
+    <div class="total-banner">
+      <div class="lbl">いま返していないお金の合計</div>
+      <div class="val" id="totalOutstanding">¥0</div>
+    </div>
+
+    <div class="card">
+      <h2>👨‍👩‍👧 みんなの状況</h2>
+      <div id="personList"></div>
+    </div>
+
+    <div class="card">
+      <h2>🔁 だれ → だれ（タップで明細）</h2>
+      <div id="pairList"></div>
+    </div>
+  </section>
+
+  <!-- ============ 記録する ============ -->
+  <section class="page" id="page-add">
+    <div class="card">
+      <h2>✏️ 記録する</h2>
+      <div class="seg" id="kindSeg">
+        <button type="button" data-kind="loan" aria-pressed="true"><span class="big">💸</span>貸した</button>
+        <button type="button" data-kind="repay" aria-pressed="false"><span class="big">🙏</span>返した</button>
+      </div>
+
+      <div class="who-grid">
+        <div class="field" style="margin-bottom:0">
+          <label id="fromLabel">貸した人</label>
+          <select id="fromSel"></select>
+        </div>
+        <div class="arrow">→</div>
+        <div class="field" style="margin-bottom:0">
+          <label id="toLabel">借りた人</label>
+          <select id="toSel"></select>
+        </div>
+      </div>
+      <button type="button" class="btn ghost" id="swapBtn" style="margin:8px 0 14px;font-size:.82rem;padding:8px">⇄ 入れかえ</button>
+
+      <div class="field">
+        <label>金額（円）</label>
+        <input type="number" id="amountInput" inputmode="numeric" min="1" step="1" placeholder="1000">
+        <div class="quick-amounts">
+          <button type="button" data-add="500">+500</button>
+          <button type="button" data-add="1000">+1,000</button>
+          <button type="button" data-add="3000">+3,000</button>
+          <button type="button" data-add="5000">+5,000</button>
+          <button type="button" data-add="10000">+1万</button>
+          <button type="button" data-clear="1">クリア</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>日付</label>
+        <input type="date" id="dateInput">
+      </div>
+
+      <div class="field">
+        <label>メモ（なんのお金か）</label>
+        <input type="text" id="noteInput" maxlength="200" placeholder="例: 塾のテキスト代">
+      </div>
+
+      <div class="preview" id="addPreview">金額を入れてください</div>
+      <button type="button" class="btn primary" id="saveBtn">この内容で記録する</button>
+    </div>
+  </section>
+
+  <!-- ============ 履歴 ============ -->
+  <section class="page" id="page-history">
+    <div class="filters">
+      <select id="filterMember"></select>
+      <select id="filterKind">
+        <option value="all">すべて</option>
+        <option value="loan">貸した</option>
+        <option value="repay">返した</option>
+      </select>
+      <select id="filterMonth"></select>
+    </div>
+    <div class="card">
+      <h2><span>📖 記録の一覧</span><span id="historyCount"></span></h2>
+      <div id="historyList"></div>
+    </div>
+    <button type="button" class="btn ghost" id="csvBtn">📄 表示中の記録をCSVで保存</button>
+  </section>
+
+  <!-- ============ 設定 ============ -->
+  <section class="page" id="page-settings">
+    <div class="card">
+      <h2>👤 家族のメンバー</h2>
+      <div id="memberList"></div>
+      <div class="add-member">
+        <input type="text" id="newMemberName" maxlength="20" placeholder="名前を入れて追加">
+        <button type="button" id="addMemberBtn">追加</button>
+      </div>
+      <p class="note-text" style="margin-top:10px">記録が残っている人は消せません。名前は ✏️ から直せます。</p>
+    </div>
+
+    <div class="card">
+      <h2>📶 このアプリについて</h2>
+      <p class="note-text" id="modeText"></p>
+      <div class="url-box" id="shareUrl"></div>
+      <p class="note-text" style="margin-top:8px">同じWi-Fiにつないだスマホで、このURLを開くと同じ記録が見られます。</p>
+    </div>
+
+    <div class="card">
+      <h2>💾 データ</h2>
+      <div class="btn-row">
+        <button type="button" class="btn ghost" id="exportJsonBtn">バックアップ保存</button>
+        <button type="button" class="btn ghost" id="exportAllCsvBtn">全記録CSV</button>
+      </div>
+      <p class="note-text" style="margin-top:10px">記録はサーバーを動かしているパソコンの <code>data.json</code> に入っています。ときどきこのファイル（またはバックアップ）をコピーしておくと安心です。</p>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button type="button" class="active" data-page="balance"><span class="ic">🏠</span>残高</button>
+  <button type="button" data-page="add"><span class="ic">✏️</span>記録</button>
+  <button type="button" data-page="history"><span class="ic">📖</span>履歴</button>
+  <button type="button" data-page="settings"><span class="ic">⚙️</span>設定</button>
+</nav>
+
+<div class="sheet-bg" id="sheetBg">
+  <div class="sheet" id="sheet">
+    <div class="sheet-head">
+      <h3 id="sheetTitle"></h3>
+      <button type="button" class="sheet-close" id="sheetClose">✕</button>
+    </div>
+    <div id="sheetBody"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

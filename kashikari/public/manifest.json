@@ -1,0 +1,12 @@
+{
+  "name": "家族の貸し借りノート",
+  "short_name": "貸し借り",
+  "description": "家族のあいだのお金の貸し借りを、おうちのネットワークでみんなと共有して記録します",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f6fbf8",
+  "theme_color": "#d4f5e9",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="112" fill="#d4f5e9"/>
+  <circle cx="256" cy="232" r="132" fill="#fff" stroke="#4fc49b" stroke-width="20"/>
+  <text x="256" y="292" font-size="168" font-weight="bold" text-anchor="middle"
+        font-family="Hiragino Maru Gothic ProN, Yu Gothic, Meiryo, sans-serif" fill="#4fc49b">円</text>
+  <path d="M112 432h288" stroke="#ff8fab" stroke-width="28" stroke-linecap="round"/>
+</svg>
