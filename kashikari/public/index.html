@@ -198,6 +198,29 @@
   .btn-row { display: flex; gap: 8px; }
   .btn-row .btn { width: auto; flex: 1; }
 
+  .offline-note {
+    background: #ffeaea;
+    border: 2px solid #f6c9c9;
+    border-radius: 14px;
+    padding: 12px;
+    margin-bottom: 12px;
+    font-size: .86rem;
+    line-height: 1.6;
+    color: #a45050;
+    text-align: center;
+  }
+  .offline-note button {
+    margin-top: 9px;
+    border: none;
+    border-radius: 999px;
+    background: #d96a6a;
+    color: #fff;
+    font-weight: bold;
+    padding: 9px 20px;
+    font-size: .85rem;
+    cursor: pointer;
+  }
+
   .preview {
     background: var(--sun-soft);
     border-radius: 12px;
@@ -413,6 +436,12 @@
         <input type="text" id="noteInput" maxlength="200" placeholder="例: 塾のテキスト代">
       </div>
 
+      <div class="offline-note" id="offlineNote" hidden>
+        家族のパソコンにつながっていません。<br>
+        いま記録すると家族に共有されないため、記録できないようにしています。<br>
+        パソコンでサーバーを起動してください。
+        <button type="button" id="retryBtn">🔄 もう一度つなぐ</button>
+      </div>
       <div class="preview" id="addPreview">金額を入れてください</div>
       <button type="button" class="btn primary" id="saveBtn">この内容で記録する</button>
     </div>

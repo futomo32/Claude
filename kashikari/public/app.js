@@ -40,46 +40,41 @@ function toast(msg, isError) {
 /* ============================================================
    データの置き場所
    ------------------------------------------------------------
-   mode = "server" … おうちのサーバーに保存（家族で共有）
-   mode = "local"  … この端末のブラウザだけに保存
+   記録は、家族のパソコン（サーバー）だけに置きます。
+   端末ごとに別々の記録ができてしまうと混乱するので、
+   つながっていないときは「見るだけ」にして、記録はさせません。
    ============================================================ */
-const LOCAL_KEY = "kashikari-local-v1";
-let mode = "server";
+let online = true; // 家族のパソコン（サーバー）につながっているか
 let data = { version: 0, members: [], entries: [] };
 
-function newId() {
-  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
-  return "id-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+/* つながっていないときのエラー。
+   お金の記録なので、共有できないまま入力させてしまわないようにします。 */
+function offlineError() {
+  const err = new Error("いま家族のパソコンにつながっていません。パソコンが起動しているか確かめてください");
+  err.offline = true;
+  return err;
 }
 
-function loadLocal() {
-  try {
-    const raw = localStorage.getItem(LOCAL_KEY);
-    if (raw) {
-      const p = JSON.parse(raw);
-      data = {
-        version: Number(p.version) || 0,
-        members: Array.isArray(p.members) ? p.members : [],
-        entries: Array.isArray(p.entries) ? p.entries : [],
-      };
-    }
-  } catch (_) {}
-}
-function saveLocal() {
-  data.version += 1;
-  try {
-    localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
-  } catch (_) {
-    toast("この端末に保存できませんでした", true);
-  }
+/* 受け取った内容を、かならず決まった形にそろえてから使う */
+function setData(got) {
+  data = {
+    version: Number(got && got.version) || 0,
+    members: Array.isArray(got && got.members) ? got.members : [],
+    entries: Array.isArray(got && got.entries) ? got.entries : [],
+  };
 }
 
 async function api(method, path, body) {
-  const res = await fetch(path, {
-    method,
-    headers: body ? { "content-type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(path, {
+      method,
+      headers: body ? { "content-type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (_) {
+    throw offlineError(); // 電波が切れた・パソコンが止まった
+  }
   let json = null;
   try {
     json = await res.json();
@@ -91,63 +86,41 @@ async function api(method, path, body) {
 /* 画面から呼ぶのはこの store だけ */
 const store = {
   async refresh() {
-    if (mode !== "server") return false;
     const got = await api("GET", "/api/state?since=" + data.version);
     if (got.unchanged) return false;
-    data = got;
+    setData(got);
     return true;
   },
-
   async addMember(name) {
-    if (mode === "server") { data = await api("POST", "/api/members", { name }); return; }
-    if (data.members.some((m) => m.name === name)) throw new Error("「" + name + "」はもういます");
-    data.members.push({ id: newId(), name, color: "" });
-    saveLocal();
+    requireOnline();
+    setData(await api("POST", "/api/members", { name }));
   },
-
   async renameMember(id, name) {
-    if (mode === "server") { data = await api("PATCH", "/api/members/" + id, { name }); return; }
-    if (data.members.some((m) => m.name === name && m.id !== id)) throw new Error("「" + name + "」はもういます");
-    const m = data.members.find((x) => x.id === id);
-    if (!m) throw new Error("そのメンバーは見つかりません");
-    m.name = name;
-    saveLocal();
+    requireOnline();
+    setData(await api("PATCH", "/api/members/" + id, { name }));
   },
-
   async deleteMember(id) {
-    if (mode === "server") { data = await api("DELETE", "/api/members/" + id); return; }
-    if (data.entries.some((e) => e.from === id || e.to === id)) {
-      throw new Error("記録が残っている人は消せません");
-    }
-    data.members = data.members.filter((m) => m.id !== id);
-    saveLocal();
+    requireOnline();
+    setData(await api("DELETE", "/api/members/" + id));
   },
-
   async addEntry(entry) {
-    if (mode === "server") { data = await api("POST", "/api/entries", entry); return; }
-    data.entries.push({
-      ...entry,
-      id: newId(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-    saveLocal();
+    requireOnline();
+    setData(await api("POST", "/api/entries", entry));
   },
-
   async updateEntry(id, patch) {
-    if (mode === "server") { data = await api("PATCH", "/api/entries/" + id, patch); return; }
-    const e = data.entries.find((x) => x.id === id);
-    if (!e) throw new Error("その記録は見つかりません");
-    Object.assign(e, patch, { updatedAt: new Date().toISOString() });
-    saveLocal();
+    requireOnline();
+    setData(await api("PATCH", "/api/entries/" + id, patch));
   },
-
   async deleteEntry(id) {
-    if (mode === "server") { data = await api("DELETE", "/api/entries/" + id); return; }
-    data.entries = data.entries.filter((x) => x.id !== id);
-    saveLocal();
+    requireOnline();
+    setData(await api("DELETE", "/api/entries/" + id));
   },
 };
+
+/* つながっていないときは、記録も修正もさせない */
+function requireOnline() {
+  if (!online) throw offlineError();
+}
 
 /* ============================================================
    計算
@@ -294,14 +267,16 @@ function renderAll() {
   renderHistory();
   renderMembers();
   updatePreview();
+  updateSaveAvailability();
 }
 
 function renderBalance(sum) {
   $("#totalOutstanding").textContent = yen(sum.total);
 
   if (!data.members.length) {
-    $("#personList").innerHTML =
-      '<div class="empty">まだ家族が登録されていません。<br>下の「⚙️ 設定」から名前を追加してください。</div>';
+    $("#personList").innerHTML = online
+      ? '<div class="empty">まだ家族が登録されていません。<br>下の「⚙️ 設定」から名前を追加してください。</div>'
+      : '<div class="empty">家族のパソコンにつながっていないため、<br>記録を読みこめませんでした。<br>パソコンが起動しているか確かめてください。</div>';
     $("#pairList").innerHTML = '<div class="empty">記録がありません</div>';
     return;
   }
@@ -485,6 +460,7 @@ async function saveEntry() {
   const date = $("#dateInput").value || todayStr();
   const note = $("#noteInput").value.trim();
 
+  if (!online) return toast("いま家族のパソコンにつながっていません。記録できません", true);
   if (!from || !to) return toast("人を選んでください", true);
   if (from === to) return toast("ちがう人どうしを選んでください", true);
   if (!amount || amount <= 0) return toast("金額を入れてください", true);
@@ -500,6 +476,7 @@ async function saveEntry() {
     toast(addKind === "loan" ? "貸した記録をつけました" : "返した記録をつけました");
     showPage("balance");
   } catch (e) {
+    if (e.offline) goOffline();
     toast(e.message, true);
   } finally {
     btn.disabled = false;
@@ -656,6 +633,7 @@ function openEntrySheet(id) {
         renderAll();
         toast("直しました");
       } catch (err) {
+        if (err.offline) goOffline();
         toast(err.message, true);
       }
     });
@@ -668,6 +646,7 @@ function openEntrySheet(id) {
         renderAll();
         toast("消しました");
       } catch (err) {
+        if (err.offline) goOffline();
         toast(err.message, true);
       }
     });
@@ -722,18 +701,43 @@ function showPage(name) {
 
 function setConnState() {
   const el = $("#connState");
-  if (mode === "server") {
+  const note = $("#offlineNote");
+  if (online) {
     el.textContent = "家族みんなで共有中";
     el.classList.remove("offline");
-    $("#modeText").textContent = "このパソコン（サーバー）に記録をためています。家族みんなで同じ内容が見られます。";
+    note.hidden = true;
+    $("#modeText").textContent = "家族のパソコンに記録をためています。同じWi-Fiにつないだ家族みんなで、同じ内容が見られます。";
     $("#shareUrl").textContent = location.origin + "/";
   } else {
-    el.textContent = "この端末だけに保存中";
+    el.textContent = "⚠️ つながっていません（いまは見るだけ）";
     el.classList.add("offline");
+    note.hidden = false;
     $("#modeText").textContent =
-      "サーバーにつながらないので、この端末のブラウザだけに保存しています。家族と共有するには、パソコンで server.js を動かしてから、そのURLを開いてください。";
-    $("#shareUrl").textContent = "（共有するにはサーバーが必要です）";
+      "家族のパソコンにつながっていません。記録するには、パソコンでサーバーを起動してください。つながると自動でもどります。";
+    $("#shareUrl").textContent = location.origin + "/";
   }
+  updateSaveAvailability();
+}
+
+/* つながっていないあいだは、記録・修正のボタンを押せなくする */
+function updateSaveAvailability() {
+  $("#saveBtn").disabled = !online || !data.members.length;
+  $("#addMemberBtn").disabled = !online;
+  $("#newMemberName").disabled = !online;
+  $$("#memberList .icon-btn").forEach((b) => (b.disabled = !online));
+  $("#saveBtn").textContent = online ? "この内容で記録する" : "つながるまで記録できません";
+}
+
+function goOffline() {
+  if (!online) return;
+  online = false;
+  setConnState();
+}
+function goOnline() {
+  if (online) return;
+  online = true;
+  setConnState();
+  toast("家族のパソコンにつながりました");
 }
 
 function bindEvents() {
@@ -832,8 +836,15 @@ function bindEvents() {
         toast("消しました");
       }
     } catch (e) {
+      if (e.offline) goOffline();
       toast(e.message, true);
     }
+  });
+
+  $("#retryBtn").addEventListener("click", async () => {
+    toast("つなぎなおしています…");
+    await syncNow();
+    if (!online) toast("まだつながりません。パソコンが起動しているか確かめてください", true);
   });
 
   $("#sheetClose").addEventListener("click", closeSheet);
@@ -853,13 +864,16 @@ async function addMemberFromInput() {
   const input = $("#newMemberName");
   const name = input.value.trim();
   if (!name) return toast("名前を入れてください", true);
+  // 送信中に次の名前を打たれても消さないよう、先に空にしておく
+  input.value = "";
   try {
     await store.addMember(name);
-    input.value = "";
     lastMemberSig = "";
     renderAll();
     toast("「" + name + "」を追加しました");
   } catch (e) {
+    if (!input.value) input.value = name; // 失敗したら書きもどす
+    if (e.offline) goOffline();
     toast(e.message, true);
   }
 }
@@ -870,17 +884,15 @@ async function addMemberFromInput() {
 
 let syncing = false;
 async function syncNow() {
-  if (mode !== "server" || syncing) return;
+  if (syncing) return;
   if ($("#sheetBg").classList.contains("show")) return; // シートを開いている間は動かさない
   syncing = true;
   try {
     const changed = await store.refresh();
     if (changed) renderAll();
-    if ($("#connState").classList.contains("offline")) setConnState();
+    goOnline();
   } catch (_) {
-    const el = $("#connState");
-    el.textContent = "つながっていません（あとでもう一度ためします）";
-    el.classList.add("offline");
+    goOffline();
   } finally {
     syncing = false;
   }
@@ -896,18 +908,17 @@ async function start() {
   updateKindLabels();
 
   try {
-    const got = await api("GET", "/api/state");
-    data = got;
-    mode = "server";
+    setData(await api("GET", "/api/state"));
+    online = true;
   } catch (_) {
-    mode = "local";
-    loadLocal();
+    online = false;
   }
 
   setConnState();
   renderAll();
 
-  if (mode === "server") setInterval(() => {
+  // 5秒ごとに、ほかの端末の更新を取りこむ（切れているときは再接続もかねる）
+  setInterval(() => {
     if (document.visibilityState === "visible") syncNow();
   }, 5000);
 }

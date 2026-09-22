@@ -151,10 +151,14 @@ const routes = [
     method: "GET",
     pattern: /^\/api\/state$/,
     handle(_m, _body, query) {
-      const since = Number(query.get("since"));
-      // 変わっていなければ中身を返さない（数秒おきの確認を軽くするため）
-      if (Number.isFinite(since) && since === state.version) {
-        return { version: state.version, unchanged: true };
+      const raw = query.get("since");
+      // 変わっていなければ中身を返さない（数秒おきの確認を軽くするため）。
+      // since がないとき（初回の読み込み）は、かならず中身を返す。
+      if (raw !== null && raw !== "") {
+        const since = Number(raw);
+        if (Number.isFinite(since) && since === state.version) {
+          return { version: state.version, unchanged: true };
+        }
       }
       return publicState();
     },
