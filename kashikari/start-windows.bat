@@ -1,26 +1,33 @@
 @echo off
-rem ---------------------------------------------------------------
-rem  Kashikari note - starter for Windows (double-click this file)
-rem  Messages below are printed by Node.js in Japanese.
-rem ---------------------------------------------------------------
-chcp 65001 >nul
+rem ==============================================================
+rem  Kashikari note - starter for Windows
+rem  Double-click this file to start the server.
+rem  (This file must keep CRLF line endings and ASCII only.)
+rem  Japanese messages are printed by Node.js itself.
+rem ==============================================================
+setlocal
 cd /d "%~dp0"
 
 where node >nul 2>nul
-if errorlevel 1 (
-  echo.
-  echo  [!] Node.js is not installed.
-  echo      Node.js が入っていません。
-  echo.
-  echo      https://nodejs.org/ja  から LTS 版を入れてから、
-  echo      もう一度このファイルをダブルクリックしてください。
-  echo.
-  start https://nodejs.org/ja
-  pause
-  exit /b 1
-)
+if errorlevel 1 goto NONODE
 
+chcp 65001 >nul
 node server.js
 echo.
-echo  サーバーを終了しました。
+echo Server stopped.  -  sabaa wo shuuryou shimashita.
+echo.
 pause
+exit /b 0
+
+:NONODE
+echo.
+echo  [!] Node.js is not installed on this PC.
+echo      Node.js ga hairtte imasen.
+echo.
+echo      Please install the LTS version from:
+echo        https://nodejs.org/ja
+echo      ...then double-click this file again.
+echo.
+start https://nodejs.org/ja
+pause
+exit /b 1

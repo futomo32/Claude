@@ -1,0 +1,3 @@
+# バッチファイルは CRLF 改行でないとWindowsで動かないため、Gitに変換させない
+*.bat -text
+*.command -text
