@@ -56,12 +56,20 @@ function saveState() {
   saveQueued = true;
   process.nextTick(() => {
     saveQueued = false;
+    const text = JSON.stringify(state, null, 2);
     const tmp = DATA_FILE + ".tmp";
     try {
-      fs.writeFileSync(tmp, JSON.stringify(state, null, 2), "utf8");
+      fs.writeFileSync(tmp, text, "utf8");
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) {
-      console.error("⚠️  保存に失敗しました:", e.message);
+      // Windowsでは、ウイルス対策ソフトなどが data.json を開いていると
+      // 入れ替えに失敗することがある。そのときは直接書き込む。
+      try {
+        fs.writeFileSync(DATA_FILE, text, "utf8");
+        try { fs.unlinkSync(tmp); } catch (_) {}
+      } catch (e2) {
+        console.error("⚠️  保存に失敗しました:", e2.message);
+      }
     }
   });
 }
