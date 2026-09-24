@@ -277,6 +277,19 @@ def ensure_schema(con):
         # 現金返金だけを反映するために必要(2026-08-06 税理士確認に基づく)。
         ("sale_lines", "refund_method", "TEXT"),
         ("sales_slips", "refund_method", "TEXT"),
+        # レジ入出金の取消(2026-09-24 店の指定・案1)。★行は消さず「打ち消しの行」を足す。
+        # 消す方式にしなかったのは、間違えた記録ごと消えると**なぜその日の現金が
+        # 合わなかったのか**を後から追えなくなるため(売上の取消と同じ考え方)。
+        #   void_of       … この行が打ち消している元の行のid(打ち消しの行だけ入る)
+        #   voided_by_id  … この行を打ち消した行のid(元の行だけ入る。二重取消を防ぐ鍵)
+        #   voided_by     … 取り消したログインユーザー(サーバーが入れる=詐称できない)
+        #   voided_reason … 取消理由(必須。「誰が」より「なぜ」が後から効く)
+        #   operator      … 記録した時のログインユーザー
+        ("cash_movements", "void_of", "INTEGER"),
+        ("cash_movements", "voided_by_id", "INTEGER"),
+        ("cash_movements", "voided_by", "TEXT"),
+        ("cash_movements", "voided_reason", "TEXT"),
+        ("cash_movements", "operator", "TEXT"),
     ]
     changed = False
     for table, col, decl in adds:
@@ -4585,7 +4598,7 @@ def slip_receivable_count(con, slip_id):
     return {"count": int(r[0] or 0), "amount": int(r[1] or 0)}
 
 
-def add_cash_movement(con, p):
+def add_cash_movement(con, p, operator=None):
     """レジ入出金(代引手数料・収入印紙・両替・経費等)を記録する。amountは +入金 / -出金。"""
     try:
         amount = int(str(p.get("amount")).replace(",", ""))
@@ -4595,12 +4608,67 @@ def add_cash_movement(con, p):
         raise ValueError("金額を入力してください(出金はマイナス)")
     occurred_at = p.get("occurred_at") or datetime.date.today().isoformat()
     cur = con.cursor()
-    cur.execute("""INSERT INTO cash_movements(category,amount,note,staff_name,occurred_at)
-                   VALUES (?,?,?,?,?)""",
-                (p.get("category") or "その他", amount, p.get("note"), p.get("staff_name"), occurred_at))
+    cur.execute("""INSERT INTO cash_movements(category,amount,note,staff_name,occurred_at,operator)
+                   VALUES (?,?,?,?,?,?)""",
+                (p.get("category") or "その他", amount, p.get("note"), p.get("staff_name"),
+                 occurred_at, operator))
     con.commit()
     return {"id": cur.lastrowid, "category": p.get("category") or "その他", "amount": amount,
-            "note": p.get("note"), "staff_name": p.get("staff_name"), "occurred_at": occurred_at}
+            "note": p.get("note"), "staff_name": p.get("staff_name"), "occurred_at": occurred_at,
+            "operator": operator, "void_of": None, "voided_by_id": None,
+            "voided_by": None, "voided_reason": None}
+
+
+def void_cash_movement(con, movement_id, operator, reason):
+    """レジ入出金の記録を取り消す(2026-09-24 店の指定・案1)。
+
+    ★記録は消さず、**同じ日付・同じ区分で符号が逆の「打ち消しの行」を足す**。
+      日報の入出金合計は足し引きで自動的に正しくなり、明細には
+      「間違えた行」「打ち消した行」の両方が残るので、後から経緯を追える。
+      (電子帳簿保存法の「訂正・削除の事実と内容を確認できること」にも沿う)
+
+    ★打ち消しの行の日付は**元の行と同じ日**にする。今日の日付で入れてしまうと、
+      間違えた日の現金が合わないまま残り、その日の締めが永遠に合わなくなる。
+    """
+    try:
+        mid = int(movement_id)
+    except (TypeError, ValueError):
+        raise ValueError("取り消す記録が指定されていません")
+    reason = str(reason or "").strip()
+    if not reason:
+        raise ValueError("取消理由を入力してください(記録に残ります)")
+    con.row_factory = sqlite3.Row
+    with write_lock(con):   # 同じ行を2つの端末から同時に取り消さないように
+        r = con.execute("""SELECT id,category,amount,note,staff_name,occurred_at,
+                                  void_of,voided_by_id FROM cash_movements WHERE id=?""",
+                        (mid,)).fetchone()
+        if not r:
+            raise ValueError("その記録が見つかりません(すでに消えている可能性があります)")
+        if r["void_of"]:
+            raise ValueError("打ち消しの記録そのものは取り消せません。"
+                             "元の記録を見直してください")
+        if r["voided_by_id"]:
+            raise ValueError("この記録はすでに取り消されています")
+        head = (r["category"] or "入出金") + " " + ("+" if (r["amount"] or 0) >= 0 else "−") \
+            + f"{abs(int(r['amount'] or 0)):,}"
+        note = f"【取消】{r['occurred_at']} の {head} を取消: {reason}"
+        cur = con.cursor()
+        cur.execute("""INSERT INTO cash_movements
+                       (category,amount,note,staff_name,occurred_at,
+                        void_of,voided_by,voided_reason,operator)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (r["category"], -int(r["amount"] or 0), note[:200], r["staff_name"],
+                     r["occurred_at"], mid, operator, reason, operator))
+        new_id = cur.lastrowid
+        con.execute("""UPDATE cash_movements SET voided_by_id=?, voided_by=?, voided_reason=?
+                       WHERE id=?""", (new_id, operator, reason, mid))
+        # ★ここで con.commit() は呼ばない(write_lock が COMMIT する。呼ぶとロックが切れる)
+    return {"voided_id": mid, "reason": reason, "operator": operator,
+            "entry": {"id": new_id, "category": r["category"], "amount": -int(r["amount"] or 0),
+                      "note": note[:200], "staff_name": r["staff_name"],
+                      "occurred_at": r["occurred_at"], "void_of": mid,
+                      "voided_by": operator, "voided_reason": reason, "operator": operator,
+                      "voided_by_id": None}}
 
 
 def list_cash_movements(con, limit=500):
@@ -4611,9 +4679,14 @@ def list_cash_movements(con, limit=500):
     except (TypeError, ValueError):
         limit = 500
     return [{"id": r["id"], "category": r["category"], "amount": r["amount"], "note": r["note"],
-             "staff_name": r["staff_name"], "occurred_at": r["occurred_at"]}
+             "staff_name": r["staff_name"], "occurred_at": r["occurred_at"],
+             # 取消の状態(2026-09-24)。画面はこれを見て「取消済み」の印と
+             # 「取消」ボタンの出し分けをする
+             "void_of": r["void_of"], "voided_by_id": r["voided_by_id"],
+             "voided_by": r["voided_by"], "voided_reason": r["voided_reason"]}
             for r in con.execute(
-                "SELECT id,category,amount,note,staff_name,occurred_at FROM cash_movements "
+                "SELECT id,category,amount,note,staff_name,occurred_at,"
+                "void_of,voided_by_id,voided_by,voided_reason FROM cash_movements "
                 "ORDER BY occurred_at DESC, id DESC LIMIT ?", (limit,))]
 
 

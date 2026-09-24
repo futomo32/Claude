@@ -1027,7 +1027,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/cash_movement":
                 con = connect()
-                result = db_query.add_cash_movement(con, payload)
+                result = db_query.add_cash_movement(con, payload, user.get("name"))
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/cash_movement_void":
+                # レジ入出金の取消(2026-09-24 案1)。記録は消さず打ち消しの行を足す。
+                # operator(ログインユーザー)はサーバーが入れる=詐称できない。理由は必須
+                con = connect()
+                try:
+                    result = db_query.void_cash_movement(con, payload.get("id"),
+                                                         user.get("name"), payload.get("reason"))
+                except ValueError as e:
+                    con.close()
+                    return self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/receivable_add":
