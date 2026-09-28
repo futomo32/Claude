@@ -1318,7 +1318,14 @@ def search_products(con, q="", cat="", state="", supplier="", genre="", sort="no
     if cat:
         where.append("category = ?"); args.append(cat)
     if state:
-        where.append("state = ?"); args.append(state)
+        # ★カンマ区切りで複数の状態を渡せる(例 "在庫,受託")。2026-09-28 追加。
+        #   店頭には宝飾ナビから引き継いだ**受託(メーカーの預かり品)が数百点**あり、
+        #   レジで番号から呼べるようにするため。1つだけの時は今までと同じ動き。
+        sts = [x.strip() for x in str(state).split(",") if x.strip()]
+        if len(sts) == 1:
+            where.append("state = ?"); args.append(sts[0])
+        elif sts:
+            where.append("state IN (%s)" % ",".join(["?"] * len(sts))); args += sts
     if supplier:
         where.append("supplier = ?"); args.append(supplier)
     if genre:
