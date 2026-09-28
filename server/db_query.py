@@ -1621,7 +1621,7 @@ def slip_lines(con, frm, to, staff=""):
     for r in con.execute(f"""
         SELECT s.slip_id, s.sold_at, s.customer_id cid, c.name cname,
                COALESCE(l.free_name, p.name) item, l.amount, s.pay_method, s.credit_kind, s.staff_name,
-               p.is_glasses ig, p.category cat, s.place place
+               p.is_glasses ig, p.category cat, s.place place, p.cost_price cost
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         LEFT JOIN customers c ON c.customer_id = s.customer_id
@@ -1631,6 +1631,10 @@ def slip_lines(con, frm, to, staff=""):
                     "amount": r["amount"] or 0,
                     "pay": pay_texts.get(r["slip_id"]) or pay_fallback(r["pay_method"], r["credit_kind"]),
                     "staff": r["staff_name"],
+                    # 下代(原価)。CSVに出す(2026-09-28 店の指定)。★商品台帳に無い明細
+                    # (番号なしの売上)と、原価が未入力の受託品は空になる。
+                    # ★パート権限には app.py がこの値を落とす(サーバー側で強制)
+                    "cost": r["cost"],
                     "kind4": sale_kind4(r["ig"], r["cat"], r["place"])})
     # 返品行: 取消した日が期間内の明細をマイナスで出す(当日訂正は出さない)。
     # 売上行と同じ形＋ret/noteを持ち、日付順に混ぜて返す
@@ -1638,7 +1642,7 @@ def slip_lines(con, frm, to, staff=""):
         SELECT substr(l.voided_at,1,10) vdate, s.customer_id cid, c.name cname,
                COALESCE(l.free_name, p.name) item, l.amount,
                l.refund_method rm, s.pay_method, s.credit_kind, s.sold_at orig,
-               l.voided_staff vstaff, p.is_glasses ig, p.category cat, s.place place
+               l.voided_staff vstaff, p.is_glasses ig, p.category cat, s.place place, p.cost_price cost
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
         LEFT JOIN customers c ON c.customer_id = s.customer_id
@@ -1650,6 +1654,9 @@ def slip_lines(con, frm, to, staff=""):
         out.append({"date": r["vdate"], "name": r["cname"] or r["cid"], "item": r["item"],
                     "amount": -(r["amount"] or 0),
                     "pay": f"返金({method})", "staff": r["vstaff"], "ret": 1,
+                    # 返品行は金額がマイナスなので、下代もマイナスでそろえる
+                    # (Excelで縦に足した時に、売上と返品が正しく相殺されるように)
+                    "cost": (-int(r["cost"]) if r["cost"] not in (None, "") else None),
                     "note": f"{r['orig']}購入分の返品",
                     "kind4": sale_kind4(r["ig"], r["cat"], r["place"])})
     out.sort(key=lambda x: x["date"])

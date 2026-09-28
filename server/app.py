@@ -582,6 +582,11 @@ class Handler(BaseHTTPRequestHandler):
                     elif path == "/api/product" and isinstance(result, dict):
                         result.pop("cost_price", None)
                         result.pop("fucho", None)  # 符丁は下代そのものなのでパートには送らない
+                    elif path == "/api/slip_lines":
+                        # 売上伝票明細表のCSVに下代を出すようにしたので(2026-09-28)、
+                        # パートには**そもそも送らない**(画面で隠すだけでは通信を見れば分かる)
+                        for ln in result.get("lines") or []:
+                            ln.pop("cost", None)
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/postal":
                 # 郵便番号→住所検索(zipcloudへの中継)。オフライン時はエラーを返すだけ
