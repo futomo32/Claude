@@ -4147,10 +4147,16 @@ def delete_product(con, product_key):
 
 
 def update_sale_line(con, p):
-    """購入明細(番号なし行=自由入力の売上)の品名・商品情報を直す。
+    """購入明細の品名・商品情報を直す。
     仕入れた在庫品ではない明細(product_key が無い行)は商品台帳が無く、これまで顧客詳細から
     何も直せなかったため。金額は売上集計・累計購入額に影響するのでここでは変更しない
-    (返品・訂正=取消してから打ち直す運用にする)。"""
+    (返品・訂正=取消してから打ち直す運用にする)。
+
+    ★在庫品・受託品(product_key がある行)は**商品情報だけ**直せる(2026-09-28 店の指定)。
+      品名は商品台帳が唯一の正なので触らない(明細側で書き換えると台帳とズレる)。
+      商品情報は「その1回の会計の話」(特別割引券を使用・受託(メーカー)など)で
+      台帳の話ではないため、あとから書き足せないと記録が残らない。
+    """
     try:
         line_id = int(p.get("line_id"))
     except (TypeError, ValueError):
@@ -4161,12 +4167,15 @@ def update_sale_line(con, p):
         raise ValueError("明細が見つかりません")
     if row[1]:
         raise ValueError("取消済みの明細は編集できません")
+    info = str(p.get("info") or "").strip() or None
     if row[0]:
-        raise ValueError("在庫品の明細です。品名は商品台帳(商品の修正)から直してください")
+        # 在庫品・受託品: 商品情報だけ直す(品名は商品台帳が正なので触らない)
+        con.execute("UPDATE sale_lines SET info=? WHERE line_id=?", (info, line_id))
+        con.commit()
+        return {"line_id": line_id, "info": info, "info_only": True}
     name = str(p.get("name") or "").strip()
     if not name:
         raise ValueError("品名を入力してください")
-    info = str(p.get("info") or "").strip() or None
     con.execute("UPDATE sale_lines SET free_name=?, info=? WHERE line_id=?", (name, info, line_id))
     # この明細に処方箋が紐づいている場合は、処方箋側の品名も合わせる(表示のねじれを防ぐ)
     con.execute("UPDATE prescriptions SET lens_name=? "
