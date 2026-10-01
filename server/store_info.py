@@ -25,5 +25,10 @@ BANK_LINES = [                              # 請求書に印字する振込先(
 
 def as_dict():
     """画面へ注入する形(app.py が window.TOKIWA_STORE に入れる)。"""
+    # ★郵便番号・住所も渡す(2026-10-01 店の指定)。請求書・見積書の発行元に出す。
+    #   インボイス制度の必須記載は「名称＋登録番号」なので法律上は無くてもよいが、
+    #   先方の経理が照合でき、間違いがあった時に連絡できるようにするため入れる。
+    #   値は クロネコB2 の依頼主と同じもの(店の住所は1つなので使い回す)。
     return {"name": STORE_NAME, "tel": STORE_TEL,
+            "postal": SENDER_POSTAL, "address": SENDER_ADDRESS,
             "invoice_no": INVOICE_REG_NO, "bank_lines": list(BANK_LINES)}
