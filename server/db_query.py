@@ -3989,6 +3989,54 @@ def consignment_list(con):
     return {"rows": rows}
 
 
+def consignment_to_stock(con, p, operator=None):
+    """受託品(メーカーの預かり品)を買い取って、自店の在庫にする(2026-10-01 店の指定)。
+
+    納品書が来て正式に仕入れた受託品を、普通の在庫品と同じ扱いにするための操作。
+    これが無いと、仕入登録で**同じ品をもう1件作る**ことになり、台帳に2つ並んで
+    棚卸しが必ず合わなくなる。
+
+    ★対象は **state='受託' のものだけ**。売れた品(state='売上')を在庫に戻すと
+      売上と在庫が食い違うため断る(買い取りが要るのは店頭に残っている品だけ)。
+    ★下代(仕入価格)は必須。入れないと粗利が出ず、値札の符丁も作れない。
+    ★記録を stock_events に「受託→在庫(買取)」として残す(いつ買い取ったかを後から追える)。
+    """
+    pk = str(p.get("product_key") or "").strip()
+    if not pk:
+        raise ValueError("商品が指定されていません")
+    try:
+        cost = int(str(p.get("cost") if p.get("cost") not in (None, "") else "").replace(",", ""))
+    except (TypeError, ValueError):
+        raise ValueError("下代(仕入価格)を数字で入力してください")
+    if cost < 0:
+        raise ValueError("下代は0以上で入力してください")
+    con.row_factory = sqlite3.Row
+    with write_lock(con):   # 別端末の会計と同時に走って state が食い違わないように
+        r = con.execute("SELECT name, state, supplier FROM products WHERE product_key=?",
+                        (pk,)).fetchone()
+        if not r:
+            raise ValueError("その商品が商品台帳に見つかりません")
+        if r["state"] != "受託":
+            raise ValueError(f"「{r['name'] or pk}」は受託品ではありません(状態: {r['state']})。"
+                             "この操作は受託品だけに使えます")
+        supplier = str(p.get("supplier") or "").strip() or r["supplier"]
+        slip_no = str(p.get("purchase_slip_no") or "").strip() or None
+        slip_date = str(p.get("purchase_slip_date") or "").strip() or None
+        # 符丁(下代を隠す店内符牒)は仕入登録と同じ作り方でここでも入れる
+        fucho = fucho_encode(cost, supplier_fucho_head(con, supplier)) or None
+        con.execute("""UPDATE products
+                       SET state='在庫', is_consignment=0, cost_price=?, supplier=?,
+                           fucho=?, purchase_slip_no=COALESCE(?,purchase_slip_no),
+                           purchase_slip_date=COALESCE(?,purchase_slip_date)
+                       WHERE product_key=?""",
+                    (cost, supplier, fucho, slip_no, slip_date, pk))
+        con.execute("""INSERT INTO stock_events(product_key,event_type,qty_delta)
+                       VALUES (?,?,?)""", (pk, "受託→在庫(買取)", 1))
+    return {"product_key": pk, "name": r["name"], "state": "在庫", "cost_price": cost,
+            "supplier": supplier, "fucho": fucho, "operator": operator,
+            "purchase_slip_no": slip_no, "purchase_slip_date": slip_date}
+
+
 def settle_consignment(con, p):
     """受託品の後日精算: 原価(下代)を入れて確定。以降は粗利が正しく計算される。
     精算済みでも原価を入れ直せば更新できる(訂正用)。"""

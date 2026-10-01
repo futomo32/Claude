@@ -618,6 +618,7 @@ class Handler(BaseHTTPRequestHandler):
         "/api/photo_pool", "/api/photo_pool_assign", "/api/photo_pool_delete",
         "/api/supplier_genre", "/api/supplier_fucho", "/api/supplier_code", "/api/master_item", "/api/rank_apply", "/api/rank_rules",
         "/api/stocktake_scan", "/api/stocktake_reset", "/api/settle_consignment",
+        "/api/consign_to_stock",   # 受託品の買取(在庫と原価を動かす)。2026-10-01
         "/api/point_settings", "/api/tag_settings",
     }
     # ★「ポイントを修正」はパートにも開く(2026-09-10 店の指定)。
@@ -1033,6 +1034,17 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/cash_movement":
                 con = connect()
                 result = db_query.add_cash_movement(con, payload, user.get("name"))
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/consign_to_stock":
+                # 受託品を買い取って在庫にする(2026-10-01)。在庫と原価を動かすのでパートは不可
+                # (PART_DENIED_POSTS に入れてある)。operator は記録用
+                con = connect()
+                try:
+                    result = db_query.consignment_to_stock(con, payload, user.get("name"))
+                except ValueError as e:
+                    con.close()
+                    return self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/cash_movement_void":
