@@ -753,7 +753,8 @@ def build_blob(con):
                 pointSettings=point_settings(con),
                 # 本番運用の開始日。処方箋の紐付け候補で「これより前を隠す」判定に使う
                 opStart=OPERATION_START,
-                tagSettings=tag_settings(con))
+                tagSettings=tag_settings(con),
+                warrantySettings=warranty_settings(con))
 
 
 def build_blob_light(con):
@@ -878,6 +879,7 @@ def build_blob_light(con):
                 # 本番運用の開始日。処方箋の紐付け候補で「これより前を隠す」判定に使う
                 opStart=OPERATION_START,
                 tagSettings=tag_settings(con),
+                warrantySettings=warranty_settings(con),
                 lite=True)  # lite=True で「明細は遅延取得」とUIに知らせる
 
 
@@ -2717,6 +2719,45 @@ def _clamp_tag_setting(key, v):
     if key.startswith("tag_scale"):
         return _clamp_num(v, TAG_SCALE_MIN, TAG_SCALE_MAX)
     return _clamp_num(v, -TAG_OFFSET_MAX, TAG_OFFSET_MAX)
+
+
+# 保証書の印字位置の微調整(2026-10-04 店の指定)。刷り上がった紙を見て、
+# **紙の上での向き**で入れる(＋で右/下へ)。A4とA5で別に覚える。
+# ★端末ではなくDBに置く = どのPCから刷っても同じ位置になる(値札の補正と同じ考え方)。
+WARRANTY_SETTING_DEFAULTS = {
+    "warranty_a4_offset_x": 0.0, "warranty_a4_offset_y": 0.0,
+    "warranty_a5_offset_x": 0.0, "warranty_a5_offset_y": 0.0,
+}
+WARRANTY_OFFSET_MAX = 30.0       # ±30mm。これを超えるなら座標そのものか用紙設定の問題
+
+
+def warranty_settings(con):
+    """保証書の印字位置の微調整を返す(未設定は0)。"""
+    out = dict(WARRANTY_SETTING_DEFAULTS)
+    for k in out:
+        row = con.execute("SELECT value FROM app_settings WHERE key=?", (k,)).fetchone()
+        if row is not None and str(row[0]).strip() != "":
+            try:
+                out[k] = _clamp_num(row[0], -WARRANTY_OFFSET_MAX, WARRANTY_OFFSET_MAX)
+            except (ValueError, TypeError):
+                pass
+    return out
+
+
+def save_warranty_settings(con, p):
+    """保証書の微調整を保存する。不正値は現行値のまま(黙って壊さない)。"""
+    cur = warranty_settings(con)
+    for k in WARRANTY_SETTING_DEFAULTS:
+        if k not in p:
+            continue
+        try:
+            cur[k] = _clamp_num(p.get(k), -WARRANTY_OFFSET_MAX, WARRANTY_OFFSET_MAX)
+        except (ValueError, TypeError):
+            pass
+    for k, v in cur.items():
+        _set_setting(con, k, str(v))
+    con.commit()
+    return cur
 
 
 def tag_settings(con):

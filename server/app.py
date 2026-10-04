@@ -619,7 +619,7 @@ class Handler(BaseHTTPRequestHandler):
         "/api/supplier_genre", "/api/supplier_fucho", "/api/supplier_code", "/api/master_item", "/api/rank_apply", "/api/rank_rules",
         "/api/stocktake_scan", "/api/stocktake_reset", "/api/settle_consignment",
         "/api/consign_to_stock",   # 受託品の買取(在庫と原価を動かす)。2026-10-01
-        "/api/point_settings", "/api/tag_settings",
+        "/api/point_settings", "/api/tag_settings", "/api/warranty_settings",
     }
     # ★「ポイントを修正」はパートにも開く(2026-09-10 店の指定)。
     #   レジで気づいた食い違いをその場で直せないと、社員待ちでお客様を待たせる。
@@ -949,6 +949,12 @@ class Handler(BaseHTTPRequestHandler):
                 # 値札の印字位置の補正(mm)。端末ではなくDBに置くので全PCで同じ値になる
                 con = connect()
                 result = db_query.save_tag_settings(con, payload)
+                con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/warranty_settings":
+                # 保証書の印字位置の微調整(mm)。値札と同じくDBに置く(全PCで同じ位置になる)
+                con = connect()
+                result = db_query.save_warranty_settings(con, payload)
                 con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/tag_data":
