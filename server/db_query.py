@@ -1610,14 +1610,22 @@ def payment_totals(con, frm, to=None):
             sorted(totals.items(), key=lambda kv: -kv[1]) if v]
 
 
-def slip_lines(con, frm, to, staff=""):
-    """期間の売上伝票明細(売上集計・CSV用)。サーバー側で期間・担当者で絞り込む。"""
+def slip_lines(con, frm, to, staff="", supplier=""):
+    """期間の売上伝票明細(売上集計・CSV用)。サーバー側で期間・担当者・仕入先で絞り込む。
+
+    ★仕入先(2026-10-05 店の指定)は**商品台帳の仕入先**で絞る。したがって
+      **番号なしの明細(電池交換・修理など台帳に無いもの)は、仕入先を指定すると出ない**。
+      商品に紐づいていない売上に「仕入先」は存在しないため(黙って混ぜない)。
+    """
     con.row_factory = sqlite3.Row
     args = [str(frm), str(to)]
     staffsql = ""
     if staff:
         staffsql = " AND s.staff_name = ?"
         args.append(staff)
+    if supplier:
+        staffsql += " AND p.supplier = ?"
+        args.append(supplier)
     out = []
     pay_texts = slip_pay_texts(con, "WHERE s.sold_at >= ? AND s.sold_at <= ?", (str(frm), str(to)))
     for r in con.execute(f"""

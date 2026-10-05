@@ -570,7 +570,8 @@ class Handler(BaseHTTPRequestHandler):
                     elif path == "/api/documents":
                         result = {"documents": db_query.list_documents(con, q1("limit", "100"))}
                     else:  # /api/slip_lines
-                        result = {"lines": db_query.slip_lines(con, q1("from"), q1("to"), q1("staff"))}
+                        result = {"lines": db_query.slip_lines(con, q1("from"), q1("to"),
+                                                              q1("staff"), q1("supplier"))}
                 finally:
                     con.close()
                 if role == "part":
