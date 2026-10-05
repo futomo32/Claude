@@ -1610,12 +1610,13 @@ def payment_totals(con, frm, to=None):
             sorted(totals.items(), key=lambda kv: -kv[1]) if v]
 
 
-def slip_lines(con, frm, to, staff="", supplier=""):
-    """期間の売上伝票明細(売上集計・CSV用)。サーバー側で期間・担当者・仕入先で絞り込む。
+def slip_lines(con, frm, to, staff="", supplier="", store=""):
+    """期間の売上伝票明細(売上集計・CSV用)。期間・担当者・仕入先・店舗で絞り込む。
 
     ★仕入先(2026-10-05 店の指定)は**商品台帳の仕入先**で絞る。したがって
       **番号なしの明細(電池交換・修理など台帳に無いもの)は、仕入先を指定すると出ない**。
       商品に紐づいていない売上に「仕入先」は存在しないため(黙って混ぜない)。
+    ★店舗(2026-10-05)は伝票の店舗コードで絞る。並べ替え用に伝票番号も返す。
     """
     con.row_factory = sqlite3.Row
     args = [str(frm), str(to)]
@@ -1626,10 +1627,13 @@ def slip_lines(con, frm, to, staff="", supplier=""):
     if supplier:
         staffsql += " AND p.supplier = ?"
         args.append(supplier)
+    if store:
+        staffsql += " AND COALESCE(s.store_code,'') = ?"
+        args.append(store)
     out = []
     pay_texts = slip_pay_texts(con, "WHERE s.sold_at >= ? AND s.sold_at <= ?", (str(frm), str(to)))
     for r in con.execute(f"""
-        SELECT s.slip_id, s.sold_at, s.customer_id cid, c.name cname,
+        SELECT s.slip_id, s.slip_no, s.sold_at, s.customer_id cid, c.name cname,
                COALESCE(l.free_name, p.name) item, l.amount, s.pay_method, s.credit_kind, s.staff_name,
                p.is_glasses ig, p.category cat, s.place place, p.cost_price cost
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
@@ -1641,6 +1645,8 @@ def slip_lines(con, frm, to, staff="", supplier=""):
                     "amount": r["amount"] or 0,
                     "pay": pay_texts.get(r["slip_id"]) or pay_fallback(r["pay_method"], r["credit_kind"]),
                     "staff": r["staff_name"],
+                    # 伝票番号(2026-10-05)。画面の「印刷順序」で伝票順に並べるために返す
+                    "slip": r["slip_no"] or r["slip_id"], "slip_id": r["slip_id"],
                     # 下代(原価)。CSVに出す(2026-09-28 店の指定)。★商品台帳に無い明細
                     # (番号なしの売上)と、原価が未入力の受託品は空になる。
                     # ★パート権限には app.py がこの値を落とす(サーバー側で強制)
@@ -1649,7 +1655,7 @@ def slip_lines(con, frm, to, staff="", supplier=""):
     # 返品行: 取消した日が期間内の明細をマイナスで出す(当日訂正は出さない)。
     # 売上行と同じ形＋ret/noteを持ち、日付順に混ぜて返す
     for r in con.execute(f"""
-        SELECT substr(l.voided_at,1,10) vdate, s.customer_id cid, c.name cname,
+        SELECT substr(l.voided_at,1,10) vdate, s.slip_id, s.slip_no, s.customer_id cid, c.name cname,
                COALESCE(l.free_name, p.name) item, l.amount,
                l.refund_method rm, s.pay_method, s.credit_kind, s.sold_at orig,
                l.voided_staff vstaff, p.is_glasses ig, p.category cat, s.place place, p.cost_price cost
@@ -1664,6 +1670,7 @@ def slip_lines(con, frm, to, staff="", supplier=""):
         out.append({"date": r["vdate"], "name": r["cname"] or r["cid"], "item": r["item"],
                     "amount": -(r["amount"] or 0),
                     "pay": f"返金({method})", "staff": r["vstaff"], "ret": 1,
+                    "slip": r["slip_no"] or r["slip_id"], "slip_id": r["slip_id"],
                     # 返品行は金額がマイナスなので、下代もマイナスでそろえる
                     # (Excelで縦に足した時に、売上と返品が正しく相殺されるように)
                     "cost": (-int(r["cost"]) if r["cost"] not in (None, "") else None),
