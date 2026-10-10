@@ -1307,20 +1307,27 @@ def search_products(con, q="", cat="", state="", supplier="", genre="", sort="no
         where.append("product_key = ?")
         args.append(str(key))
     elif q:
-        like = "%" + q.replace("%", "").replace("_", "") + "%"
-        qn = norm_code(q)                       # 全角(かな)入力を半角化した品番/バーコード照合用
-        liken = "%" + qn.replace("%", "").replace("_", "") + "%"
+        # ★半角で入れても全角で入れても当たるようにする(2026-10-10 店の指定)。
+        #   打った字・データの両方を normjp に通してから照合する。これで
+        #     ・品名「ＰＯＬＩＣＥ」を半角「POLICE」で探しても出る(逆も)
+        #     ・半角カナ「ﾈｯｸﾚｽ」と全角カナ「ネックレス」がどちらでも当たる
+        #     ・商品番号・納品書Noの全角数字(１２３)と半角(123)も同じ扱いになる
+        #     ・英字の大文字小文字も区別しない
+        #   照合の決まりは normjp の1か所だけ(顧客検索・検索分析と同じ土台)。
+        #   ※以前は打った字だけを半角化して**生のデータ**に当てていたため、
+        #     データ側が全角で入っている品(宝飾ナビ由来に多い)は出なかった。
+        like = "%" + normjp(q).replace("%", "").replace("_", "") + "%"
         base = _ean13_base(q)  # バーコード(EAN-13)なら品番(先頭5桁)と管理番号(先頭10桁)で照合
         if base:
-            where.append("(product_no LIKE ? OR name LIKE ? OR product_no = ? "
+            where.append("(normjp(product_no) LIKE ? OR normjp(name) LIKE ? OR product_no = ? "
                          "OR REPLACE(product_no,'-','') LIKE ?)")
-            args += [liken, like, base[:5], base + "%"]
+            args += [like, like, base[:5], base + "%"]
         else:
             # ★仕入伝票番号も照合する(2026-09-05)。納品書の番号を入れると、その伝票で
             #   仕入れた商品がまとめて出る = 実務で商品を追う時の入口になるため。
-            where.append("(product_no LIKE ? OR product_no LIKE ? OR name LIKE ? "
-                         "OR purchase_slip_no LIKE ?)")
-            args += [like, liken, like, like]
+            where.append("(normjp(product_no) LIKE ? OR normjp(name) LIKE ? "
+                         "OR normjp(purchase_slip_no) LIKE ?)")
+            args += [like, like, like]
     if cat:
         where.append("category = ?"); args.append(cat)
     if state:
