@@ -329,7 +329,12 @@ CREATE TABLE app_sessions (
 -- 仕入先マスタ(商品ジャンルの分類フラグを持つ。在庫一覧の絞り込みに使う)
 CREATE TABLE supplier_master (
   name  TEXT PRIMARY KEY,   -- 仕入先名(products.supplier と一致)
-  genre TEXT                 -- 宝石/メガネ/時計/その他(未設定はNULL)
+  genre TEXT,                -- 宝石/メガネ/時計/その他(未設定はNULL)
+  -- ↓既存DBへは server/db_query.py の ensure_schema が後から足す。
+  --   ★2026-10-12、ここに書き忘れていたため新しく作るDB(サンプル等)にだけ
+  --     この2列が無く、make_sample_data.py が「no such column」で落ちていた。
+  code  TEXT,                -- 仕入先コード(宝飾ナビ m_siiresaki.strsircode)
+  fucho_head TEXT            -- 符丁の頭(メーカー符丁カナ)。漢字名でも正しく出すため名前と別管理
 );
 
 -- 汎用マスタ(商品分類・保管場所・支払方法など「名前の一覧」型を1テーブルで管理)

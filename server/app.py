@@ -617,7 +617,9 @@ class Handler(BaseHTTPRequestHandler):
         "/api/product", "/api/product_update", "/api/product_delete",
         "/api/product_image", "/api/product_image_clear",
         "/api/photo_pool", "/api/photo_pool_assign", "/api/photo_pool_delete",
-        "/api/supplier_genre", "/api/supplier_fucho", "/api/supplier_code", "/api/master_item", "/api/rank_apply", "/api/rank_rules",
+        "/api/supplier_genre", "/api/supplier_fucho", "/api/supplier_code",
+        "/api/supplier_save",   # 仕入先の追加・改名・削除(商品台帳の仕入先名を動かす)。2026-10-12
+        "/api/master_item", "/api/rank_apply", "/api/rank_rules",
         "/api/stocktake_scan", "/api/stocktake_reset", "/api/settle_consignment",
         "/api/consign_to_stock",   # 受託品の買取(在庫と原価を動かす)。2026-10-01
         "/api/point_settings", "/api/tag_settings", "/api/warranty_settings",
@@ -1136,6 +1138,16 @@ class Handler(BaseHTTPRequestHandler):
                 con = connect()
                 try:
                     result = db_query.set_supplier_code(con, payload.get("name"), payload.get("code"))
+                except ValueError as e:
+                    return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                finally:
+                    con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/supplier_save":
+                # 仕入先の追加・改名・削除。改名は商品台帳の仕入先名も一緒に直す(2026-10-12)
+                con = connect()
+                try:
+                    result = db_query.save_supplier(con, payload)
                 except ValueError as e:
                     return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
                 finally:

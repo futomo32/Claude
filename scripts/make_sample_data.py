@@ -32,6 +32,22 @@ MALE = [("太郎", "ﾀﾛｳ"), ("一郎", "ｲﾁﾛｳ"), ("健一", "ｹﾝ�
 CITIES = ["松本市中央", "松本市島立", "塩尻市広丘", "安曇野市豊科", "諏訪市高島", "岡谷市郷田", "松本市深志"]
 STAFF = [("101", "三輪 祐加"), ("102", "簗瀬 智宏"), ("103", "田中 一槻"), ("104", "青木 康子")]
 
+# 仕入先(見本)。★2026-10-12 追加。これまでサンプルDBには仕入先が1件も入っておらず、
+#   仕入先の絞り込み(v1.8.8)・符丁の頭文字(v1.8.14)・仕入先の追加/改名/削除(v1.9.0)を
+#   画面で確かめられなかった(そのつど見本を手で足していた)。名前は実在の取引先では
+#   ないが、符丁文字・ジャンルの組み合わせを実データに近い形で用意する。
+#   (コード, 名前, 符丁文字, ジャンル)
+SUPPLIERS = [
+    ("011", "見本ジュエリー(株)", "ﾐ", "宝石"),
+    ("012", "甲府宝飾工房", "ｺ", "宝石"),
+    ("013", "ダイヤサンプル商事", "ﾀ", "宝石"),
+    ("021", "見本オプチカル", "ｵ", "メガネ"),
+    ("022", "サンプルレンズ販売(株)", "ｻ", "メガネ"),
+    ("031", "見本ウォッチ(株)", "ｳ", "時計"),
+    ("041", "その他のメーカー", None, None),   # 符丁文字もジャンルも未設定の仕入先(未設定の見え方の確認用)
+]
+GLASS_SUPPLIERS = ["見本オプチカル", "サンプルレンズ販売(株)"]
+
 # 宝飾品テンプレ (分類, 品名, 中石, 上代下限, 上代上限)
 JEWELRY = [
     ("リング", "Pt900 ダイヤリング", "ダイヤ", 220000, 780000),
@@ -71,6 +87,12 @@ def main():
     for code, name in STAFF:
         cur.execute("INSERT INTO staff(staff_code,name,store_code) VALUES (?,?,'01')", (code, name))
 
+    # ── 仕入先マスタ(符丁文字・ジャンル付き) ──
+    for code, sname, head, genre in SUPPLIERS:
+        cur.execute("INSERT INTO supplier_master(name,code,genre,fucho_head) VALUES (?,?,?,?)",
+                    (sname, code, genre, head))
+    gem_suppliers = [s[1] for s in SUPPLIERS if s[3] == "宝石"]
+
     # ── 商品カタログ(在庫プール) ──
     pkey = 1000
     stock_pool = []          # 販売に回せる在庫宝飾品 [(product_key, name, price)]
@@ -79,11 +101,14 @@ def main():
         price = round(random.randint(lo, hi), -3)
         pkey += 1
         carat = f"{random.uniform(0.2, 1.5):.2f}" if stone in ("ダイヤ", "エメラルド", "ルビー", "サファイア") else None
+        # ★1割は仕入先を空のままにする。実データにも仕入先が入っていない商品があり、
+        #   「仕入先で絞ると出てこない商品がある」ことを画面で確かめられるようにするため。
+        supp = random.choice(gem_suppliers) if random.random() > 0.1 else None
         cur.execute("""INSERT INTO products(product_key,product_no,name,category,list_price,cost_price,
-                       state,location,center_stone,center_carat,is_glasses)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,0)""",
+                       state,location,center_stone,center_carat,supplier,is_glasses)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,0)""",
                     (str(pkey), str(pkey), base, cat, price, int(price * 0.55), "在庫",
-                     random.choice(["ショーケースA", "ショーケースB", "金庫"]), stone, carat))
+                     random.choice(["ショーケースA", "ショーケースB", "金庫"]), stone, carat, supp))
         stock_pool.append((str(pkey), base, price))
     # メガネ商品(レンズ・フレーム)
     glass_products = {}
@@ -92,8 +117,9 @@ def main():
         is_lens = (name, price) in LENSES
         cat = "メガネレンズ" if is_lens else "メガネフレーム"   # フレーム/レンズを分類で区別
         cur.execute("""INSERT INTO products(product_key,product_no,name,category,list_price,cost_price,
-                       state,location,is_glasses) VALUES (?,?,?,?,?,?,?,?,1)""",
-                    (str(pkey), str(pkey), name, cat, price, int(price * 0.5), "在庫", "メガネ棚"))
+                       state,location,supplier,is_glasses) VALUES (?,?,?,?,?,?,?,?,?,1)""",
+                    (str(pkey), str(pkey), name, cat, price, int(price * 0.5), "在庫", "メガネ棚",
+                     GLASS_SUPPLIERS[1 if is_lens else 0]))
         glass_products[name] = str(pkey)
 
     FRAME_PRICE = dict(FRAMES)

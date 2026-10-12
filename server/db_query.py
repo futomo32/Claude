@@ -1421,6 +1421,66 @@ def set_supplier_code(con, name, code):
     return {"name": name, "code": code}
 
 
+def save_supplier(con, p):
+    """仕入先の 追加/改名/削除(2026-10-12 店の指定)。
+    ★それまで仕入先を**足す入口がどこにも無かった**。一覧は products.supplier を
+      拾って作るだけ(sync_supplier_master)なので、「その名前の商品が1件も無い
+      新しいメーカー」は登録できず、仕入登録のプルダウンにも出せなかった。
+
+    仕入先名は products.supplier に**文字列そのもの**で入っている(IDではない)ので、
+    改名は**マスタと商品台帳を同時に**直す必要がある。片方だけ直すと、次に一覧を
+    開いた時に sync_supplier_master が古い名前を拾い直して**2つに増える**。
+    そのため改名・削除は1つのトランザクション(tx)で行う。
+
+    断る場合:
+      ・追加 … 同じ名前が既にある(気づかず二重に作ると、商品が2つに分かれる)
+      ・改名 … 新しい名前が既にある。★黙って合流させると元に戻せないため
+               (本当に統合したい時は別の機能として作る)
+      ・削除 … その仕入先の商品が1件でもある。消しても sync が拾い直して復活する上、
+               商品側の仕入先名が宙に浮く
+    """
+    action = str(p.get("action") or "").strip()
+    name = str(p.get("name") or "").strip()
+    if not name:
+        raise ValueError("仕入先名を入力してください")
+    if action == "add":
+        if con.execute("SELECT 1 FROM supplier_master WHERE name=?", (name,)).fetchone():
+            raise ValueError(f"「{name}」は既に登録されています")
+        con.execute("""INSERT INTO supplier_master(name, code, genre, fucho_head)
+                       VALUES(?,?,?,?)""",
+                    (name, norm_code(p.get("code"))[:20] or None,
+                     (str(p.get("genre") or "").strip() or None),
+                     (str(p.get("fucho_head") or "").strip()[:2] or None)))
+        con.commit()
+        return {"ok": True, "action": "add", "name": name}
+    if action == "rename":
+        new = str(p.get("new_name") or "").strip()
+        if not new:
+            raise ValueError("新しい仕入先名を入力してください")
+        if new == name:
+            return {"ok": True, "action": "rename", "name": name, "moved": 0}
+        if con.execute("SELECT 1 FROM supplier_master WHERE name=?", (new,)).fetchone():
+            raise ValueError(f"「{new}」は既にあります。まとめたい場合は言ってください")
+        if not con.execute("SELECT 1 FROM supplier_master WHERE name=?", (name,)).fetchone():
+            raise ValueError("その仕入先が見つかりません")
+        with write_lock(con):   # マスタと商品台帳を一緒に直す(片方だけ直ると2つに増える)
+            con.execute("UPDATE supplier_master SET name=? WHERE name=?", (new, name))
+            cur = con.execute("UPDATE products SET supplier=? WHERE supplier=?", (new, name))
+            moved = cur.rowcount or 0
+        return {"ok": True, "action": "rename", "name": new, "old_name": name, "moved": moved}
+    if action == "delete":
+        if not con.execute("SELECT 1 FROM supplier_master WHERE name=?", (name,)).fetchone():
+            raise ValueError("その仕入先が見つかりません")
+        cnt = con.execute("SELECT COUNT(*) FROM products WHERE supplier=?", (name,)).fetchone()[0]
+        if cnt:
+            raise ValueError(f"「{name}」の商品が {cnt:,} 件あるので削除できません"
+                             "(先に商品の仕入先を変えてください)")
+        con.execute("DELETE FROM supplier_master WHERE name=?", (name,))
+        con.commit()
+        return {"ok": True, "action": "delete", "name": name}
+    raise ValueError("不明な操作です")
+
+
 def product_brands(con):
     """商品に登場するブランド名の一覧(登録・修正フォームの入力候補用)。"""
     return [r[0] for r in con.execute(
