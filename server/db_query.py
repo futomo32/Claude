@@ -5559,6 +5559,8 @@ ROLE_LABELS = {"admin": "管理者", "staff": "社員", "part": "パート"}
 # ログインをそのまま使えてしまい、取消の操作者記録も全部同じ人になってしまうため。
 # 開店から閉店までは持ち、翌日は必ずログインし直す長さとして12時間にしている。
 SESSION_HOURS = 12
+# 期限を延ばす間隔(分)。通信のたびに書き込むとレジが重くなるので、これだけ間が空いた時だけ。
+SESSION_TOUCH_MINUTES = 30
 
 
 def _hash_pw(password, salt=None):
@@ -5630,6 +5632,37 @@ def session_user(con, token):
     # expires_at は画面が「まもなく期限切れ」を予告するために使う(会計中の強制ログアウト防止)
     return {"id": row[0], "name": row[1] or row[0], "role": row[2] or "staff",
             "expires_at": row[3]}
+
+
+def touch_session(con, token):
+    """使っている間はログインの期限を延ばす(スライド式。2026-10-22 店の指定)。
+
+    ★それまでは「ログインしてから12時間で必ず切れる」だったため、**営業中に切れて
+      会計が止まる**ことがあった(実際に店で発生)。操作があるたびに起点を今にずらし、
+      「**12時間まったく触っていない時だけ切れる**」に変える。閉店後に放置した端末は
+      今までどおり切れるので、守りは弱くならない。
+    ★毎回の通信で書き込むとレジが重くなる(1操作で何本も通信するため)。前回から
+      SESSION_TOUCH_MINUTES 以上たった時だけ更新する。
+    ★「期限を見に来ただけ」の問い合わせでは呼ばないこと(app.py の SESSION_PEEK_PATHS)。
+      そこで延ばすと、誰も触っていなくても画面が自分で延命してしまう。
+    戻り: 延ばしたら新しい期限(文字列)、延ばさなければ None
+    """
+    if not token:
+        return None
+    # ★「まだ切れていない」ことを必ず条件に入れる。これが無いと、**切れたログインが
+    #   生き返る**(切れている＝30分以上たっている、なので条件に当たってしまう)。
+    #   app.py は先に session_user で弾いてから呼ぶが、呼ぶ順番に守りを預けない。
+    stale = con.execute(
+        f"""SELECT 1 FROM app_sessions
+            WHERE token=?
+              AND created_at <  datetime('now','-{SESSION_TOUCH_MINUTES} minutes','localtime')
+              AND created_at >= datetime('now','-{SESSION_HOURS} hours','localtime')""",
+        (token,)).fetchone()
+    if not stale:
+        return None
+    con.execute("UPDATE app_sessions SET created_at=datetime('now','localtime') WHERE token=?", (token,))
+    con.commit()
+    return con.execute(f"SELECT datetime('now','localtime','+{SESSION_HOURS} hours')").fetchone()[0]
 
 
 def logout_user(con, token):

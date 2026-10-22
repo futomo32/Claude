@@ -363,14 +363,25 @@ class Handler(BaseHTTPRequestHandler):
                 return v
         return None
 
+    # 「ログインの期限を見に来ただけ」の経路。ここでは期限を延ばさない(2026-10-22)。
+    # ★延ばしてしまうと、誰も触っていなくても画面が1分ごとに自分を延命し、
+    #   「12時間まったく触っていなければ切れる」が永久に効かなくなる。
+    SESSION_PEEK_PATHS = {"/api/session", "/api/health"}
+
     def _current_user(self):
-        """ログイン中のユーザー {id,name,role} を返す(未ログインはNone)。"""
+        """ログイン中のユーザー {id,name,role,expires_at} を返す(未ログインはNone)。
+        ★使っている間は期限を延ばす(スライド式)。営業中に切れて会計が止まらないため。"""
         token = self._session_token()
         if not token:
             return None
         con = connect()
         try:
-            return db_query.session_user(con, token)
+            user = db_query.session_user(con, token)
+            if user and self.path.split("?", 1)[0] not in self.SESSION_PEEK_PATHS:
+                new_exp = db_query.touch_session(con, token)
+                if new_exp:
+                    user["expires_at"] = new_exp
+            return user
         finally:
             con.close()
 
@@ -396,6 +407,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not user:
                     return self._deny("ログインしてください(ページを再読み込みするとログイン画面が出ます)", 401)
                 role = user.get("role")
+                if path == "/api/session":
+                    # ★画面が「本当の期限」を聞きに来るための経路(2026-10-22)。
+                    #   使っている間は期限が延びるので、ページを開いた時の値のままだと
+                    #   延びたことに気づけず、切れていないのに警告が出てしまう。
+                    #   ここでは期限を延ばさない(SESSION_PEEK_PATHS)。切れていれば上の401になる。
+                    return self._send(200, json.dumps(
+                        {"user": {"id": user.get("id"), "name": user.get("name"), "role": role},
+                         "expires_at": user.get("expires_at")}, ensure_ascii=False).encode("utf-8"))
                 if path == "/api/app_users":
                     if role != "admin":
                         return self._deny()
