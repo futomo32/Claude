@@ -82,6 +82,7 @@ import integrity  # noqa: E402  データ点検(破損・参照切れ・残高�
 import store_info  # noqa: E402  店舗の固定情報(唯一の正)。画面へ注入して帳票にも使う
 import applog       # noqa: E402  動作ログ(logs/エラー_今日.txt)
 import kuroneko_b2  # noqa: E402  クロネコB2(DM便)のxlsx書き出し
+import sheet_read   # noqa: E402  Excel(.xlsx/.xls)の読み取り。DM宛名をCSVに直さず読むため
 
 
 def _extra_dirs(settings):
@@ -795,6 +796,20 @@ class Handler(BaseHTTPRequestHandler):
                 finally:
                     con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/sheet_to_csv":
+                # Excelのファイル(.xlsx / 古い .xls)を読んでCSVの文字にして返す。
+                # ★画面側は今までどおりCSVとして扱えるので、顧客IDの拾い方と
+                #   DM送付不可の判定が2つに分かれない(片方だけ直して差が出るのを防ぐ)。
+                # ★パートも使える(DMの作業は全員に開いている)。
+                try:
+                    raw = base64.b64decode(payload.get("data") or "")
+                except (ValueError, TypeError):
+                    raw = b""
+                try:
+                    text = sheet_read.read_to_csv(payload.get("filename") or "", raw)
+                except ValueError as e:
+                    return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                return self._send(200, json.dumps({"csv": text}, ensure_ascii=False).encode("utf-8"))
             if path == "/api/kuroneko_b2_export":
                 # DM便の宛名をクロネコB2の取込テンプレート形式(xlsx)で書き出す
                 con = connect()
