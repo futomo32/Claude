@@ -407,7 +407,31 @@ def main():
                    VALUES (9102,'9008',?, '01', ?, '現金')""", (S[1][1], yesterday))
     cur.execute("INSERT INTO sale_lines(slip_id,product_key,list_price,amount) VALUES (9102,'01-90001',150000,150000)")
     cur.execute("INSERT INTO sale_payments(slip_id,method,amount) VALUES (9102,'現金',150000)")
-    stats["personas"] += 8
+
+    # §22 レジの高さ確認(2026-10-28 店の指摘)。★売掛が4件ある常連さんを呼び出すと、
+    #   ③商品の明細が1件も見えず④⑤が重なって描かれていた。乱数で作る売掛は1人
+    #   最大2件で**この状態を再現できなかった**ため、専用のお客様を置く。
+    add_customer(9009, "売掛 多子", "ｳﾘｶｹ ｵｵｺ", "女", d(1951, 7, 7),
+                 staff=S[0], is_test=1, note="レジの高さ確認(売掛4件。明細が潰れないこと)")
+    for nm, bal in [("メットップ", 60000), ("ラムレザー/ポリコート", 200000),
+                    ("コルセットファンデーション", 11000), ("累積分", 236600)]:
+        cur.execute("""INSERT INTO receivables(customer_id,product_name,bought_at,down_payment,balance)
+                       VALUES ('9009',?,?,0,?)""", (nm, yesterday, bal))
+
+    # §23 住所の並べ替え確認(2026-10-28 店の指摘)。★番地の書き方が揃っていないと
+    #   同じ場所の方が離れて間に別の人が入ってしまう。乱数の住所は全部同じ書き方
+    #   (市名1-2-3)なので**この状態を再現できなかった**ため、書き分けた見本を置く。
+    for i, addr in enumerate([
+            "豊田市和合町1-8", "豊田市和合町1丁目8番地", "豊田市和合町１−８",
+            "豊田市和合町1ー8", "豊田市和合町一丁目5", "豊田市和合町１丁目18",
+            "豊田市和合町2-1", "豊田市和合町10-2", "豊田市一ノ瀬町3-2"]):
+        cid = 9020 + i
+        # ★is_test は付けない。複合検索はテスト顧客を除く作り(db_query.multi_search)なので、
+        #   印を付けると**確かめたい画面に出てこない**(2026-10-28の動作確認で判明)。
+        add_customer(cid, f"住所 並子{i + 1}", f"ｼﾞｭｳｼｮ ﾅﾗﾋﾞｺ{i + 1}", "女", d(1970, 1, 1 + i),
+                     staff=S[i % len(S)], note="住所の並べ替え確認: " + addr)
+        cur.execute("UPDATE customers SET address=? WHERE customer_id=?", (addr, str(cid)))
+    stats["personas"] += 18
 
     # ── お声がけのノイズ整理 ──
     # 乱数生成の修理は納期が固定日付のため、実行日によっては全部「納期遅れ」になり、
