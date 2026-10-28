@@ -152,6 +152,8 @@ def connect():
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA busy_timeout=5000")
     con.create_function("normjp", 1, db_query.normjp)  # 検索の正規化(半角全角・大小文字)をSQLで使えるように
+    # 住所の並べ替え用。「1-8」と「1丁目8番地」を同じ場所として隣に並べ、番地を数の順にする
+    con.create_function("addrkey", 1, db_query.addr_sort_key)
     db_query.ensure_schema(con)  # pull後にmigrate忘れでも動くよう不足列を自動補完
     return con
 

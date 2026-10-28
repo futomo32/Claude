@@ -55,6 +55,54 @@ def normjp(s):
     return unicodedata.normalize("NFKC", str(s)).casefold()
 
 
+_KANJI_DIGITS = {"〇": 0, "零": 0, "一": 1, "二": 2, "三": 3, "四": 4,
+                 "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+# 「丁目/番地/番/号」の**直前にある漢数字だけ**を数字に直す。
+# ★地名まで直すと「一ノ瀬町」が「1ノ瀬町」になってしまうので、必ず単位の直前に限ること。
+_RE_KANJI_BEFORE_UNIT = re.compile(r"[〇零一二三四五六七八九十]+(?=(?:丁目|番地|番|号))")
+_RE_ADDR_UNIT = re.compile(r"丁目|番地|番|号")
+# 数字にはさまれている時だけ、区切りの記号として扱う(地名の「の」「ノ」を壊さないため)
+_RE_ADDR_SEP = re.compile(r"(?<=\d)[\s　]*[のノ‐‑–—−ー―－-][\s　]*(?=\d)")
+_RE_ADDR_SPACE = re.compile(r"[\s　]+")
+_RE_DIGITS = re.compile(r"\d+")
+ADDR_PAD = 6   # 番地の桁合わせ。文字のまま比べても数の順になるようにする
+
+
+def _kanji_to_num(m):
+    """十八→18 / 二十→20 / 三十五→35 / 十→10 / 五→5"""
+    s = m.group(0)
+    if "十" not in s:
+        return "".join(str(_KANJI_DIGITS.get(c, "")) for c in s)
+    a, _, b = s.partition("十")
+    tens = 1 if a == "" else _KANJI_DIGITS.get(a, 1)
+    ones = 0 if b == "" else _KANJI_DIGITS.get(b, 0)
+    return str(tens * 10 + ones)
+
+
+def addr_sort_key(s):
+    """住所の**並べ替え用**のものさし(2026-10-28 店の指摘)。表示は元の文字のまま。
+
+    ★番地の書き方が揃っていないせいで、同じ場所の方が一覧でバラバラになっていた。
+      「1-8」と「1丁目8番地」が別物として並び、間に別の番地の方が入ってしまう。
+      さらに番地が**文字として**比べられていたため「10」が「2」より前に来ていた。
+    そこで、比べる時だけ次の形に揃える:
+      ・全角/半角・大文字小文字をならす(NFKC + casefold)
+      ・「丁目/番地/番/号」→「-」、数字にはさまれた「の・ノ・ー・−」→「-」
+      ・漢数字→数字(★「丁目」等の直前だけ。「一ノ瀬町」を壊さないため)
+      ・空白を詰め、数字は ADDR_PAD 桁にそろえる
+        → **ただの文字の比較でも数の順**になる(SQLiteのORDER BYでもJSでも同じ結果)
+    ★画面側(tokiwa-ui.html の addrSortKey)と**同じ決まり**にすること。
+      サーバーで並べる表(複合検索)と画面で並べる表(顧客管理)で順番が食い違わないため。
+    """
+    t = unicodedata.normalize("NFKC", str(s or "")).casefold()
+    t = _RE_KANJI_BEFORE_UNIT.sub(_kanji_to_num, t)
+    t = _RE_ADDR_UNIT.sub("-", t)
+    t = _RE_ADDR_SEP.sub("-", t)
+    t = _RE_ADDR_SPACE.sub("", t)
+    t = re.sub(r"-+", "-", t).rstrip("-")
+    return _RE_DIGITS.sub(lambda m: m.group(0).zfill(ADDR_PAD), t)
+
+
 def norm_code(s):
     """バーコード/商品番号の照合用に幅を正規化する。スキャナやレジの入力欄が全角(かな)
     モードだと数字が全角(２０５…)で入るため、NFKC で全角英数・全角ハイフン等を半角へ揃える。
@@ -2527,7 +2575,9 @@ _ADDR_EXPR = "TRIM(COALESCE(c.address,'') || ' ' || COALESCE(c.address2,''))"
 # 列を足す時は両方(ここと tokiwa-ui.html の MS_COLS)を直すこと。
 MULTI_SORTS = {
     "name": "c.name", "kana": "c.kana", "tel": "c.tel", "rank": "c.rank",
-    "address": _ADDR_EXPR, "staff": "c.staff_name", "age": _AGE_EXPR,
+    # ★住所は addrkey を通して並べる(2026-10-28 店の指摘)。そのまま並べると
+    #   「1-8」と「1丁目8番地」が離れ、間に別の番地の方が入ってしまう。addr_sort_key 参照。
+    "address": "addrkey(" + _ADDR_EXPR + ")", "staff": "c.staff_name", "age": _AGE_EXPR,
     "total": ("(SELECT COALESCE(SUM(sl.amount),0) FROM sale_lines sl "
               "JOIN sales_slips ss ON sl.slip_id=ss.slip_id "
               "WHERE ss.customer_id=c.customer_id AND COALESCE(sl.voided,0)=0 "
