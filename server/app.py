@@ -502,6 +502,7 @@ class Handler(BaseHTTPRequestHandler):
                         "/api/customer_ranking", "/api/prescription_search", "/api/rank_preview",
                         "/api/rank_rules", "/api/receivables_summary", "/api/stock_stats",
                         "/api/search_options", "/api/detailed_search", "/api/stocktake_summary",
+                        "/api/stocktake_batches", "/api/stocktake_stock_report",
                         "/api/receipt_doc_history",
                         "/api/multi_search_fields"):
                 qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
@@ -565,6 +566,12 @@ class Handler(BaseHTTPRequestHandler):
                         result = {"stockStats": ss}
                     elif path == "/api/stocktake_summary":
                         result = db_query.stocktake_summary(con)
+                    elif path == "/api/stocktake_batches":
+                        # 控えの一覧(年度末在庫の帳票で選ぶため)。2026-11-05
+                        result = {"batches": db_query.stocktake_batches(con)}
+                    elif path == "/api/stocktake_stock_report":
+                        # 控えを取った時点の在庫(その時点の上代・下代で出す)。2026-11-05
+                        result = db_query.stocktake_stock_report(con, q1("batch_id"))
                     elif path == "/api/search_options":
                         result = db_query.search_options(con)
                     elif path == "/api/receipt_doc_history":
@@ -642,7 +649,9 @@ class Handler(BaseHTTPRequestHandler):
         "/api/supplier_genre", "/api/supplier_fucho", "/api/supplier_code",
         "/api/supplier_save",   # 仕入先の追加・改名・削除(商品台帳の仕入先名を動かす)。2026-10-12
         "/api/master_item", "/api/rank_apply", "/api/rank_rules",
-        "/api/stocktake_scan", "/api/stocktake_reset", "/api/settle_consignment",
+        "/api/stocktake_scan", "/api/stocktake_reset",
+        "/api/stocktake_start", "/api/stocktake_close",   # 棚卸しの控え(2026-11-05)
+        "/api/settle_consignment",
         "/api/consign_to_stock",   # 受託品の買取(在庫と原価を動かす)。2026-10-01
         "/api/point_settings", "/api/tag_settings", "/api/warranty_settings",
     }
@@ -1153,6 +1162,25 @@ class Handler(BaseHTTPRequestHandler):
                 con = connect()
                 result = db_query.stocktake_reset(con)
                 con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/stocktake_start":
+                # ★棚卸しを始める = その瞬間の在庫を丸ごと控える(2026-11-05 店の指定)
+                con = connect()
+                try:
+                    result = db_query.stocktake_start(con, payload.get("note"))
+                except ValueError as e:
+                    return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                finally:
+                    con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/stocktake_close":
+                con = connect()
+                try:
+                    result = db_query.stocktake_close(con)
+                except ValueError as e:
+                    return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                finally:
+                    con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/document":
                 con = connect()

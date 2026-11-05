@@ -191,6 +191,29 @@ def ensure_schema(con):
         product_key TEXT PRIMARY KEY,
         checked_at  TEXT
     )""")
+    # ★棚卸しの「控え」(2026-11-05 店の指定)。棚卸しを始めた瞬間の在庫を丸ごと写し取る。
+    #   それまでは分母が**今この瞬間の在庫**だったため、営業しながら何日もかけると
+    #     ・確認済みの商品が売れると**進捗が巻き戻る**
+    #     ・期間中に仕入れた商品が「未確認」として出てくる
+    #     ・棚に無い商品が「売れた」のか「紛失」のか区別できない
+    #   という状態だった。控えを固定すれば、営業中に何日かけても数が動かない。
+    #   ★上代・下代も写し取る。後から価格を直しても**年度末の在庫金額が変わらない**ため。
+    con.execute("""CREATE TABLE IF NOT EXISTS stocktake_batches (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        taken_at     TEXT NOT NULL,     -- 控えを取った日時(＝基準日)
+        note         TEXT,              -- 「2026年度末」など
+        closed_at    TEXT,              -- 締めた日時(NULL=進行中)
+        total_count  INTEGER,           -- 基準日の在庫点数
+        total_list   INTEGER,           -- 基準日の上代合計
+        total_cost   INTEGER            -- 基準日の下代合計
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS stocktake_snapshot (
+        batch_id    INTEGER NOT NULL,
+        product_key TEXT NOT NULL,
+        product_no  TEXT, name TEXT, category TEXT, location TEXT, supplier TEXT,
+        list_price  INTEGER, cost_price INTEGER,
+        PRIMARY KEY (batch_id, product_key)
+    )""")
     # ログインユーザー(ロール別アクセス制御④)。schema.sql と同形。無いDBでも動くように。
     con.execute("""CREATE TABLE IF NOT EXISTS app_users (
         user_id      TEXT PRIMARY KEY,
@@ -417,6 +440,18 @@ def stocktake_scan(con, product_no):
     if not instock:
         return {"result": "not_instock", "product_no": no, "name": rows[0]["name"],
                 "message": "この番号は在庫状態ではありません(売却済み等)"}
+    # ★控えを取った後に入った商品は今回の対象外。読んでも進まないので、その場で伝える
+    #   (黙って受け付けると「読んだのに数が増えない」と混乱するため。2026-11-05)
+    b = stocktake_open_batch(con)
+    if b:
+        in_snap = {r[0] for r in con.execute(
+            "SELECT product_key FROM stocktake_snapshot WHERE batch_id=? AND product_key IN (%s)"
+            % ",".join("?" * len(instock)), [b["id"]] + [r["product_key"] for r in instock])}
+        if not in_snap:
+            return {"result": "not_in_batch", "product_no": no, "name": instock[0]["name"],
+                    "message": "この商品は今回の棚卸しの対象外です"
+                               "(" + str(b["taken_at"]) + " に控えを取った後に入った商品)"}
+        instock = [r for r in instock if r["product_key"] in in_snap]
     checked_keys = {r[0] for r in con.execute(
         "SELECT product_key FROM stocktake_checks WHERE product_key IN (%s)" %
         ",".join("?" * len(instock)), [r["product_key"] for r in instock])}
@@ -448,31 +483,159 @@ def _stocktake_started(con):
     return row[0] if row and row[0] else None
 
 
-def stocktake_summary(con):
-    """棚卸しの進捗と差異。確認済み点数 / 在庫総点数 / 未確認(在庫台帳にあるが現物未確認=紛失疑い)一覧 / 開始日時。"""
+def stocktake_open_batch(con):
+    """進行中の棚卸し(控え)を返す。無ければ None。"""
     con.row_factory = sqlite3.Row
-    total = con.execute("SELECT COUNT(*) FROM products WHERE state='在庫'").fetchone()[0]
-    checked = con.execute("""SELECT COUNT(*) FROM stocktake_checks s
-                             JOIN products p ON p.product_key=s.product_key AND p.state='在庫'""").fetchone()[0]
-    unchecked = []
-    for r in con.execute("""SELECT product_no, name, location, list_price
-                            FROM products p WHERE p.state='在庫'
+    return con.execute("""SELECT * FROM stocktake_batches
+                          WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1""").fetchone()
+
+
+def stocktake_start(con, note=""):
+    """★棚卸しを始める = その瞬間の在庫を丸ごと控える(2026-11-05 店の指定)。
+
+    押した時刻が**基準日**になる。以後この控えは動かないので、**営業しながら何日
+    かけてもよい**。上代・下代も写し取るので、あとから価格を直しても**年度末の
+    在庫金額は変わらない**。
+    ★進行中の棚卸しがあれば締めてから始める(控えは残るので、年度末在庫の帳票は
+      いつでも出せる)。
+    """
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    with write_lock(con):
+        con.execute("UPDATE stocktake_batches SET closed_at=? WHERE closed_at IS NULL", (now,))
+        con.execute("DELETE FROM stocktake_checks")
+        cur = con.execute("INSERT INTO stocktake_batches(taken_at, note) VALUES (?,?)",
+                          (now, (str(note or "").strip() or None)))
+        bid = cur.lastrowid
+        con.execute("""INSERT INTO stocktake_snapshot
+                       (batch_id,product_key,product_no,name,category,location,supplier,list_price,cost_price)
+                       SELECT ?,product_key,product_no,name,category,location,supplier,list_price,cost_price
+                       FROM products WHERE state='在庫'""", (bid,))
+        row = con.execute("""SELECT COUNT(*), COALESCE(SUM(list_price),0), COALESCE(SUM(cost_price),0)
+                             FROM stocktake_snapshot WHERE batch_id=?""", (bid,)).fetchone()
+        con.execute("""UPDATE stocktake_batches SET total_count=?, total_list=?, total_cost=?
+                       WHERE id=?""", (row[0], row[1], row[2], bid))
+    _set_setting(con, "stocktake_started_at", now)
+    return {"ok": True, "batch_id": bid, "taken_at": now,
+            "total_count": row[0], "total_list": row[1], "total_cost": row[2]}
+
+
+def stocktake_close(con):
+    """棚卸しを締める(控えはそのまま残り、年度末在庫の帳票に使える)。"""
+    b = stocktake_open_batch(con)
+    if not b:
+        raise ValueError("進行中の棚卸しがありません")
+    con.execute("UPDATE stocktake_batches SET closed_at=? WHERE id=?",
+                (datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), b["id"]))
+    con.commit()
+    return {"ok": True, "batch_id": b["id"]}
+
+
+def stocktake_summary(con):
+    """棚卸しの進捗と差異。★分母は「控え」(基準日の在庫)なので、営業中に売れても
+    仕入れても動かない(2026-11-05)。
+
+    未確認を2つに分ける:
+      ・この期間に売れた … レジを通った＝その時点で現物があった証拠。**探さなくてよい**
+      ・見つからない   … まだ棚にあるはずなのに確認できていない。これが本当の差異
+    ★取消・返品で在庫に戻った商品は「また棚にある」ので、**見つからない側**に入る
+      (今の状態で判定しているので自動でそうなる)。
+    控えが無い(まだ一度も始めていない)時は、今までどおり**今の在庫**で数える。
+    """
+    con.row_factory = sqlite3.Row
+    b = stocktake_open_batch(con)
+    if not b:
+        # 控えが無い場合(古いDB・まだ始めていない)。従来の数え方で出す
+        total = con.execute("SELECT COUNT(*) FROM products WHERE state='在庫'").fetchone()[0]
+        checked = con.execute("""SELECT COUNT(*) FROM stocktake_checks s
+                                 JOIN products p ON p.product_key=s.product_key AND p.state='在庫'""").fetchone()[0]
+        unchecked = [{"product_no": r["product_no"], "name": r["name"], "location": r["location"],
+                      "list_price": r["list_price"], "why": "見つからない"}
+                     for r in con.execute(
+                         """SELECT product_no,name,location,list_price FROM products p
+                            WHERE p.state='在庫'
                               AND p.product_key NOT IN (SELECT product_key FROM stocktake_checks)
-                            ORDER BY product_no"""):
+                            ORDER BY product_no""")]
+        return {"started": False, "total": total, "checked": checked, "unchecked": unchecked,
+                "unchecked_count": len(unchecked), "sold_count": 0, "missing_count": len(unchecked),
+                "added_count": 0, "started_at": _stocktake_started(con) if checked > 0 else None,
+                "taken_at": None, "note": None, "total_list": None, "total_cost": None}
+
+    bid = b["id"]
+    total = b["total_count"] or 0
+    checked = con.execute("SELECT COUNT(*) FROM stocktake_checks c "
+                          "JOIN stocktake_snapshot s ON s.batch_id=? AND s.product_key=c.product_key",
+                          (bid,)).fetchone()[0]
+    unchecked, sold, missing = [], 0, 0
+    for r in con.execute("""SELECT s.product_no, s.name, s.location, s.list_price, s.cost_price,
+                                   COALESCE(p.state,'(削除済み)') state
+                            FROM stocktake_snapshot s
+                            LEFT JOIN products p ON p.product_key = s.product_key
+                            WHERE s.batch_id=?
+                              AND s.product_key NOT IN (SELECT product_key FROM stocktake_checks)
+                            ORDER BY s.product_no""", (bid,)):
+        # ★今「在庫」でないものは、控えを取った後に出ていった=レジを通った(または受託等へ)。
+        #   現物があった証拠になるので探さなくてよい。在庫のままなら本当に見つかっていない。
+        why = "見つからない" if r["state"] == "在庫" else "この期間に売れた"
+        if why == "見つからない":
+            missing += 1
+        else:
+            sold += 1
         unchecked.append({"product_no": r["product_no"], "name": r["name"],
-                          "location": r["location"], "list_price": r["list_price"]})
-    # 確認が1件も無ければ「未開始」扱い(開始日時は表示しない)
-    started_at = _stocktake_started(con) if checked > 0 else None
-    return {"total": total, "checked": checked, "unchecked": unchecked,
-            "unchecked_count": len(unchecked), "started_at": started_at}
+                          "location": r["location"], "list_price": r["list_price"],
+                          "why": why, "state": r["state"]})
+    # 控えを取った後に入った商品(今回の対象外。数だけ知らせる)
+    added = con.execute("""SELECT COUNT(*) FROM products p WHERE p.state='在庫'
+                           AND p.product_key NOT IN
+                               (SELECT product_key FROM stocktake_snapshot WHERE batch_id=?)""",
+                        (bid,)).fetchone()[0]
+    return {"started": True, "batch_id": bid, "taken_at": b["taken_at"], "note": b["note"],
+            "total": total, "total_list": b["total_list"], "total_cost": b["total_cost"],
+            "checked": checked, "unchecked": unchecked, "unchecked_count": len(unchecked),
+            "sold_count": sold, "missing_count": missing, "added_count": added,
+            "started_at": b["taken_at"]}
+
+
+def stocktake_batches(con):
+    """控えの一覧(年度末在庫の帳票で選ぶため)。新しい順。"""
+    con.row_factory = sqlite3.Row
+    return [{"id": r["id"], "taken_at": r["taken_at"], "note": r["note"], "closed_at": r["closed_at"],
+             "total_count": r["total_count"], "total_list": r["total_list"], "total_cost": r["total_cost"]}
+            for r in con.execute("SELECT * FROM stocktake_batches ORDER BY id DESC")]
+
+
+def stocktake_stock_report(con, batch_id):
+    """★年度末在庫の帳票(2026-11-05 店の指定)。控えを取った時点の在庫を、
+    その時点の上代・下代で出す。**後から価格を直しても金額は変わらない**。"""
+    con.row_factory = sqlite3.Row
+    try:
+        bid = int(batch_id)
+    except (TypeError, ValueError):
+        raise ValueError("控えが指定されていません")
+    b = con.execute("SELECT * FROM stocktake_batches WHERE id=?", (bid,)).fetchone()
+    if not b:
+        raise ValueError("その控えが見つかりません")
+    rows = [{"product_no": r["product_no"], "name": r["name"], "category": r["category"],
+             "location": r["location"], "supplier": r["supplier"],
+             "list_price": r["list_price"], "cost_price": r["cost_price"]}
+            for r in con.execute("""SELECT * FROM stocktake_snapshot WHERE batch_id=?
+                                    ORDER BY category, product_no""", (bid,))]
+    # 分類ごとの小計(決算の内訳に使えるように)
+    by_cat = {}
+    for r in rows:
+        c = by_cat.setdefault(r["category"] or "(分類なし)", {"count": 0, "list": 0, "cost": 0})
+        c["count"] += 1
+        c["list"] += r["list_price"] or 0
+        c["cost"] += r["cost_price"] or 0
+    return {"batch": {"id": b["id"], "taken_at": b["taken_at"], "note": b["note"],
+                      "closed_at": b["closed_at"], "total_count": b["total_count"],
+                      "total_list": b["total_list"], "total_cost": b["total_cost"]},
+            "rows": rows,
+            "by_category": [dict(category=k, **v) for k, v in sorted(by_cat.items())]}
 
 
 def stocktake_reset(con):
-    """棚卸しの確認記録を全消去(新しい棚卸しを始める)。開始日時も引き直す。"""
-    con.execute("DELETE FROM stocktake_checks")
-    _set_setting(con, "stocktake_started_at", datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
-    con.commit()
-    return {"ok": True}
+    """棚卸しの確認記録を全消去(新しい棚卸しを始める)。★控えも取り直す。"""
+    return stocktake_start(con)
 
 
 # ── ホームの「今週のお声がけ」 ────────────────────────────────────────────
