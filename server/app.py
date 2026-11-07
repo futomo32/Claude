@@ -649,6 +649,7 @@ class Handler(BaseHTTPRequestHandler):
         "/api/supplier_genre", "/api/supplier_fucho", "/api/supplier_code",
         "/api/supplier_save",   # 仕入先の追加・改名・削除(商品台帳の仕入先名を動かす)。2026-10-12
         "/api/master_item", "/api/rank_apply", "/api/rank_rules",
+        "/api/correct_line_amount",   # 売上金額の訂正(金額と売掛を動かす)。2026-11-07
         "/api/stocktake_scan", "/api/stocktake_reset",
         "/api/stocktake_start", "/api/stocktake_close",   # 棚卸しの控え(2026-11-05)
         "/api/settle_consignment",
@@ -1162,6 +1163,20 @@ class Handler(BaseHTTPRequestHandler):
                 con = connect()
                 result = db_query.stocktake_reset(con)
                 con.close()
+                return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
+            if path == "/api/correct_line_amount":
+                # ★売上明細の金額を訂正する(2026-11-07 店の指定)。取消して打ち直さずに直す。
+                #   返金が要る場合はサーバーが断り、「取消」を案内する。
+                con = connect()
+                try:
+                    result = db_query.correct_sale_line_amount(
+                        con, payload.get("line_id"), payload.get("amount"),
+                        operator=user.get("id"), staff=payload.get("staff"),
+                        reason=payload.get("reason"))
+                except ValueError as e:
+                    return self._send(200, json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8"))
+                finally:
+                    con.close()
                 return self._send(200, json.dumps(result, ensure_ascii=False).encode("utf-8"))
             if path == "/api/stocktake_start":
                 # ★棚卸しを始める = その瞬間の在庫を丸ごと控える(2026-11-05 店の指定)

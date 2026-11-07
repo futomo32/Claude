@@ -191,6 +191,27 @@ def ensure_schema(con):
         product_key TEXT PRIMARY KEY,
         checked_at  TEXT
     )""")
+    # ★売上金額の訂正の記録(2026-11-07 店の指定)。「売った金額が違っていた」を、
+    #   取消して打ち直さずに直せるようにする。それまでは取消→打ち直ししか手が無く、
+    #   掛売だと**入金の記録が2件並んで「二重に受け取ったのか」と混乱する**状態だった。
+    #   ★明細の金額そのものを直す(領収書・保証書・購入履歴がすべてそろうため)。
+    #     ただし**元の金額は必ずここに残す**(電子帳簿保存法「訂正の事実と内容を
+    #     確認できること」。取消の voided_by/voided_reason と同じ考え方)。
+    #   ★日報はこの記録を見て「売った日は訂正前の金額・訂正した日に差額のマイナス」を出す
+    #     (締めた日の日報は後から変えない、という2026-08-06の決めごとに合わせる)。
+    con.execute("""CREATE TABLE IF NOT EXISTS sale_line_corrections (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        line_id      INTEGER NOT NULL,
+        slip_id      INTEGER,
+        old_amount   INTEGER NOT NULL,   -- 訂正前の金額
+        new_amount   INTEGER NOT NULL,   -- 訂正後の金額
+        corrected_at TEXT NOT NULL,      -- 訂正した日時
+        corrected_by TEXT,               -- ログインユーザー(詐称できない)
+        corrected_staff TEXT,            -- 操作した担当者(必須)
+        reason       TEXT,               -- 訂正の理由(必須)
+        recv_applied INTEGER             -- 売掛の残高から引いた額
+    )""")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_slc_line ON sale_line_corrections(line_id)")
     # ★棚卸しの「控え」(2026-11-05 店の指定)。棚卸しを始めた瞬間の在庫を丸ごと写し取る。
     #   それまでは分母が**今この瞬間の在庫**だったため、営業しながら何日もかけると
     #     ・確認済みの商品が売れると**進捗が巻き戻る**
@@ -1781,6 +1802,14 @@ def sale_kind4(is_glasses, category, place):
 #     返品行を出す(元の売上日を注記)。現金締めには返金方法が現金の分だけ反映する。
 # SQL片: 「この明細は売った日のうちに取り消された(=訂正)」
 _SAME_DAY_VOID = "(COALESCE(l.voided,0)=1 AND substr(COALESCE(l.voided_at,''),1,10) = s.sold_at)"
+# ★金額の訂正も取消と同じ決まりにする(2026-11-07)。
+#   当日中の訂正 … 訂正後の金額をそのまま出す(打ち直したのと同じ)
+#   日をまたいだ訂正 … **売った日は訂正前の金額のまま**。差額は**訂正した日**にマイナスで出す
+#   SQL片: 「売った日の時点ではいくらだったか」= 後日訂正されていれば最初の訂正前の金額
+_AMOUNT_ON_SALE_DAY = """COALESCE((SELECT c.old_amount FROM sale_line_corrections c
+                                   WHERE c.line_id = l.line_id
+                                     AND substr(c.corrected_at,1,10) > s.sold_at
+                                   ORDER BY c.id LIMIT 1), l.amount)"""
 
 
 def daily_sales(con, date):
@@ -1801,7 +1830,8 @@ def daily_sales(con, date):
     by_slip = {}      # 割り当ては会計(伝票)ごとに行うので、いったん伝票でまとめる
     for r in con.execute(f"""
         SELECT s.slip_id, s.customer_id cid, c.name cname,
-               COALESCE(l.free_name, p.name) item, l.info, l.amount, l.tax_rate, s.pay_method, s.credit_kind,
+               COALESCE(l.free_name, p.name) item, l.info,
+               {_AMOUNT_ON_SALE_DAY} amount, l.tax_rate, s.pay_method, s.credit_kind,
                s.staff_name, p.is_glasses ig, p.category cat, s.place place
         FROM sale_lines l JOIN sales_slips s ON l.slip_id = s.slip_id
         LEFT JOIN products p ON l.product_key = p.product_key
@@ -1841,6 +1871,35 @@ def daily_sales(con, date):
                     "pay_split": {pay_column(method): -(r["amount"] or 0)},
                     "staff": r["vstaff"], "ret": 1,
                     "note": f"{r['orig']}購入分の返品",
+                    "kind4": sale_kind4(r["ig"], r["cat"], r["place"])})
+    # ★金額を訂正した行(2026-11-07)。日をまたいだ訂正は、売った日の日報は変えず
+    #   **訂正した日**に差額を出す(取消と同じ決まり)。当日中の訂正は上の売上行に
+    #   訂正後の金額が入っているので、ここには出さない(二重計上を防ぐ)。
+    for r in con.execute("""
+        SELECT s.customer_id cid, c.name cname,
+               COALESCE(l.free_name, p.name) item, l.info, l.tax_rate,
+               s.pay_method, s.credit_kind, s.sold_at orig,
+               cr.old_amount, cr.new_amount, cr.corrected_staff cstaff, cr.reason,
+               p.is_glasses ig, p.category cat, s.place place
+        FROM sale_line_corrections cr
+        JOIN sale_lines l ON l.line_id = cr.line_id
+        JOIN sales_slips s ON s.slip_id = l.slip_id
+        LEFT JOIN products p ON l.product_key = p.product_key
+        LEFT JOIN customers c ON c.customer_id = s.customer_id
+        WHERE substr(cr.corrected_at,1,10) = ? AND substr(cr.corrected_at,1,10) <> s.sold_at
+              AND COALESCE(l.voided,0)=0""", (str(date),)):
+        diff = int(r["new_amount"] or 0) - int(r["old_amount"] or 0)   # 減額ならマイナス
+        if not diff:
+            continue
+        method = pay_fallback(r["pay_method"], r["credit_kind"])
+        out.append({"cid": r["cid"], "name": r["cname"] or r["cid"], "item": r["item"],
+                    "info": r["info"], "amount": diff,
+                    "tax_rate": taxes.normalize_rate(r["tax_rate"]),
+                    "pay": f"金額訂正({method})", "refund_method": method,
+                    "pay_split": {pay_column(method): diff},
+                    "staff": r["cstaff"], "ret": 1 if diff < 0 else 0,
+                    "note": f"{r['orig']}購入分の金額訂正"
+                            f"（¥{int(r['old_amount'] or 0):,}→¥{int(r['new_amount'] or 0):,}）",
                     "kind4": sale_kind4(r["ig"], r["cat"], r["place"])})
     return out
 
@@ -5731,6 +5790,107 @@ def void_sale_line(con, line_id, operator=None, staff=None, reason=None, refund_
     return {"line_id": line_id, "voided": True, "voided_at": now, "refund_method": rm,
             "voided_by": op, "voided_staff": stf, "voided_reason": rsn, "points": pts,
             "receivables": recv}
+
+
+def correct_sale_line_amount(con, line_id, new_amount, operator=None, staff=None, reason=None):
+    """★売上明細の金額を訂正する(2026-11-07 店の指定)。「売った金額が違っていた」用。
+
+    それまでは**取消して打ち直す**しか手が無く、掛売だと入金の記録が2件並んで
+    「二重に受け取ったのか」と分からなくなっていた(店の指摘)。
+
+    やること:
+      ・**明細の金額そのものを直す**(領収書・保証書・購入履歴がすべてそろう)
+      ・差額を**売掛の残高から引く**。入金には**一切触らない**
+      ・ポイント・買上累計を差額ぶん調整する
+      ・**元の金額・担当者・理由を必ず記録に残す**(電子帳簿保存法。取消と同じ)
+
+    断る場合(どれも「取消して打ち直す」が正しい場面):
+      ・取消済みの明細
+      ・**売掛で吸収しきれない**(＝お客様にお金を返す必要がある)
+        ★返金が絡む訂正は、返金方法・現金締め・ドロワーの扱いが取消と同じになるので、
+          取消の仕組みをそのまま使う方が確実。中途半端に真似ると現金が合わなくなる。
+      ・金額が変わらない / 負の金額
+
+    ★「何を売ったかが違う」時はこれではなく取消を使うこと(商品そのものは変えない)。
+    """
+    line_id = int(line_id)
+    staff = str(staff or "").strip()
+    reason = str(reason or "").strip()[:200]
+    if not staff:
+        raise ValueError("訂正した担当者を選んでください")
+    if not reason:
+        raise ValueError("訂正の理由を入力してください")
+    try:
+        new_amount = int(str(new_amount).replace(",", "").strip())
+    except (TypeError, ValueError):
+        raise ValueError("金額を数字で入力してください")
+    if new_amount < 0:
+        raise ValueError("金額は0以上で入力してください")
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    con.row_factory = sqlite3.Row
+    with write_lock(con):
+        r = con.execute("""SELECT l.line_id, l.slip_id, COALESCE(l.amount,0) amount,
+                                  COALESCE(l.voided,0) voided, s.sold_at
+                           FROM sale_lines l JOIN sales_slips s ON s.slip_id=l.slip_id
+                           WHERE l.line_id=?""", (line_id,)).fetchone()
+        if not r:
+            raise ValueError("対象の明細が見つかりません")
+        if r["voided"]:
+            raise ValueError("取消済みの明細は訂正できません")
+        old = int(r["amount"] or 0)
+        if new_amount == old:
+            raise ValueError("金額が変わっていません")
+        diff = old - new_amount          # 正=減額 / 負=増額
+        slip_id = r["slip_id"]
+        recv = con.execute("""SELECT id, COALESCE(balance,0) bal FROM receivables
+                              WHERE slip_id=? ORDER BY id""", (slip_id,)).fetchall()
+        recv_total = sum(int(x["bal"] or 0) for x in recv)
+        if diff > 0 and recv_total < diff:
+            # ★売掛で吸収できない＝返金が要る。返金は取消の仕組みに任せる(現金締めの
+            #   扱いが取消と同じでないと、その日の現金が合わなくなるため)
+            raise ValueError(
+                f"この訂正にはお客様への返金 ¥{diff - recv_total:,} が必要です。"
+                "返金がある場合は「取消」してから正しい金額で打ち直してください"
+                "（返金方法を選べて、その日の現金締めにも正しく反映されます）")
+        # ★ポイントは**金額を書き換える前**に調整する。按分の分母に元の会計金額を使うため
+        pts = _reverse_points_for_void(con, slip_id, diff, "金額の訂正: " + reason) if diff > 0 else None
+        applied = 0
+        if diff > 0:                     # 減額: 古い売掛から順に引く
+            left = diff
+            for x in recv:
+                if left <= 0:
+                    break
+                take = min(left, int(x["bal"] or 0))
+                if take <= 0:
+                    continue
+                con.execute("UPDATE receivables SET balance=balance-? WHERE id=?", (take, x["id"]))
+                left -= take
+                applied += take
+        elif recv:                       # 増額: 売掛がある会計なら、その売掛を増やす
+            con.execute("UPDATE receivables SET balance=balance+? WHERE id=?", (-diff, recv[0]["id"]))
+            applied = diff               # マイナス(増えた分)
+        con.execute("UPDATE sale_lines SET amount=? WHERE line_id=?", (new_amount, line_id))
+        con.execute("""INSERT INTO sale_line_corrections
+                         (line_id,slip_id,old_amount,new_amount,corrected_at,corrected_by,
+                          corrected_staff,reason,recv_applied)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (line_id, slip_id, old, new_amount, now,
+                     str(operator or "") or None, staff, reason, applied))
+    return {"line_id": line_id, "slip_id": slip_id, "old_amount": old, "new_amount": new_amount,
+            "diff": diff, "receivable_applied": applied, "corrected_at": now,
+            "corrected_staff": staff, "reason": reason, "points": pts,
+            "same_day": str(now)[:10] == str(r["sold_at"] or "")[:10]}
+
+
+def sale_line_corrections(con, line_id):
+    """その明細の訂正の履歴(購入履歴で「訂正あり」を押すと出す)。"""
+    con.row_factory = sqlite3.Row
+    return [{"old_amount": x["old_amount"], "new_amount": x["new_amount"],
+             "corrected_at": x["corrected_at"], "staff": x["corrected_staff"],
+             "by": x["corrected_by"], "reason": x["reason"],
+             "receivable_applied": x["recv_applied"]}
+            for x in con.execute("""SELECT * FROM sale_line_corrections
+                                    WHERE line_id=? ORDER BY id""", (int(line_id),))]
 
 
 def void_sale_slip(con, slip_id, operator=None, staff=None, reason=None, refund_method=None):
